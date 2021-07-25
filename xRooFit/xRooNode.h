@@ -7,6 +7,7 @@
 
 #include "TNamed.h"
 #include <vector>
+#include <functional>
 
 class TAxis;
 
