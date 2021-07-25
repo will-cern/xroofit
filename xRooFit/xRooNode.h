@@ -2,8 +2,7 @@
 // Created by Will Buttinger on 13/03/2021.
 //
 
-#ifndef WSMANAGER_NODE2_H
-#define WSMANAGER_NODE2_H
+#pragma once
 
 #include "TNamed.h"
 #include <vector>
@@ -233,5 +232,3 @@ public:
 
 };
 
-
-#endif //WSMANAGER_NODE2_H
