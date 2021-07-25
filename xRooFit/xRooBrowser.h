@@ -6,6 +6,7 @@
 class xRooBrowser: public TBrowser {
 public:
     xRooBrowser();
+    xRooBrowser(xRooNode* o);
 
     xRooNode* GetSelected() { return dynamic_cast<xRooNode*>(TBrowser::GetSelected()); }
 
@@ -26,6 +27,7 @@ public:
 private:
     std::shared_ptr<xRooNode> fNode; //!
 
+    std::shared_ptr<xRooNode> fTopNode; //!
 
 ClassDefOverride(TBrowser,0)
 

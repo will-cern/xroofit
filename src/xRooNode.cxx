@@ -264,7 +264,9 @@ void xRooNode::Browse(TBrowser* b) {
         }
         // now just add all the folders
         for(auto& v : *_folders) {
-            b->Add(v.get());
+            TString _name = v->GetName();
+            if (_name.BeginsWith('!')) _name=_name(1,_name.Length()); // strip ! from display
+            b->Add(v.get(),_name);
         }
 
     }
@@ -274,7 +276,7 @@ void xRooNode::Browse(TBrowser* b) {
         if (strcmp(v->GetName(),".folders")==0) continue; // never 'browse' the folders property
         int _checked = (v->get<RooAbsData>() || v->get<RooFitResult>()) ? v->get()->TestBit(1<<20) : -1;
         TString _name = v->GetName();
-        if (v->get()) _name = TString::Format("%s::%s",v->get()->ClassName(),_name.Data());
+        if (v->get() && !v->get<TFile>()) _name = TString::Format("%s::%s",v->get()->ClassName(),_name.Data());
         if (auto _type = v->GetNodeType(); strlen(_type)) {
             if (TString(_type)=="Const") _name += TString::Format(" [%s=%g]",_type,v->get<RooConstVar>()->getVal());
             else _name += TString::Format(" [%s]",_type);
@@ -4069,7 +4071,7 @@ void xRooNode::Draw(Option_t* opt) {
             gPad->SetName(s);
             TString cName = s(s.Index('=')+1,s.Length());
             chanVar.setLabel(cName);
-            bool inRange=false;
+            bool inRange=chanPatterns.empty();
             for(auto& p : chanPatterns) if(chanVar.inRange(p)) { inRange=true; break; }
             if (!inRange) gPad->SetFillColor(kGray);
             if(!hasSame && _size>1) gPad->SetLeftMargin(std::min(gPad->GetLeftMargin()*(1./gPad->GetWNDC()),0.3));
