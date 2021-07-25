@@ -140,8 +140,8 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
     return xRooFit::generateFrom(*fPdf, fr,expected,seed);
 }
 
-std::shared_ptr<const RooFitResult> xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& fitConfig) {
-    return xRooFit::minimize(*get(),fitConfig);
+std::shared_ptr<const RooFitResult> xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& _config) {
+    return xRooFit::minimize(*get(),(_config) ? _config : fitConfig());
 }
 
 class AutoRestorer {
@@ -151,6 +151,11 @@ public:
     RooArgSet fPars;
     std::unique_ptr<RooAbsCollection> fSnap;
 };
+
+std::shared_ptr<ROOT::Fit::FitConfig> xRooNLLVar::fitConfig() {
+    if (!fFitConfig) fFitConfig = xRooFit::defaultFitConfig();
+    return fFitConfig;
+}
 
 double xRooNLLVar::pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType) {
     // start by floating everything and consting all the const vars
@@ -166,19 +171,14 @@ double xRooNLLVar::pll(const char* parName, double value, const xRooFit::Asympto
     auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
     if (!poi) return std::numeric_limits<double>::quiet_NaN();
 
-    auto fitConfig = xRooFit::defaultFitConfig();
-    // disable hesse as we don't need to calculate them, just the minima
-    // although possibly needed for the boundary check?
-    fitConfig->SetParabErrors(false);
-
     poi->setConstant(false);
-    auto ufit = minimize(fitConfig);
+    auto ufit = minimize();
     if (ufit->status() != 0) return std::numeric_limits<double>::quiet_NaN();
     auto cFactor = xRooFit::Asymptotics::CompatFactor(pllType, value, static_cast<RooAbsReal*>(ufit->floatParsFinal().find(parName))->getVal());
     if (cFactor == 0) return 0;
 
     poi->setConstant(true); poi->setVal(value);
-    auto cfit = minimize(fitConfig);
+    auto cfit = minimize();
     if (cfit->status() != 0) return std::numeric_limits<double>::quiet_NaN();
 
     return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
@@ -201,8 +201,7 @@ double xRooNLLVar::sigma_mu(const char* parName, double value, double prime_valu
     if (!poi) return std::numeric_limits<double>::quiet_NaN();
 
     poi->setConstant(true); poi->setVal(prime_value);
-    auto fitConfig = xRooFit::defaultFitConfig();fitConfig->SetParabErrors(false);
-    auto cfit_prime = minimize(fitConfig);
+    auto cfit_prime = minimize();
     if (cfit_prime->status () != 0) return std::numeric_limits<double>::quiet_NaN();
 
     auto oldData = std::make_pair(fData,(fGlobs) ? std::shared_ptr<RooAbsCollection>(fGlobs->snapshot()) : nullptr);

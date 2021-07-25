@@ -34,7 +34,10 @@ public:
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generate(bool expected=false,int seed=0);
     //std::shared_ptr<const RooFitResult> snapshot();
 
-    std::shared_ptr<const RooFitResult> minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& fitConfig = nullptr);
+    std::shared_ptr<const RooFitResult> minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& = nullptr);
+
+    void SetFitConfig(const std::shared_ptr<ROOT::Fit::FitConfig>& in) { fFitConfig = in; }
+    std::shared_ptr<ROOT::Fit::FitConfig> fitConfig(); // returns fit config, or creates a default one if not existing
 
     double pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::TwoSided);
     double sigma_mu(const char* parName, double value, double prime_value);
@@ -55,6 +58,7 @@ public:
     std::shared_ptr<RooAbsCollection> fGlobs;
 
     RooLinkedList fOpts;
+    std::shared_ptr<ROOT::Fit::FitConfig> fFitConfig;
 
     std::shared_ptr<RooAbsCollection> fFuncVars;
     std::shared_ptr<RooAbsCollection> fConstVars;
