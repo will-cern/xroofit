@@ -46,6 +46,9 @@ public:
     std::shared_ptr<RooAbsPdf> pdf() const { return fPdf; }
     RooAbsData* data() const; // returns the data hidden inside the NLLVar if there is some
 
+    // get the Nll value for a specific entry.
+    // total nll should be all these values + constraint term + extended term
+    double getEntryVal(size_t entry);
 
     RooNLLVar* nllTerm() const;
     RooConstraintSum* constraintTerm() const;

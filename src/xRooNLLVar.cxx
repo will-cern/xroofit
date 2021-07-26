@@ -220,6 +220,15 @@ std::pair<double,double> xRooNLLVar::sigma_mu(const char* parName, double value,
 
 }
 
+double xRooNLLVar::getEntryVal(size_t entry) {
+    auto _data = data();
+    if (!_data) return 0;
+    if (_data->numEntries()<=entry) return 0;
+    auto _pdf = pdf();
+    *std::unique_ptr<RooAbsCollection>(_pdf->getObservables(_data)) = *_data->get(entry);
+    return -_data->weight()*_pdf->getLogVal(_data->get());
+}
+
 Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& _data) {
 
     if (fGlobs) {
