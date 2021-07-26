@@ -31,6 +31,7 @@ public:
 
     static std::shared_ptr<RooFitResult> fitTo(RooAbsPdf& pdf, std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>);
 
+    static xRooNLLVar createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts);
     static xRooNLLVar createNLL(RooAbsPdf& pdf, RooAbsData* data, const RooLinkedList& nllOpts);
     static xRooNLLVar createNLL(RooAbsPdf& pdf, RooAbsData* data, const RooCmdArg & 	arg1 = RooCmdArg::none(),
                                  const RooCmdArg & 	arg2 = RooCmdArg::none(),

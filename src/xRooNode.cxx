@@ -3142,17 +3142,25 @@ const char* xRooNode::GetRange() const {
 xRooNLLVar xRooNode::createNLL(const char* datasetName) const {
 
     auto _pdf = get<RooAbsPdf>();
-    auto data = datasets()[datasetName];
-    auto _globs = data->globs(); // keep alive because may own the globs
+    auto _data = strlen(datasetName) ? datasets().find(datasetName) : nullptr;
+    if (!_data) {
+        // create a dummy dataset with the observables
+        RooArgSet _obs; _obs.add(obs().argList());
+        _obs.remove(*std::unique_ptr<RooAbsCollection>(_obs.selectByAttrib("global",true)));
+        _data = std::make_shared<xRooNode>(std::make_shared<RooDataSet>("dummy","dummy",_obs),*this);
+    }
+    auto _globs = _data->globs(); // keep alive because may own the globs
 
     RooLinkedList l;
-    l.Add(RooFit::GlobalObservables(_globs.argList()).Clone());
+    RooArgSet _globsSet(_globs.argList());
+    l.Add(RooFit::GlobalObservables(_globsSet).Clone());
     if (GetRange()) {
         l.Add(RooFit::Range(GetRange()).Clone());
     }
     l.Add(RooFit::Offset(true).Clone());
 
-    auto out = xRooFit::createNLL(*_pdf,data->get<RooAbsData>(),l);
+    // use shared_ptr method so NLLVar will take ownership of datasets etc if created above
+    auto out = xRooFit::createNLL(std::dynamic_pointer_cast<RooAbsPdf>(fComp),std::dynamic_pointer_cast<RooAbsData>(_data->fComp),l);
     l.Delete();
     return out;
 
@@ -3953,6 +3961,7 @@ void xRooNode::Draw(Option_t* opt) {
 
     PadRefresher padRefresh(!hasSame ? gPad : nullptr);
 
+    // TODO: Figure out way to adjust range for error hist so show at least 3x smallest error
     auto adjustYRange = [&](double min, double max, TH1* hh = nullptr, bool symmetrize=false) {
         if (!hh) hh = hAxis;
         // give max and min a buffer ...
@@ -3967,6 +3976,17 @@ void xRooNode::Draw(Option_t* opt) {
                 else if (ymin < 0) ymin -= gStyle->GetHistTopMargin() * (ymax - ymin);
                 else ymin = std::max(ymin*0.9,ymin - gStyle->GetHistTopMargin() * (ymax - ymin));
                 // see TGLPlotPainter to complete the mimic, but we leave off here truncating @ 0 if ymax>0
+            }
+            // make ymax at least 3x bigger than biggest error if has error
+            if (hh->GetSumw2()) {
+                double smallestErrDown3 = -std::numeric_limits<double>::infinity();
+                double smallestErrUp3 = std::numeric_limits<double>::infinity();
+                for(int i=1;i<=hh->GetNbinsX();i++) {
+                    smallestErrDown3 = std::max(smallestErrDown3,hh->GetBinContent(i)-3*hh->GetBinError(i));
+                    smallestErrUp3 = std::min(smallestErrUp3,hh->GetBinContent(i)+3*hh->GetBinError(i));
+                }
+                max = std::max(max,smallestErrUp3);
+                min = std::min(min,smallestErrDown3);
             }
             bool change = false;
             if (min < ymin) { ymin= min; change=true; }
@@ -4376,6 +4396,7 @@ void xRooNode::Draw(Option_t* opt) {
             if( auto h = dynamic_cast<TH1*>( _pad->GetPrimitive("ratio") ); h) {
                 if(auto mainHist = dynamic_cast<TH1*>( gPad->GetPrimitive(h->GetTitle()) ); mainHist) {
                     auto ratioGraph = dynamic_cast<TGraphAsymmErrors*>(dataGraph->Clone(dataGraph->GetName()));
+
                     for(int i=0;i<ratioGraph->GetN();i++) {
                         ratioGraph->SetPointY(i,ratioGraph->GetPointY(i)/mainHist->GetBinContent(i+1));
                         ratioGraph->SetPointEYhigh(i,ratioGraph->GetErrorYhigh(i)/mainHist->GetBinContent(i+1));

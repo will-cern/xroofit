@@ -19,18 +19,20 @@
 
 
 xRooNLLVar::~xRooNLLVar() {
-    fOpts.Delete(); // should delete all members too
+
 }
 
 xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_ptr<RooAbsData>& data, const RooLinkedList& opts) :
     fPdf(pdf), fData(data) {
 
+    fOpts = std::shared_ptr<RooLinkedList>(new RooLinkedList,[](RooLinkedList* l) { if(l) l->Delete(); delete l; } );
+
     for(int i=0; i< opts.GetSize(); i++) {
-        fOpts.Add( opts.At(i)->Clone(opts.At(i)->GetName()) );
+        fOpts->Add( opts.At(i)->Clone(nullptr) ); //nullptr needed because accessing Clone via TObject base class puts "" instead, so doesnt copy names
     }
 
     // if fit range specified, and pdf is a RooSimultaneous, may need to 'reduce' the model if some of the pdfs are in range and others are not
-    if (auto range = dynamic_cast<RooCmdArg*>(fOpts.find("RangeWithName"))) {
+    if (auto range = dynamic_cast<RooCmdArg*>(fOpts->find("RangeWithName"))) {
         TString rangeName = range->getString(0);
 
         // reduce the data here for convenience, not really necessary because will happen inside RooNLLVar but still
@@ -55,7 +57,7 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_
                 // otherwise RooFit will incorrectly evaluate the NLL (it creates a partition for each range given in the list, which all end up being equal)
                 // the NLL would become scaled by the number of ranges given
                 if (noneCatRanges.empty()) {
-                    fOpts.Remove(range);
+                    fOpts->Remove(range);
                     SafeDelete(range);
                 } else {
                     range->setString(0,noneCatRanges.c_str());
@@ -83,13 +85,12 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_
         }
     }
 
-    if (auto globs = dynamic_cast<RooCmdArg*>(fOpts.find("GlobalObservables"))) {
+    if (auto globs = dynamic_cast<RooCmdArg*>(fOpts->find("GlobalObservables"))) {
         // first remove any obs the pdf doesnt depend on
         auto _vars = std::unique_ptr<RooAbsCollection>( fPdf->getVariables() );
-        auto _funcGlobs = _vars->selectCommon(*globs->getSet(0));
-        auto _specGlobs = const_cast<RooArgSet*>(globs->getSet(0));
+        auto _funcGlobs = std::unique_ptr<RooAbsCollection>(_vars->selectCommon(*globs->getSet(0)));
         fGlobs.reset( std::unique_ptr<RooAbsCollection>(globs->getSet(0)->selectCommon(*_funcGlobs))->snapshot() );
-        _specGlobs->removeAll(); _specGlobs->add(*_funcGlobs);
+        globs->setSet(0,dynamic_cast<RooArgSet&>(*fGlobs)); // use fGlobs because will stay alive as long as the linked list
         /*RooArgSet toRemove;
         for(auto a : *globs->getSet(0)) {
             if (!_vars->find(*a)) toRemove.add(*a);
@@ -123,7 +124,7 @@ private:
 void xRooNLLVar::reinitialize() {
     {
         cout_redirect c(fFuncCreationLog);
-        this->reset( fPdf->createNLL(*fData,fOpts) );
+        this->reset( fPdf->createNLL(*fData,*fOpts) );
     }
 
     fFuncVars.reset( std::shared_ptr<RooAbsReal>::get()->getVariables() );
