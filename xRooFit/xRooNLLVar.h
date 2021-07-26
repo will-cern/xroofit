@@ -39,8 +39,8 @@ public:
     void SetFitConfig(const std::shared_ptr<ROOT::Fit::FitConfig>& in) { fFitConfig = in; }
     std::shared_ptr<ROOT::Fit::FitConfig> fitConfig(); // returns fit config, or creates a default one if not existing
 
-    double pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::TwoSided);
-    double sigma_mu(const char* parName, double value, double prime_value);
+    std::pair<double,double> pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::TwoSided);
+    std::pair<double,double> sigma_mu(const char* parName, double value, double prime_value);
 
     std::shared_ptr<RooAbsReal> func() const; // will assign globs when called
     std::shared_ptr<RooAbsPdf> pdf() const { return fPdf; }

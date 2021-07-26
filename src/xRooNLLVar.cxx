@@ -158,7 +158,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooNLLVar::fitConfig() {
     return fFitConfig;
 }
 
-double xRooNLLVar::pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType) {
+std::pair<double,double> xRooNLLVar::pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType) {
     // start by floating everything and consting all the const vars
     if (!fFuncVars) {
         reinitialize();
@@ -167,25 +167,29 @@ double xRooNLLVar::pll(const char* parName, double value, const xRooFit::Asympto
         fConstVars->setAttribAll("Constant",true);
     }
 
-    AutoRestorer snap(*fFuncVars);
-
     auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
-    if (!poi) return std::numeric_limits<double>::quiet_NaN();
+    if (!poi) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+
+    AutoRestorer snap(*fFuncVars);
 
     poi->setConstant(false);
     auto ufit = minimize();
-    if (ufit->status() != 0) return std::numeric_limits<double>::quiet_NaN();
+    if (ufit->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
     auto cFactor = xRooFit::Asymptotics::CompatFactor(pllType, value, static_cast<RooAbsReal*>(ufit->floatParsFinal().find(parName))->getVal());
-    if (cFactor == 0) return 0;
+    if (cFactor == 0) return std::make_pair(0,0);
+
 
     poi->setConstant(true); poi->setVal(value);
     auto cfit = minimize();
-    if (cfit->status() != 0) return std::numeric_limits<double>::quiet_NaN();
+    if (cfit->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);;
 
-    return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
+    //std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
+
+    return std::make_pair(2.*cFactor*(cfit->minNll()-ufit->minNll()),2.*cFactor*sqrt(pow(cfit->edm(),2)+pow(ufit->edm(),2)));
+    //return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
 }
 
-double xRooNLLVar::sigma_mu(const char* parName, double value, double prime_value) {
+std::pair<double,double> xRooNLLVar::sigma_mu(const char* parName, double value, double prime_value) {
     // this estimate involves:
     // 1. fit @ prime_value
     // 2. get expected data
@@ -199,18 +203,20 @@ double xRooNLLVar::sigma_mu(const char* parName, double value, double prime_valu
         fConstVars->setAttribAll("Constant",true);
     }
     auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
-    if (!poi) return std::numeric_limits<double>::quiet_NaN();
+    if (!poi) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+
+    AutoRestorer _snap(*fFuncVars);
 
     poi->setConstant(true); poi->setVal(prime_value);
     auto cfit_prime = minimize();
-    if (cfit_prime->status () != 0) return std::numeric_limits<double>::quiet_NaN();
+    if (cfit_prime->status () != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
 
     auto oldData = std::make_pair(fData,(fGlobs) ? std::shared_ptr<RooAbsCollection>(fGlobs->snapshot()) : nullptr);
 
     setData(generate(true));
     auto out = pll(parName,value);
     setData(oldData);
-    return std::abs(value - prime_value)/sqrt(out);
+    return std::make_pair(std::abs(value - prime_value)/sqrt(out.first), out.second*0.5*std::abs(value - prime_value)/(out.first*sqrt(out.first)));
 
 }
 
