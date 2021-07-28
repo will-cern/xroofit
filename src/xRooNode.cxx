@@ -3913,6 +3913,7 @@ void xRooNode::Draw(Option_t* opt) {
     TString sOpt(opt);
     sOpt.ToLower();
     bool hasRatio = sOpt.Contains("ratio"); sOpt.ReplaceAll("ratio","");
+    bool hasSignificance = sOpt.Contains("significance"); sOpt.ReplaceAll("significance","");
     bool hasSame = sOpt.Contains("same"); sOpt.ReplaceAll("same","");
     bool hasOverlay = sOpt.Contains("overlay");
     TString overlayName = "";
@@ -3923,6 +3924,7 @@ void xRooNode::Draw(Option_t* opt) {
     }
     bool hasFR = sOpt.Contains("pull"); sOpt.ReplaceAll("pull","");
     bool hasErrorOpt = sOpt.Contains("e"); sOpt.ReplaceAll("e","");
+    if (hasSignificance) hasErrorOpt = true; // must calculate error to calculate significance
 
 
     TVirtualPad *pad = gPad;
@@ -4392,63 +4394,66 @@ void xRooNode::Draw(Option_t* opt) {
             }
         }
 
-        if (auto _pad = dynamic_cast<TPad*>(gPad->FindObject("ratioPad")); _pad) {
-            if( auto h = dynamic_cast<TH1*>( _pad->GetPrimitive("ratio") ); h) {
+        if (auto _pad = dynamic_cast<TPad*>(gPad->FindObject("auxPad")); _pad) {
+            if( auto h = dynamic_cast<TH1*>( _pad->GetPrimitive("auxHist") ); h) {
                 if(auto mainHist = dynamic_cast<TH1*>( gPad->GetPrimitive(h->GetTitle()) ); mainHist) {
-                    auto ratioGraph = dynamic_cast<TGraphAsymmErrors*>(dataGraph->Clone(dataGraph->GetName()));
+                    // decide what to do based on name of auxHist y-axis
+                    if (strcmp(h->GetYaxis()->GetName(),"ratio")==0) {
+                        auto ratioGraph = dynamic_cast<TGraphAsymmErrors*>(dataGraph->Clone(dataGraph->GetName()));
 
-                    for(int i=0;i<ratioGraph->GetN();i++) {
-                        ratioGraph->SetPointY(i,ratioGraph->GetPointY(i)/mainHist->GetBinContent(i+1));
-                        ratioGraph->SetPointEYhigh(i,ratioGraph->GetErrorYhigh(i)/mainHist->GetBinContent(i+1));
-                        ratioGraph->SetPointEYlow(i,ratioGraph->GetErrorYlow(i)/mainHist->GetBinContent(i+1));
+                        for(int i=0;i<ratioGraph->GetN();i++) {
+                            ratioGraph->SetPointY(i,ratioGraph->GetPointY(i)/mainHist->GetBinContent(i+1));
+                            ratioGraph->SetPointEYhigh(i,ratioGraph->GetErrorYhigh(i)/mainHist->GetBinContent(i+1));
+                            ratioGraph->SetPointEYlow(i,ratioGraph->GetErrorYlow(i)/mainHist->GetBinContent(i+1));
+                        }
+                        auto _tmpPad = gPad;
+                        _pad->cd();
+                        ratioGraph->Draw("z0psame");
+                        auto minMax = graphMinMax(ratioGraph);
+                        adjustYRange(minMax.first,minMax.second,h,true);
+                        _tmpPad->cd();
+                    } else if (strcmp(h->GetYaxis()->GetName(),"significance")==0) {
+                        auto signif = [](double n, double b, double sigma) {
+                            double t0 = 0;
+                            if(sigma<=0.) {
+                                //use simplified expression ...
+                                t0 = 2.*( ((n==0)?0:n*log(n/b)) - (n-b) );
+                            } else {
+                                double sigma2 = sigma*sigma;
+                                double b_hathat = 0.5*( b - sigma2 + sqrt( pow(b-sigma2,2) + 4*n*sigma2 ) );
+                                //double s_hat = n - m;
+                                //double b_hat = m;
+                                t0 = 2.*( ((n==0)?0:n*log(n/b_hathat)) + b_hathat - n + pow(b-b_hathat,2)/(2.*sigma2) );
+                            }
+                            return (n>=b) ? sqrt(t0) : -sqrt(t0);
+                        };
+                        auto hist = dynamic_cast<TH1*>( mainHist->Clone(dataGraph->GetName()) );
+                        hist->SetDirectory(0);
+                        for(int i=1;i<=mainHist->GetNbinsX();i++) {
+                            double dataYield = 0;
+                            // find the points in the data graph
+                            for(int j=0;j<dataGraph->GetN();j++) {
+                                if (dataGraph->GetPointX(j) >= mainHist->GetBinLowEdge(i) && dataGraph->GetPointX(j) < mainHist->GetBinLowEdge(i+1)) {
+                                    dataYield += dataGraph->GetPointY(j);
+                                }
+                            }
+                            hist->SetBinContent(i,signif(dataYield,mainHist->GetBinContent(i),mainHist->GetBinError(i)));
+                        }
+                        hist->SetBit(kCanDelete); // will be be deleted when pad is cleared
+                        hist->SetLineWidth(2); hist->SetFillStyle(0);
+
+                        auto _tmpPad = gPad;
+                        _pad->cd();
+                        hist->Draw("hist same");
+                        adjustYRange(hist->GetMinimum(),hist->GetMaximum(),h,true);
+                        _tmpPad->cd();
                     }
-                    auto _tmpPad = gPad;
-                    _pad->cd();
-                    ratioGraph->Draw("z0psame");
-                    auto minMax = graphMinMax(ratioGraph);
-                    adjustYRange(minMax.first,minMax.second,h,true);
-                    _tmpPad->cd();
                 }
             }
         }
 
-        if(strcmp(gPad->GetName(),"Significance")==0) {
-            auto signif = [](double n, double b, double sigma) {
-                double t0 = 0;
-                if(sigma<=0.) {
-                    //use simplified expression ...
-                    t0 = 2.*( ((n==0)?0:n*log(n/b)) - (n-b) );
-                } else {
-                    double sigma2 = sigma*sigma;
-                    double b_hathat = 0.5*( b - sigma2 + sqrt( pow(b-sigma2,2) + 4*n*sigma2 ) );
-                    //double s_hat = n - m;
-                    //double b_hat = m;
-                    t0 = 2.*( ((n==0)?0:n*log(n/b_hathat)) + b_hathat - n + pow(b-b_hathat,2)/(2.*sigma2) );
-                }
-                return (n>=b) ? sqrt(t0) : -sqrt(t0);
-            };
 
-            // drawing significance not events -- need to get the expected events ...
-            /*
-            auto predHist = dynamic_cast<TH1*>(dynamic_cast<TVirtualPad*>(gPad->GetMother()->GetPrimitive("Events"))->GetPrimitive(h->GetName()));
-            if (!predHist) {
-                Error("Draw","Cannot plot significance because cannot find events histogram for %s",h->GetName());
-                return;
-            } else {
-                for(int i=0;i<theHist->GetNbinsX();i++) {
-                    dataGraph->SetPoint(i, dataGraph->GetPointX(i), signif(dataGraph->GetPointY(i),predHist->GetBinContent(i+1),predHist->GetBinError(i+1)));
-                    dataGraph->SetPointError(i,0,0,0,0);
-                    theHist->SetBinContent(i+1,dataGraph->GetPointY(i));
-                }
-                theHist->SetBit(kCanDelete); // will be be deleted when pad is cleared
-                theHist->SetLineWidth(2);
-                theHist->Draw("hist same");
-            }
-             */
-        } else {
-            dataGraph->Draw("z0p same");
-        }
-
+        dataGraph->Draw("z0p same");
         addLegendEntry((noPoint) ? nullptr : dataGraph,strlen(dataGraph->GetTitle()) ? dataGraph->GetTitle() : GetName(),noPoint?"":"pEX0");
 
         auto minMax = graphMinMax(dynamic_cast<TGraphAsymmErrors*>(dataGraph));
@@ -4622,27 +4627,33 @@ void xRooNode::Draw(Option_t* opt) {
     }
 
 
-    if (hasRatio) {
+    if ((hasRatio||hasSignificance) && !hasSame) {
         // create a pad for the ratio ... shift the bottom margin of this pad to make space for it
         double padFrac = 0.3;
         auto _tmpPad = gPad;
         gPad->SetBottomMargin(padFrac);
-        auto ratioPad = new TPad("ratioPad","ratioPad",0,0,1,padFrac);
+        auto ratioPad = new TPad("auxPad","aux plot",0,0,1,padFrac);
         ratioPad->SetNumber(1);
         ratioPad->SetBottomMargin(ratioPad->GetBottomMargin()*(1.-padFrac)/padFrac);
         ratioPad->SetTopMargin(0.04);
         ratioPad->SetLeftMargin(gPad->GetLeftMargin());ratioPad->SetRightMargin(gPad->GetRightMargin());
         ratioPad->cd();
-        TH1* ratioHist = dynamic_cast<TH1*>( (errHist) ? errHist->Clone("ratio") : h->Clone("ratio") );
+        TH1* ratioHist = dynamic_cast<TH1*>( (errHist) ? errHist->Clone("auxHist") : h->Clone("auxHist") );
         ratioHist->SetTitle((errHist) ? errHist->GetName() : h->GetName()); // abuse the title string to hold the name of the main hist
-        for(int i = 1; i<=ratioHist->GetNbinsX();i++) {
-            ratioHist->SetBinError(i,ratioHist->GetBinError(i)/ratioHist->GetBinContent(i));
-            ratioHist->SetBinContent(i,1);
+        if (hasSignificance) {
+            ratioHist->Reset();
+        } else {
+            for (int i = 1; i <= ratioHist->GetNbinsX(); i++) {
+                ratioHist->SetBinError(i, ratioHist->GetBinError(i) / ratioHist->GetBinContent(i));
+                ratioHist->SetBinContent(i, 1);
+            }
         }
         //ratioHist->SetMaximum(2);ratioHist->SetMinimum(0);
         ratioHist->GetYaxis()->SetNdivisions(5,0,0);
-        ratioHist->GetYaxis()->SetTitle("Ratio");
-        ratioHist->SetMaximum();ratioHist->SetMinimum(); // resets min and max
+        ratioHist->GetYaxis()->SetTitle(hasSignificance ? "Signif" : "Ratio");
+        ratioHist->GetYaxis()->SetName(hasSignificance ? "significance" : "ratio"); // used when plotting data (above) to decide what to calculate
+        if (hasSignificance) { ratioHist->SetMaximum(4); ratioHist->SetMinimum(-4); ratioPad->SetGridy(); }
+        else { ratioHist->SetMaximum();ratioHist->SetMinimum(); } // resets min and max
 
 
         double rHeight = (1. - (gPad->GetHNDC()))/(gPad->GetHNDC());
@@ -4659,17 +4670,17 @@ void xRooNode::Draw(Option_t* opt) {
         ratioHist->GetXaxis()->SetTickLength(ratioHist->GetXaxis()->GetTickLength() * rHeight);
         ratioHist->SetStats(false);ratioHist->SetBit(TH1::kNoTitle);ratioHist->SetBit(kCanDelete);
         ratioHist->Draw((errHist ? "e2" : ""));
-        if (errHist) {
-            auto _h = dynamic_cast<TH1*>(ratioHist->Clone("ratio_line"));
+        if (errHist && hasRatio) {
+            auto _h = dynamic_cast<TH1*>(ratioHist->Clone("auxHist_clone"));
             _h->SetFillColor(0);
             _h->Draw("histsame");
         }
         _tmpPad->cd();
         ratioPad->Draw();
-    } else if(auto ratioPad = dynamic_cast<TPad*>(gPad->GetPrimitive("ratioPad")); hasSame && ratioPad) {
+    } else if(auto ratioPad = dynamic_cast<TPad*>(gPad->GetPrimitive("auxPad")); hasSame && ratioPad) {
         // need to draw histogram in the ratio pad ...
         // if doing overlay need to update histogram
-        if(auto hr = dynamic_cast<TH1*>( ratioPad->GetPrimitive("ratio") ); hr) {
+        if(auto hr = dynamic_cast<TH1*>( ratioPad->GetPrimitive("auxHist") ); hr) {
             if (auto hnom = dynamic_cast<TH1 *>(gPad->GetPrimitive(hr->GetTitle())); hnom) {
                 h = dynamic_cast<TH1 *>(h->Clone(h->GetName()));
                 for (int i = 1; i <= hnom->GetNbinsX(); i++) {
