@@ -2327,7 +2327,7 @@ std::shared_ptr<xRooNode> xRooNode::at(const std::string& name, bool browseResul
         }
         if (auto x = mainChild(); x && strcmp(child->GetName(),x.GetName())==0) {
             // can browse directly into main children as if their children were our children
-            for(auto& child2 : mainChild().browse()) {
+            for(auto& child2 : x.browse()) {
                 if (auto _obj = child2->get(); name==child2->GetName() || partname==child2->GetName() || (_obj && name==_obj->GetName()) || (_obj && partname==_obj->GetName())) {
                     if(browseResult) child2->browse(); // needed for onward read (or is it? there's a browse above too??)
                     if (partname != name && name!=child2->GetName()) {
@@ -2951,8 +2951,7 @@ xRooNode xRooNode::datasets() const {
             auto _obs = obs().argList();
             _obs.add( coords().argList() ); // include coord observables too
             xRooNode _wsNode(*_ws,*this);
-            auto _dsets = _wsNode.datasets();
-            for(auto& d : _dsets) {
+            for(auto& d : _wsNode.datasets()) {
                 if (std::unique_ptr<RooAbsCollection>(d->obs().argList().selectCommon(_obs))->size() == _obs.size()) {
                     // all obs present .. include
                     out.emplace_back(std::make_shared<xRooNode>(d->fComp, *this));
