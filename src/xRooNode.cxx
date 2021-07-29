@@ -649,6 +649,9 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
     } else if(strcmp(GetName(),".datasets")==0) {
         // create a dataset - only allowed for pdfs or workspaces
         if (auto _ws = ws(); _ws && fParent) {
+            if (!fParent->get()) {
+                // empty parent ... try creating
+            }
             if (!fParent->get<RooAbsPdf>() && !fParent->get<RooWorkspace>()) {
                 throw std::runtime_error("Datasets can only be created for pdfs or workspaces");
             }
@@ -1027,7 +1030,7 @@ void xRooNode::Print(Option_t *opt) const {
     if (sOpt!="") _more = true;
     if (get() && get()!=this) {
         std::cout << ": ";
-        if (_more) get()->Print(sOpt);
+        if (_more || (get<RooAbsArg>() && get<RooAbsArg>()->isFundamental())) get()->Print(sOpt);
         else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
     } else if(!get()) {
         std::cout << std::endl;
@@ -2947,7 +2950,9 @@ xRooNode xRooNode::datasets() const {
             // only add datasets that have observables that cover all our observables
             auto _obs = obs().argList();
             _obs.add( coords().argList() ); // include coord observables too
-            for(auto& d : xRooNode(*_ws,*this).datasets()) {
+            xRooNode _wsNode(*_ws,*this);
+            auto _dsets = _wsNode.datasets();
+            for(auto& d : _dsets) {
                 if (std::unique_ptr<RooAbsCollection>(d->obs().argList().selectCommon(_obs))->size() == _obs.size()) {
                     // all obs present .. include
                     out.emplace_back(std::make_shared<xRooNode>(d->fComp, *this));
