@@ -31,6 +31,7 @@ public:
 
     void reinitialize();
 
+    std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> getData() const; // returns pointer to data and snapshot of globs
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generate(bool expected=false,int seed=0);
     //std::shared_ptr<const RooFitResult> snapshot();
 

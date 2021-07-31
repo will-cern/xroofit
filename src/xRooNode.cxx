@@ -1200,7 +1200,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             return Multiply(xRooNode(o,child.fParent));
         } else if (sOpt=="norm") {
             return Multiply(RooRealVar(child.GetName(),child.GetTitle(),1,0,100));
-        } else if (sOpt=="shape") {
+        } else if (sOpt=="shape" || sOpt=="histo") {
             // needs axis defined
             if (auto ax = GetXaxis(); ax) {
                 auto h = BuildHistogram(dynamic_cast<RooAbsLValue*>(ax->GetParent()),true);
@@ -1211,13 +1211,14 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                 h->SetMinimum(0);h->SetMaximum(100);
                 h->SetName(TString::Format(";%s",child.GetName())); // ; char indicates don't "rename" this thing
                 h->SetTitle(child.GetTitle());
-                h->SetOption("shape");
+                if(sOpt=="shape") h->SetOption("shape");
                 auto out = Multiply(*h);
                 delete h;
                 return out;
             }
+        } else if (sOpt=="overall") {
+            return Multiply(acquire<RooStats::HistFactory::FlexibleInterpVar>(child.GetName(),child.GetTitle(),RooArgList(),1,std::vector<double>(),std::vector<double>()));
         }
-
     }
     if(auto p = get<RooProduct>();p) {
         std::shared_ptr<TObject> out;
@@ -1399,10 +1400,10 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
         // child needs to be a constvar ...
         child.convertForAcquisition(*this);
         auto _c = child.get<RooConstVar>();
-        if (!_c) {
+        if (!_c && child.get()) {
             throw std::runtime_error("Only pure consts can be set as variations of a flexible interpvar");
         }
-        double value = _c->getVal();
+        double value = (_c ? _c->getVal() : p->_nominal);
 
         TString cName(child.GetName());
         if(cName.CountChar('=')!=1) {
@@ -1448,6 +1449,7 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
                 fParent->pars()[v->GetName()].constraints().add("normal");
             }*/
         }
+        return *(this->variations().at(cName.Data()));
     } else if(auto p = get<PiecewiseInterpolation>(); p) {
         TString cName(child.GetName());
         if(cName.CountChar('=')!=1) {
@@ -1844,6 +1846,8 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
 
 
     } else if(auto c = dynamic_cast<RooConstVar*>(o); c) {
+
+
         if (strcmp(c->GetName(),Form("%g",c->getVal()))==0) {
             c->SetNameTitle(Form("%g",value),Form("%g",value));
         }
@@ -1852,6 +1856,11 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
 #else
         c->changeVal(value);
 #endif
+        // if parent is a FlexibleInterpVar, change the value in that .
+        if (fParent->get<RooStats::HistFactory::FlexibleInterpVar>()) {
+            fParent->Vary(*this);
+        }
+
         sterilize();
         return true;
     } else if (auto f = dynamic_cast<RooHistFunc*>(o); f) {

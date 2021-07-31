@@ -229,6 +229,10 @@ double xRooNLLVar::getEntryVal(size_t entry) {
     return -_data->weight()*_pdf->getLogVal(_data->get());
 }
 
+std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooNLLVar::getData() const {
+    return std::make_pair(fData,std::shared_ptr<const RooAbsCollection>(fGlobs->snapshot()));
+}
+
 Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& _data) {
 
     if (fGlobs) {
