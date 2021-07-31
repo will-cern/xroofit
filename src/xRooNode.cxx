@@ -236,7 +236,11 @@ void xRooNode::Browse(TBrowser* b) {
 
     browse();
     if (empty()) {
-        Draw(b->GetDrawOption());
+        try {
+            Draw(b->GetDrawOption());
+        } catch(const std::exception& e) {
+            new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
+        }
     }
 
     bool hasFolders = false;
@@ -278,8 +282,9 @@ void xRooNode::Browse(TBrowser* b) {
         TString _name = v->GetName();
         if (v->get() && !v->get<TFile>()) _name = TString::Format("%s::%s",v->get()->ClassName(),_name.Data());
         if (auto _type = v->GetNodeType(); strlen(_type)) {
-            if (TString(_type)=="Const") _name += TString::Format(" [%s=%g]",_type,v->get<RooConstVar>()->getVal());
-            else _name += TString::Format(" [%s]",_type);
+            // decided not to show const values until figure out how to update if value changes
+            /*if (TString(_type)=="Const") _name += TString::Format(" [%s=%g]",_type,v->get<RooConstVar>()->getVal());
+            else*/ _name += TString::Format(" [%s]",_type);
         }
         // tool tip defaults to displaying name and title, so temporarily set name to obj name if has one
         // and set title to the object type
@@ -649,28 +654,41 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
     } else if(strcmp(GetName(),".datasets")==0) {
         // create a dataset - only allowed for pdfs or workspaces
         if (auto _ws = ws(); _ws && fParent) {
-            if (!fParent->get()) {
-                // empty parent ... try creating
-            }
             if (!fParent->get<RooAbsPdf>() && !fParent->get<RooWorkspace>()) {
                 throw std::runtime_error("Datasets can only be created for pdfs or workspaces");
             }
-            auto _obs = fParent->obs().argList();
-            // put globs in a snapshot
-            std::unique_ptr<RooAbsCollection> _globs(_obs.selectByAttrib("global",true));
-            //RooArgSet _tmp; _tmp.add(*_globs);_ws->saveSnapshot(child.GetName(),_tmp);
-            _obs.remove(*_globs);
-            RooRealVar w("weightVar","weightVar",1);
-            //_obs.add(*acquire<RooRealVar>("weightVar","weightVar",1));
-            _obs.add(w);
-            // include any coords
-            _obs.add( coords().argList(), true );
-            // include axis var too, provided it's an observable
-            if (auto ax = GetXaxis(); ax && dynamic_cast<RooAbsArg*>(ax->GetParent())->getAttribute("obs")) {
-                _obs.add(*dynamic_cast<RooAbsArg*>(ax->GetParent()));
+//            auto _obs = fParent->obs().argList();
+//            // put globs in a snapshot
+//            std::unique_ptr<RooAbsCollection> _globs(_obs.selectByAttrib("global",true));
+//            //RooArgSet _tmp; _tmp.add(*_globs);_ws->saveSnapshot(child.GetName(),_tmp);
+//            _obs.remove(*_globs);
+//
+//            // include any coords
+//            _obs.add( coords().argList(), true );
+//            // include axis var too, provided it's an observable
+//            if (auto ax = GetXaxis(); ax && dynamic_cast<RooAbsArg*>(ax->GetParent())->getAttribute("obs")) {
+//                _obs.add(*dynamic_cast<RooAbsArg*>(ax->GetParent()));
+//            }
+//            // check if ws already has a dataset with this name, if it does we may need to extend columns
+//            if (auto _d = _ws->data(child.GetName()); _d) {
+//                _obs.remove(*_d->get(),true,true);
+//                if (!_obs.empty()) {
+//                    auto _ds = dynamic_cast<RooDataSet *>(_d);
+//                    if (!_ds) throw std::runtime_error("Cannot extend data with new observables");
+//                    _ds->addColumns(_obs);
+//                }
+//            } else {
+//                RooRealVar w("weightVar", "weightVar", 1);
+//                _obs.add(w);
+//                RooDataSet d(child.GetName(), child.GetTitle(), _obs, "weightVar");
+//                _ws->import(d);
+//            }
+            if(!_ws->data(child.GetName())) {
+                RooRealVar w("weightVar", "weightVar", 1);
+                RooArgSet _obs; _obs.add(w);
+                RooDataSet d(child.GetName(), child.GetTitle(), _obs, "weightVar");
+                _ws->import(d);
             }
-            RooDataSet d(child.GetName(),child.GetTitle(),_obs,"weightVar");
-            _ws->import(d);
             auto out = std::shared_ptr<TObject>(_ws->data(child.GetName()),[](TObject*){});
 
             if(out) {
@@ -713,6 +731,18 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
         RooArgSet obs;
         obs.add(*dynamic_cast<RooAbsArg*>(_ax->GetParent()));
         obs.add(coords().argList()); // will also move obs to coords
+
+        // add any missing obs
+        RooArgSet l(obs);
+        l.remove(*p->get(),true,true);
+        if (!l.empty()) {
+            auto _d = dynamic_cast<RooDataSet*>(p);
+            if (!_d) throw std::runtime_error("Cannot extend dataset with new columns");
+            for(auto& x : l) {
+                _d->addColumn(*x);
+            }
+        }
+
         for(int i=1;i<=_h->GetNbinsX();i++) {
             dynamic_cast<RooAbsRealLValue *>(_ax->GetParent())->setVal(_h->GetBinCenter(i));
             p->add(obs,_h->GetBinContent(i));
@@ -813,8 +843,8 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
         }
     } else if(auto p = get<RooProdPdf>(); p) {
         // can "add" to a RooProdPdf provided trying to add a RooAbsReal not a RooAbsPdf and have a zero or 1 RooRealSumPdf
-        child.convertForAcquisition(*this);
-        if ((child.get<RooAbsReal>() || (!child.get() && getObject<RooAbsReal>(child.GetName()))) && !child.get<RooAbsPdf>()) {
+        // child.convertForAcquisition(*this); - don't convert here because want generated objects named after roorealsumpdf
+        if ((child.get<TH1>() || child.get<RooAbsReal>() || (!child.get() && getObject<RooAbsReal>(child.GetName()))) && !child.get<RooAbsPdf>()) {
             RooRealSumPdf* _pdf = nullptr; bool tooMany(false);
             for(auto& pp : factors()) {
                 if (auto _p = pp->get<RooRealSumPdf>(); _p) {
@@ -829,6 +859,15 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                 return this->operator[]("samples")->Add(child);
             }
         }
+    } else if(auto s = get<RooSimultaneous>(); s) {
+
+        // adding to a simultaneous means adding a variation
+        return variations().Add(child);
+
+        // if the child is a RooAbsPdf can just add it as a new channel using name of pdf as the channel name
+        // if child is a histogram, will create a RooProdPdf
+
+
     } else if (auto p = get<RooWorkspace>(); p) {
         child.convertForAcquisition(*this);
         if (child.get()) {
@@ -1040,7 +1079,7 @@ void xRooNode::Print(Option_t *opt) const {
     for (auto &k : *this) {
         std::cout << i++ << ") " << k->GetName() << " : ";
         if(k->get()){
-            if (_more) k->get()->Print(opt);
+            if (_more || (k->get<RooAbsArg>() && k->get<RooAbsArg>()->isFundamental())) k->get()->Print(opt);
             else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
         }
         else std::cout << " NULL " << std::endl;
@@ -1094,10 +1133,12 @@ xRooNode xRooNode::Constrain(const xRooNode& child) {
                 globs->setAttribute("obs");globs->setAttribute("global");
                 globs->setStringAttribute("nominal",TString::Format("%f",tau_val));
                 auto tau = acquireNew<RooConstVar>(TString::Format("tau_%s",v->GetName()),"",tau_val);
-                auto constr = acquireNew<RooPoisson>(Form("pois_%s",v->GetName()),TString::Format("Poisson Constraint of %s",globs->GetTitle()) ,*globs,
+                auto constr = acquireNew<RooPoisson>(Form("pois_%s",v->GetName()),TString::Format("Poisson Constraint of %s",v->GetTitle()) ,*globs,
                                                            *acquireNew<RooProduct>(TString::Format("mean_%s",v->GetName()),TString::Format("Poisson Constraint of %s",globs->GetTitle()), RooArgList(*v,*tau )),true /* no rounding */);
 
-                return Constrain(xRooNode(Form("pois_%s",GetName()),constr));
+                auto out = Constrain(xRooNode(Form("pois_%s",GetName()),constr));
+                if (!v->hasError()) v->setError(mean/sqrt(tau_val)); // if v doesnt have an uncert, will put one on it now
+                return out;
             } else if(constrType=="normal") {
 
                 auto globs = acquire<RooRealVar>(Form("globs_%s",v->GetName()),Form("globs_%s",v->GetName()),mean,mean-10*sigma,mean+10*sigma);
@@ -1105,8 +1146,10 @@ xRooNode xRooNode::Constrain(const xRooNode& child) {
                 globs->setConstant();
 
                 globs->setStringAttribute("nominal",TString::Format("%f",mean));
-                auto constr = acquireNew<RooGaussian>(Form("gaus_%s",v->GetName()),TString::Format("Gaussian Constraint of %s",globs->GetTitle()),*globs,*v,*acquireNew<RooConstVar>(TString::Format("sigma_%s",v->GetName()),"",sigma));
-                return Constrain(xRooNode(Form("gaus_%s",GetName()),constr));
+                auto constr = acquireNew<RooGaussian>(Form("gaus_%s",v->GetName()),TString::Format("Gaussian Constraint of %s",v->GetTitle()),*globs,*v,*acquireNew<RooConstVar>(TString::Format("sigma_%s",v->GetName()),"",sigma));
+                auto out = Constrain(xRooNode(Form("gaus_%s",GetName()),constr));
+                if (!v->hasError()) v->setError(sigma); // if v doesnt have an uncert, will put one on it now
+                return out;
             }
         }
     } else if(auto p = child.get<RooAbsPdf>(); p) {
@@ -1339,7 +1382,7 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
         }
         std::shared_ptr<TObject> out;
         child.convertForAcquisition(*this);
-        if (child.get<RooAbsPdf>()) out = acquire(child.fComp);
+        if (child.get<RooAbsPdf>()) out = acquire(child.fComp); // may create a channel from a histogram
         else if(!child.fComp) {
             out = acquireNew<RooProdPdf>(TString::Format("%s_%s",s->GetName(),label.c_str()),(strlen(child.GetTitle())) ? child.GetTitle() : label.c_str(),RooArgList());
         }
@@ -1573,7 +1616,7 @@ xRooNode& xRooNode::operator=(const TObject& o) {
         if (_isData) {
             // need to ensure x-axis matches this h
             auto ax = GetXaxis();
-            if (!ax) throw std::runtime_error("no asxis");
+            if (!ax) throw std::runtime_error("no xaxis");
             auto _v = dynamic_cast<RooRealVar *>(ax->GetParent());
             if (_v) {
                 if (h->GetXaxis()->IsVariableBinSize()) {
@@ -1625,6 +1668,8 @@ xRooNode& xRooNode::operator=(const TObject& o) {
      */
 }
 
+#include "RooFormulaVar.h"
+
 bool xRooNode::SetBinContent(int bin, double value, const char* par, double parVal) {
 
     // create if needed
@@ -1649,52 +1694,76 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
 
 
     // if it's a RooProduct locate child with the same name
-    if (get<RooProduct>()) { return factors()[GetName()]->SetBinContent(bin,value); }
+    if (get<RooProduct>()) { return factors()[GetName()]->SetBinContent(bin,value,par,parVal); }
 
     if (get<RooAbsData>()) {
         if (auto _data = get<RooDataSet>(); _data) {
             auto _ax = GetXaxis();
             if (!_ax) { throw std::runtime_error("Cannot determine binning to fill data"); }
-
-            dynamic_cast<RooAbsLValue*>(_ax->GetParent())->setBin(bin-1,_ax->GetName());
+            if (_ax->GetNbins() < bin) throw std::out_of_range(TString::Format("%s range %s only has %d bins",_ax->GetParent()->GetName(),_ax->GetName(),_ax->GetNbins()));
             RooArgSet obs;
-            obs.add(*dynamic_cast<RooAbsArg*>(_ax->GetParent()));
+
             TString cut = "";
-            cut += TString::Format("%s%s >= %f && %s < %f", (cut=="")?"":" && ",_ax->GetParent()->GetName(),
-                                   _ax->GetBinLowEdge(bin), _ax->GetParent()->GetName(),
-                                   _ax->GetBinUpEdge(bin));
 
-            // go up through parents looking for slice obs
-            auto _p = fParent;
-            while(_p) {
-                TString pName(_p->GetName());
-                if (auto pos = pName.Index('='); pos != -1) {
-                    if(auto _obs = _p->getObject<RooAbsLValue>(pName(0,pos)); _obs) {
-                        if(auto _cat = dynamic_cast<RooAbsCategoryLValue*>(_obs.get()); _cat) {
-                            _cat->setLabel(pName(pos+1,pName.Length()));
-                            cut += TString::Format("%s%s==%d", (cut=="")?"":" && ",_cat->GetName(), _cat->getCurrentIndex());
-                        } else if(auto _var = dynamic_cast<RooAbsRealLValue*>(_obs.get()); _var) {
-                            _var->setVal(TString(pName(pos+1,pName.Length())).Atof());
-                            // TODO: Cut for this!!
-                        }
-                        obs.add(*dynamic_cast<RooAbsArg*>(_obs.get()));
-                    } else {
-                        throw std::runtime_error("Unknown observable, could not find");
-                    }
-                }
-                _p = _p->fParent;
-            }
 
-            // remove existing entries
-            if (std::unique_ptr<RooAbsData>(_data->reduce(cut))->numEntries() > 0) {
-                auto _reduced = std::unique_ptr<RooAbsData>(_data->reduce(TString::Format("!(%s)", cut.Data())));
-                _data->reset();
-                for (int j = 0; j < _reduced->numEntries(); j++) {
-                    auto _obs = _reduced->get(j);
-                    _data->add(*_obs, _reduced->weight());
+            for(auto _c : coords()) { // coords() moves vars to their respective coordinates too
+                if (auto _cat = _c->get<RooAbsCategoryLValue>(); _cat) {
+                    if (cut!="") cut += " && ";
+                    cut += TString::Format("%s==%d",_cat->GetName(),_cat->getCurrentIndex());
+                    obs.add(*_cat); // note: if we ever changed coords to return clones, would need to keep coords alive
+                } else {
+                    throw std::runtime_error("SetBinContent of data: Unsupported coordinate type");
                 }
             }
 
+            RooFormulaVar cutFormula("cut1",cut,obs); // doing this to avoid complaints about unused vars
+            RooFormulaVar icutFormula("icut1",TString::Format("!(%s)",cut.Data()),obs);
+
+            TString cut2 = TString::Format("%s >= %f && %s < %f",_ax->GetParent()->GetName(),
+                                           _ax->GetBinLowEdge(bin), _ax->GetParent()->GetName(),
+                                           _ax->GetBinUpEdge(bin));
+            obs.add(*dynamic_cast<RooAbsArg*>(_ax->GetParent()));
+
+            RooFormulaVar cutFormula2("cut2",cut + " && " + cut2,obs);
+            RooFormulaVar icutFormula2("icut2",TString::Format("!(%s && %s)",cut.Data(),cut2.Data()),obs);
+
+//            // go up through parents looking for slice obs
+//            auto _p = fParent;
+//            while(_p) {
+//                TString pName(_p->GetName());
+//                if (auto pos = pName.Index('='); pos != -1) {
+//                    if(auto _obs = _p->getObject<RooAbsLValue>(pName(0,pos)); _obs) {
+//                        if(auto _cat = dynamic_cast<RooAbsCategoryLValue*>(_obs.get()); _cat) {
+//                            _cat->setLabel(pName(pos+1,pName.Length()));
+//                            cut += TString::Format("%s%s==%d", (cut=="")?"":" && ",_cat->GetName(), _cat->getCurrentIndex());
+//                        } else if(auto _var = dynamic_cast<RooAbsRealLValue*>(_obs.get()); _var) {
+//                            _var->setVal(TString(pName(pos+1,pName.Length())).Atof());
+//                            // TODO: Cut for this!!
+//                        }
+//                        obs.add(*dynamic_cast<RooAbsArg*>(_obs.get()));
+//                    } else {
+//                        throw std::runtime_error("Unknown observable, could not find");
+//                    }
+//                }
+//                _p = _p->fParent;
+//            }
+
+            // add observables to dataset if necessary
+            RooArgSet l(obs);
+            l.remove(*_data->get(),true,true);
+            if (!l.empty()) {
+                // addColumns method is buggy: https://github.com/root-project/root/issues/8787
+                // incredibly though, addColumn works??
+                for(auto& x : l) {
+                    _data->addColumn(*x);
+                }
+                // instead create a copy dataset and merge it into current
+                // cant use merge because it drops weightVar
+                /*RooDataSet tmp("tmp","tmp",l);
+                for(int i=0;i<_data->numEntries();i++) tmp.add(l);
+                _data->merge(&tmp);*/
+                //delete _data->addColumns(l);
+            }
             // before adding, ensure range is good to cover
             for(auto o : obs) {
                 if (auto v = dynamic_cast<RooRealVar*>(o); v) {
@@ -1709,11 +1778,41 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
                 }
             }
 
+            // using SetBinContent means dataset must take on a binned form at these coordinates
+            // if number of entries doesnt match number of bins then will 'bin' the data
+            if (std::unique_ptr<RooAbsData>(_data->reduce(cutFormula))->numEntries() != _ax->GetNbins()) {
+                Info("SetBinContent","Binning %s in channel: %s",GetName(),cut.Data());
+                auto _contents = GetBinContents(1,_ax->GetNbins());
+
+                auto _reduced = std::unique_ptr<RooAbsData>(_data->reduce(icutFormula));
+                _data->reset();
+                for (int j = 0; j < _reduced->numEntries(); j++) {
+                    auto _obs = _reduced->get(j);
+                    _data->add(*_obs, _reduced->weight());
+                }
+                for(int i=1;i<=_ax->GetNbins();i++) {
+                    // can skip over the bin we will be setting to save a reduce step below
+                    if (i==bin) continue;
+                    dynamic_cast<RooAbsLValue*>(_ax->GetParent())->setBin(i-1,_ax->GetName());
+                    _data->add(obs, _contents.at(i-1));
+                }
+            }
+
+            // remove existing entries
+            if (std::unique_ptr<RooAbsData>(_data->reduce(cutFormula2))->numEntries() > 0) {
+                auto _reduced = std::unique_ptr<RooAbsData>(_data->reduce(icutFormula2));
+                _data->reset();
+                for (int j = 0; j < _reduced->numEntries(); j++) {
+                    auto _obs = _reduced->get(j);
+                    _data->add(*_obs, _reduced->weight());
+                }
+            }
+            dynamic_cast<RooAbsLValue*>(_ax->GetParent())->setBin(bin-1,_ax->GetName());
             _data->add(obs,value);
             return true;
 
         } else if(auto h = get<RooDataHist>()) {
-            throw std::runtime_error("Not supported yet");
+            throw std::runtime_error("RooDataHist not supported yet");
         }
     }
 
@@ -2046,14 +2145,15 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
         TString origName = GetName(); if (origName.BeginsWith(';')) origName = origName(1,origName.Length());
         if (newObjName.BeginsWith(';')) newObjName=newObjName(1,newObjName.Length()); // special case if starts with ';' then don't create a fancy name
         else if (acquirer.get() && !acquirer.get<RooWorkspace>()) newObjName = TString::Format("%s_%s",acquirer.get()->GetName(),newObjName.Data());
-        // can convert to a RooHistFunc or RooParamHist if option contains 'shape'
+        // can convert to a RooHistFunc, or RooParamHist if option contains 'shape'
         TString varName = h->GetXaxis()->GetName();
         std::string binningName = newObjName.Data();
         if (auto pos = varName.Index(';'); pos != -1) {
             binningName = varName(pos+1,varName.Length());
             varName = varName(0,pos);
         }
-        if (varName=="xaxis") { // default case, try to take axis var and binning from the acquirer
+
+        if (varName=="xaxis" && !acquirer.get<RooSimultaneous>()) { // default case, try to take axis var and binning from the acquirer
             if (auto ax = acquirer.GetXaxis(); ax) {
                 varName = ax->GetParent()->GetName();
                 // TODO: check the binning is consistent before using - at least will check nBins below
@@ -2082,8 +2182,17 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
                 throw std::runtime_error(TString::Format("binning mismatch for binning %s of %s",binningName.c_str(),x->GetName()));
             }
         }
+
         std::shared_ptr<RooAbsArg> _f;
-        if(sOpt.Contains("shape")) {
+
+        // if acquirer is a RooSimultaneous, will use histogram to define a channel
+        if (acquirer.get<RooSimultaneous>()) {
+            _f = acquirer.acquireNew<RooProdPdf>(newObjName,(strlen(h->GetTitle())) ? h->GetTitle() : h->GetName(),RooArgList());
+            for(auto& [k,v] : stringAttrs) {
+                _f->setStringAttribute(k.c_str(),v.c_str());
+            }
+            x->setAttribute("obs",true);
+        } else if(sOpt.Contains("shape")) {
             RooArgList list;
             for(int i = 0; i < x->getBinning(binningName.c_str()).numBins(); i++) {
                 std::shared_ptr<RooRealVar> arg;
@@ -2948,8 +3057,12 @@ xRooNode xRooNode::datasets() const {
     } else if(auto _ws = ws(); _ws) {
         if (get<RooAbsPdf>()) {
             // only add datasets that have observables that cover all our observables
-            auto _obs = obs().argList();
-            _obs.add( coords().argList() ); // include coord observables too
+            RooArgSet _obs(obs().argList());
+            _obs.add( coords().argList(),true ); // include coord observables too, and current xaxis if there's one
+            if (auto ax = GetXaxis(); ax && dynamic_cast<RooAbsArg*>(ax->GetParent())->getAttribute("obs")) {
+                auto a = dynamic_cast<RooAbsArg*>(ax->GetParent());
+                _obs.add(*a,true);
+            }
             xRooNode _wsNode(*_ws,*this);
             for(auto& d : _wsNode.datasets()) {
                 if (std::unique_ptr<RooAbsCollection>(d->obs().argList().selectCommon(_obs))->size() == _obs.size()) {
@@ -3071,6 +3184,8 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros) const {
             }
         }
 
+        // transfer limits from theHist to dataGraph hist
+        dataGraph->GetHistogram()->GetXaxis()->SetLimits(theHist->GetXaxis()->GetXmin(),theHist->GetXaxis()->GetXmax());
 
         delete xPos;
         delete xPos2;
@@ -3762,7 +3877,7 @@ std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const {
     }
 
     auto h = BuildHistogram(nullptr,false,false,binStart,binEnd);
-    if (!h) return out;
+    if (!h) { throw std::runtime_error(TString::Format("%s has no content",GetName())); }
     for(int i=binStart;i<=binEnd;i++) {
         out.push_back(h->GetBinContent(i));
     }
@@ -4405,11 +4520,24 @@ void xRooNode::Draw(Option_t* opt) {
                     if (strcmp(h->GetYaxis()->GetName(),"ratio")==0) {
                         auto ratioGraph = dynamic_cast<TGraphAsymmErrors*>(dataGraph->Clone(dataGraph->GetName()));
 
+                        auto safeDiv = [](double a, double b) { if(a==0) return 0.; if(b==0 && a==0) return 1.; return a/b; };
+
                         for(int i=0;i<ratioGraph->GetN();i++) {
-                            ratioGraph->SetPointY(i,ratioGraph->GetPointY(i)/mainHist->GetBinContent(i+1));
-                            ratioGraph->SetPointEYhigh(i,ratioGraph->GetErrorYhigh(i)/mainHist->GetBinContent(i+1));
-                            ratioGraph->SetPointEYlow(i,ratioGraph->GetErrorYlow(i)/mainHist->GetBinContent(i+1));
+                            auto _div = mainHist->GetBinContent(i+1);
+                            ratioGraph->SetPointY(i,safeDiv(ratioGraph->GetPointY(i),_div));
+                            ratioGraph->SetPointEYhigh(i,safeDiv(ratioGraph->GetErrorYhigh(i),_div));
+                            ratioGraph->SetPointEYlow(i,safeDiv(ratioGraph->GetErrorYlow(i),_div));
                         }
+
+                        // remove the zero points
+                        int i=0;
+                        while(i < ratioGraph->GetN()) {
+                            if (ratioGraph->GetPointY(i)==0) ratioGraph->RemovePoint(i);
+                            else i++;
+                        }
+
+
+
                         auto _tmpPad = gPad;
                         _pad->cd();
                         ratioGraph->Draw("z0psame");
@@ -4647,8 +4775,9 @@ void xRooNode::Draw(Option_t* opt) {
         if (hasSignificance) {
             ratioHist->Reset();
         } else {
+            auto safeDiv = [](double a, double b) { if(a==0) return 0.; if(b==0 && a==0) return 1.; return a/b; };
             for (int i = 1; i <= ratioHist->GetNbinsX(); i++) {
-                ratioHist->SetBinError(i, ratioHist->GetBinError(i) / ratioHist->GetBinContent(i));
+                ratioHist->SetBinError(i, safeDiv(ratioHist->GetBinError(i) , ratioHist->GetBinContent(i)));
                 ratioHist->SetBinContent(i, 1);
             }
         }

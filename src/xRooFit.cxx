@@ -477,7 +477,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
     }
 
     if(hesse) {
-        _nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller?
+        //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? - and also becomes WRONG :-S
         _minimizer.hesse(); //note: I have seen that you can get 'full covariance quality' without running hesse ... is that expected?
         _minimizer._statusHistory.back().second = _minimizer.fitter()->Result().Status();
         auto _status = _minimizer.fitter()->Result().Status();
