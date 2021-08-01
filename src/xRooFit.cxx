@@ -50,7 +50,7 @@ xRooNLLVar xRooFit::createNLL(RooAbsPdf& pdf, RooAbsData* data, const RooCmdArg 
 
 }
 
-std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooFit::generateFrom(RooAbsPdf& pdf, const std::shared_ptr<RooFitResult>& fr, bool expected, int seed) {
+std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooFit::generateFrom(RooAbsPdf& pdf, const std::shared_ptr<const RooFitResult>& fr, bool expected, int seed) {
 
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> out;
 

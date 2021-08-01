@@ -27,7 +27,7 @@ public:
 
 
     // fit result flags in its constPars list which are global observables with the "global" attribute
-    static std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generateFrom(RooAbsPdf& pdf, const std::shared_ptr<RooFitResult>& fr, bool expected=false, int seed=0);
+    static std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generateFrom(RooAbsPdf& pdf, const std::shared_ptr<const RooFitResult>& fr, bool expected=false, int seed=0);
 
     static std::shared_ptr<RooFitResult> fitTo(RooAbsPdf& pdf, std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>);
 

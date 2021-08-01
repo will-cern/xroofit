@@ -153,6 +153,8 @@ public:
 
     bool SetContents(const TObject& obj) { operator=(obj); return true; } // populates the node's comp (creating if necessary)  from given object
     bool SetContents(double value); // *MENU* uses a RooConst
+    bool SetContents(double value, const char* par, double parVal=1); // shortcut to setting a variation content
+    bool SetContents(const TObject& obj, const char* par, double parVal) { variations()[TString::Format("%s=%g",par,parVal).Data()]->operator=(obj); return true; }
     bool SetBinError(int bin, double value);
     bool SetBinContent(int bin, double value, const char* par=nullptr, double parVal=1);
 
