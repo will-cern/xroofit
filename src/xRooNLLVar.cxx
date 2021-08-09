@@ -15,6 +15,7 @@
 #include "TPRegexp.h"
 
 #include "RooRealVar.h"
+#include "Math/ProbFunc.h"
 
 
 
@@ -159,6 +160,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooNLLVar::fitConfig() {
 }
 
 std::pair<double,double> xRooNLLVar::pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType) {
+
     // start by floating everything and consting all the const vars
     if (!fFuncVars) {
         reinitialize();
@@ -230,7 +232,7 @@ double xRooNLLVar::getEntryVal(size_t entry) {
 }
 
 std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooNLLVar::getData() const {
-    return std::make_pair(fData,std::shared_ptr<const RooAbsCollection>(fGlobs->snapshot()));
+    return std::make_pair(fData,(fGlobs) ? std::shared_ptr<const RooAbsCollection>(fGlobs->snapshot()) : nullptr);
 }
 
 Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& _data) {
@@ -289,4 +291,130 @@ RooConstraintSum* xRooNLLVar::constraintTerm() const {
     return *fFunc;
 }*/
 
+RooRealVar& xRooNLLVar::xRooHypoTestResult::mu_hat() const {
+    if (ufit) {
+        auto var = dynamic_cast<RooRealVar*>(ufit->floatParsFinal().find(fPOIName.c_str()));
+        if (var) return *var;
+        else throw std::runtime_error("Cannot find POI");
+    }
+    throw std::runtime_error("Unconditional fit unavailable");
+}
 
+double xRooNLLVar::xRooHypoTestResult::pNull_asymp(double nSigma) const {
+    double k;
+    if (std::isnan(nSigma)) {
+        k = pll().first;
+    } else {
+        k = xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal,fAltVal,sigma_mu().first,0);
+    }
+    return xRooFit::Asymptotics::PValue(fPllType,k,fNullVal,fNullVal,sigma_mu().first,mu_hat().getMin(),mu_hat().getMax());
+}
+
+double xRooNLLVar::xRooHypoTestResult::pAlt_asymp(double nSigma) const {
+    double k;
+    if (std::isnan(nSigma)) {
+        k = pll().first;
+    } else {
+        k = xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal,fAltVal,sigma_mu().first,0);
+    }
+    return xRooFit::Asymptotics::PValue(fPllType,k,fNullVal,fAltVal,sigma_mu().first,mu_hat().getMin(),mu_hat().getMax());
+}
+
+void xRooNLLVar::xRooHypoTestResult::addNullToys(xRooNLLVar& nllFunc, int nToys) {
+    if (null_cfit) {
+        *nllFunc.fFuncVars = null_cfit->floatParsFinal();
+        *nllFunc.fConstVars = null_cfit->constPars();
+    } else {
+
+    }
+    auto _data = nllFunc.getData();
+    for(int i=0;i<nToys;i++) {
+        auto toy = nllFunc.generate(); //xRooFit::generateFrom(*nll.fPdf,null_fit); //nll.generate();
+        nllFunc.setData(toy);
+        auto toy_pll = nllFunc.hypoTest(fPOIName.c_str(), fNullVal, std::numeric_limits<double>::quiet_NaN(),
+                                        xRooFit::Asymptotics::OneSidedPositive).pll();
+        nullToys.push_back(toy_pll.first);
+    }
+    nllFunc.setData(_data);
+}
+
+std::pair<double,double> xRooNLLVar::xRooHypoTestResult::pll() const {
+    if (!ufit || ufit->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+    auto cFactor = xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal, mu_hat().getVal());
+    if (cFactor == 0) return std::make_pair(0,0);
+    if (null_cfit->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);;
+    //std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
+    return std::make_pair(2.*cFactor*(null_cfit->minNll()-ufit->minNll()),2.*cFactor*sqrt(pow(null_cfit->edm(),2)+pow(ufit->edm(),2)));
+    //return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
+}
+
+std::pair<double,double> xRooNLLVar::xRooHypoTestResult::sigma_mu() const {
+    xRooHypoTestResult x = *this;
+    x.fPllType = xRooFit::Asymptotics::TwoSided;
+    x.ufit = asimov_ufit; x.null_cfit = asimov_cfit;
+    auto out = x.pll();
+    return std::make_pair(std::abs(fNullVal - fAltVal)/sqrt(out.first), out.second*0.5*std::abs(fNullVal - fAltVal)/(out.first*sqrt(out.first)));
+}
+
+xRooNLLVar::xRooHypoTestResult xRooNLLVar::hypoTest(const char* parName, double value, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
+    xRooHypoTestResult out;
+    out.fPOIName = parName;
+    out.fNullVal = value; out.fAltVal = alt_value;
+
+    auto _type = pllType;
+    if (_type == xRooFit::Asymptotics::Unknown) {
+        // decide based on values
+        if (std::isnan(alt_value)) _type = xRooFit::Asymptotics::TwoSided;
+        else if(value > alt_value) _type = xRooFit::Asymptotics::OneSidedPositive;
+        else _type = xRooFit::Asymptotics::Uncapped;
+    }
+
+    out.fPllType = _type;
+
+    // evaluate pll fits
+
+    // start by floating everything and consting all the const vars
+    if (!fFuncVars) {
+        reinitialize();
+    } else {
+        fFuncVars->setAttribAll("Constant",false);
+        fConstVars->setAttribAll("Constant",true);
+    }
+
+    auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
+    if (!poi) return out;
+
+    AutoRestorer snap(*fFuncVars);
+
+    poi->setConstant(false);
+    auto ufit = minimize();
+    if (ufit->status() != 0) return out;
+    auto cFactor = xRooFit::Asymptotics::CompatFactor(_type, value, static_cast<RooAbsReal*>(ufit->floatParsFinal().find(parName))->getVal());
+    if (cFactor != 0) {
+        poi->setConstant(true); poi->setVal(value);
+        out.null_cfit = minimize();
+    }
+    out.ufit = ufit;
+
+    // do sigma_mu calc if alt is not nan
+    if (!std::isnan(alt_value)) {
+        *fFuncVars = ufit->floatParsFinal(); // use ufit values as initial
+        poi->setConstant(true); poi->setVal(alt_value);
+        auto cfit_prime = minimize();
+        if (cfit_prime->status () != 0) return out;
+
+        auto oldData = getData();
+        setData(generate(true));
+        auto res = hypoTest(parName,value);
+
+        setData(oldData);
+
+        // transfer fits to result
+        out.alt_cfit = cfit_prime;
+        out.asimov_ufit = res.ufit;
+        out.asimov_cfit = res.null_cfit;
+    }
+
+    return out;
+
+}

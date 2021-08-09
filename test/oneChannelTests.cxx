@@ -41,10 +41,15 @@ void altOneChannel() {
     // these factor names are global in that they can be used across channels
     w["myModel"]->variations()["myChannel"]->factors()["samples"]->components()["s1"]->factors().Add("mu","norm");
 
+    // note that when a sample is created using a histogram like above, it is itself a histo factor
+    // when a factor is added to a sample, the histofactor of the sample histo factor is moved into the sample
+    // and the sample becomes a 'product' of factors
+
     // overall and histo factors can be varied
-    // note that when a sample is created it is itself a histo factor, so can be varied
     w["myModel"]->variations()["myChannel"]->factors()["samples"]->components()["s1"]->factors().Add("c1_s1_overall","overall");
     w["myModel"]->variations()["myChannel"]->factors()["samples"]->components()["s1"]->factors()["c1_s1_overall"]->variations()["ucs=1"]->SetContents(1.1);
+    // the main sample histo factor, so can also be varied:
+    w["myModel"]->variations()["myChannel"]->factors()["samples"]->components()["s1"]->factors()["s1"]->variations()["d=1"]->SetBinContent(3,3);
 
     // note how the syntax quickly gets verbose.
     // we can shorten things like this:
@@ -91,23 +96,23 @@ double oneChannel(double data, double bkg, double bkg_uncert, double sig, double
     w["simPdf/channel1"]->datasets()["obsData"]->SetBinContent(1,data);
 
 
-    // Compute CLs p-value with asymptotic formulae
+    // create NLL function using simPdf model with obsData
     auto nll = w["simPdf"]->createNLL("obsData");
 
-    auto _pll = nll.pll("mu_Sig",1,xRooFit::Asymptotics::OneSidedPositive);
-    auto _sigma_mu = nll.sigma_mu("mu_Sig",1,0);
+    // Perform a hypothesis test of mu=1 hypothesis using mu=0 as alt hypothesis
+    auto hypoTest = nll.hypoTest("mu_Sig",1,0);
 
-    auto clsb_obs = xRooFit::Asymptotics::PValue(xRooFit::Asymptotics::OneSidedPositive,_pll.first,1,1,_sigma_mu.first,0);
-    auto clb_obs = xRooFit::Asymptotics::PValue(xRooFit::Asymptotics::OneSidedPositive,_pll.first,1,0,_sigma_mu.first,0);
+    auto _pll = hypoTest.pll();
+    auto _sigma_mu = hypoTest.sigma_mu();
 
-    std::cout << "obs_pll = " << _pll.first << std::endl;
+    auto clsb_obs = hypoTest.pNull_asymp();
+    auto clb_obs = hypoTest.pAlt_asymp();
+
+    std::cout << "obs_pll = " << _pll.first << " sigma_mu = " << _sigma_mu.first << std::endl;
     std::cout << "cls_obs = " << (clsb_obs/clb_obs) << " [ clsb_obs = " << clsb_obs << " clb_obs = " << clb_obs << " ]" << std::endl;
 
     for(int i=-2;i<=2;i++) {
-        auto k = xRooFit::Asymptotics::k(xRooFit::Asymptotics::OneSidedPositive,ROOT::Math::gaussian_cdf(i),1,0,_sigma_mu.first,0);
-        auto cls = xRooFit::Asymptotics::PValue(xRooFit::Asymptotics::OneSidedPositive,k,1,1,_sigma_mu.first,0) /
-                    xRooFit::Asymptotics::PValue(xRooFit::Asymptotics::OneSidedPositive,k,1,0,_sigma_mu.first,0);
-        std::cout << i << " sigma: " << cls << std::endl;
+        std::cout << i << " sigma: " << hypoTest.pCLs_asymp(i) << std::endl;
     }
 
 
@@ -130,7 +135,7 @@ double oneChannel(double data, double bkg, double bkg_uncert, double sig, double
     for(int i=0;i<nToys;i++) {
         auto toy = nll.generate(); //xRooFit::generateFrom(*nll.fPdf,null_fit); //nll.generate();
         nll.setData(toy);
-        auto toy_pll = nll.pll("mu_Sig",1,xRooFit::Asymptotics::OneSidedPositive);
+        auto toy_pll = nll.hypoTest("mu_Sig",1,std::numeric_limits<double>::quiet_NaN(), xRooFit::Asymptotics::OneSidedPositive).pll();
         if (std::isnan(toy_pll.first)) std::cout << " nan null " << std::endl;
         if (toy_pll.first >= _pll.first) toy_clsb_obs++;
         toy_vals.push_back(toy_pll.first);
@@ -150,7 +155,7 @@ double oneChannel(double data, double bkg, double bkg_uncert, double sig, double
     for(int i=0;i<nToys/10;i++) {
         auto toy = nll.generate(); //xRooFit::generateFrom(*nll.fPdf,alt_fit); //nll.generate();
         nll.setData(toy);
-        auto toy_pll = nll.pll("mu_Sig",1,xRooFit::Asymptotics::OneSidedPositive);
+        auto toy_pll = nll.hypoTest("mu_Sig",1,std::numeric_limits<double>::quiet_NaN(), xRooFit::Asymptotics::OneSidedPositive).pll();
         if (std::isnan(toy_pll.first)) std::cout << " nan alt " << std::endl;
         if (toy_pll.first >= _pll.first) toy_clb_obs++;
         toy_vals_b.push_back(toy_pll.first);
@@ -178,7 +183,7 @@ double oneChannel(double data, double bkg, double bkg_uncert, double sig, double
     }
 
 
-    w.SaveAs("oneChannel.root");
+    //w.SaveAs("oneChannel.root");
 
     TFile f("tsDists.root","recreate");
     hNull.SetDirectory(&f);
@@ -195,6 +200,6 @@ TEST(test1,test1) {
 
     auto res = oneChannel(0,0.43,0.16,5.611,1.19266,0.807337,0.017);
 
-    ASSERT_DOUBLE_EQ(res, 0.0019764892592501124);
+    ASSERT_LT(abs(res - 0.0019764892592501124),1e-7);
 
 }

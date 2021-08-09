@@ -177,7 +177,7 @@ void xRooNode::Checked(TObject* obj, bool val) {
     if (obj!=this) return;
 
     if(auto o = get(); o) {
-        if (o->TestBit(1<<20)==val) return; // do nothing
+        //if (o->TestBit(1<<20)==val) return; // do nothing
         o->SetBit(1<<20, val); // TODO: check is 20th bit ok to play with?
         if (auto fr = get<RooFitResult>(); fr) {
             if (auto _ws = ws(); _ws) {
@@ -1423,6 +1423,10 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
         double value = (_c ? _c->getVal() : p->_nominal);
 
         TString cName(child.GetName());
+        if (cName=="nominal") {
+            p->setNominal(value);
+            return *(this->variations().at(cName.Data()));
+        }
         if(cName.CountChar('=')!=1) {
             throw std::runtime_error("unsupported variation form");
         }
@@ -1666,7 +1670,7 @@ xRooNode& xRooNode::operator=(const TObject& o) {
         }
     } else if (auto _c = dynamic_cast<const RooConstVar*>(&o); _c) {
 
-        if (auto a = get<RooAbsArg>(); (a && a->isFundamental()) || get<RooConstVar>()) {
+        if (auto a = get<RooAbsArg>(); (a && a->isFundamental()) || get<RooConstVar>() || get<RooStats::HistFactory::FlexibleInterpVar>()) {
             SetBinContent(1,_c->getVal());
             return *this;
         }
@@ -1879,15 +1883,17 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
     } else if(auto c = dynamic_cast<RooConstVar*>(o); c) {
 
 
-        if (strcmp(c->GetName(),Form("%g",c->getVal()))==0) {
-            c->SetNameTitle(Form("%g",value),Form("%g",value));
-        }
-#if ROOT_VERSION_CODE < ROOT_VERSION(6,24,00)
-        c->_value = value; // in future ROOT versions there is a changeVal method!
-#else
-        c->changeVal(value);
-#endif
         // if parent is a FlexibleInterpVar, change the value in that .
+            if (strcmp(c->GetName(),Form("%g",c->getVal()))==0) {
+                c->SetNameTitle(Form("%g",value),Form("%g",value));
+            }
+#if ROOT_VERSION_CODE < ROOT_VERSION(6,24,00)
+            c->_value = value; // in future ROOT versions there is a changeVal method!
+#else
+            c->changeVal(value);
+#endif
+
+
         if (fParent->get<RooStats::HistFactory::FlexibleInterpVar>()) {
             fParent->Vary(*this);
         }
@@ -1919,6 +1925,9 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
         }
         sterilize();
         return true;
+    } else if (auto f = dynamic_cast<RooStats::HistFactory::FlexibleInterpVar*>(o); f) {
+        // changing nominal value
+        f->setNominal(value);
     }
     Print();
     throw std::runtime_error(TString::Format("unable to set bin content of %s",GetName()));
@@ -3250,9 +3259,22 @@ xRooNode xRooNode::fitResult() const {
         return *f;
     }
 
+    // return first checked fit result present in the workspace
+    if (auto _w = ws(); _w) {
+        for(auto o : _w->allGenericObjects()) {
+            if (auto fr = dynamic_cast<RooFitResult*>(o); fr && fr->TestBit(1<<20)) {
+                return xRooNode(*fr,*_w);
+            }
+        }
+    }
+
     std::unique_ptr<RooArgList> _pars(dynamic_cast<RooArgList*>(pars().argList().selectByAttrib("Constant",false)));
     auto fr = std::make_shared<RooFitResult>("uncorrelated");
     fr->setFinalParList(*_pars);
+
+    // go through pars looking existence of any covariances
+
+
     auto _args = args().argList();
     // global obs are added to constPars list too
     _args.add( globs().argList() );
@@ -4529,6 +4551,22 @@ void xRooNode::Draw(Option_t* opt) {
 
     if (get()->InheritsFrom("RooAbsData")) {
 
+        if (auto s = parentPdf(); s && s->get<RooSimultaneous>()) {
+            // drawing dataset associated to a simultaneous means must find subpads with variation names
+            for(auto c : s->variations()) {
+                auto _pad = dynamic_cast<TPad*>(gPad->GetPrimitive(c->GetName()));
+                if (!_pad) continue; // channel was hidden?
+                auto ds = c->datasets().find(GetName());
+                if (!ds) continue;
+                auto tmp = gPad;
+                _pad->cd();
+                ds->Draw(opt);
+                tmp->cd();
+            }
+            gPad->Modified();
+            return;
+        }
+
         auto dataGraph = BuildGraph(v);
         if (!dataGraph) return;
 
@@ -4992,7 +5030,7 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const RooFi
     auto o = dynamic_cast<RooAbsReal*>(get());
     if (!o) return out;
 
-    RooFitResult* fr = _fr ? (RooFitResult*)_fr->Clone() : new RooFitResult();
+    RooFitResult* fr = dynamic_cast<RooFitResult*>( _fr ? _fr->Clone() : fitResult()->Clone());
 
 
     if (!fr->_finalPars) {
