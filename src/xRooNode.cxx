@@ -3138,7 +3138,7 @@ xRooNode xRooNode::datasets() const {
 
 
 
-TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros) const {
+TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros, TVirtualPad* fromPad) const {
 
     if (auto fr = get<RooFitResult>(); fr) {
         return nullptr;
@@ -3147,11 +3147,23 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros) const {
 
     if (auto theData = get<RooDataSet>(); theData) {
 
-        auto _parentPdf = parentPdf();
-        if (!_parentPdf) {
-            throw std::runtime_error("Cannot draw dataset without parent PDF");
+        TH1* theHist = nullptr;
+
+        if (fromPad) {
+            // find first histogram in pad
+            for(auto o : *fromPad->GetListOfPrimitives()) {
+                theHist = dynamic_cast<TH1*>(o);
+                if (theHist) { theHist = (TH1*)theHist->Clone(); theHist->Reset(); break; } // clone because theHist gets deleted below
+            }
         }
-        auto theHist = _parentPdf->BuildHistogram(v,true);
+
+        if (!theHist) {
+            auto _parentPdf = parentPdf();
+            if (!_parentPdf) {
+                throw std::runtime_error("Cannot draw dataset without parent PDF");
+            }
+            theHist = _parentPdf->BuildHistogram(v, true);
+        }
         if (!theHist) return nullptr;
         //this hist will get filled with w*x to track weighted x position per bin
         TH1* xPos = (TH1*)theHist->Clone("xPos");
@@ -3186,10 +3198,14 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros) const {
             return dataGraph;
         }
 
+
         const RooAbsReal* xvar = (x) ? x->get<RooAbsReal>() : nullptr;
         const RooAbsCategory* xcat = (x && !xvar) ? x->get<RooAbsCategory>() : nullptr;
 
         auto _coords = coords();
+
+        TString pName((fromPad) ? fromPad->GetName() : "");
+        auto _pos = pName.Index('=');
 
         int nevent = theData->numEntries();
         for(int i=0;i<nevent;i++) {
@@ -3200,6 +3216,11 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros) const {
                     if (cat->getIndex() != theData->get()->getCatIndex(cat->GetName())) {
                         _skip = true; break;
                     }
+                }
+            }
+            if (_pos != -1) {
+                if( auto cat = dynamic_cast<RooAbsCategory*>(theData->get()->find(TString(pName(0,_pos)))); cat && cat->getLabel() != pName(_pos+1,pName.Length())) {
+                    _skip=true;
                 }
             }
             if (_skip) continue;
@@ -4107,7 +4128,9 @@ void xRooNode::Draw(Option_t* opt) {
         sOpt = sOpt(0,sOpt.Index("overlay"));
     }
     bool hasFR = sOpt.Contains("pull"); sOpt.ReplaceAll("pull","");
+    bool hasText = sOpt.Contains("text");
     bool hasErrorOpt = sOpt.Contains("e"); sOpt.ReplaceAll("e","");
+    if (hasText) sOpt.ReplaceAll("txt","text");
     if (hasSignificance) hasErrorOpt = true; // must calculate error to calculate significance
 
 
@@ -4185,8 +4208,14 @@ void xRooNode::Draw(Option_t* opt) {
                     if (down > up) ymax = hh->GetBinContent(1) + down;
                     else ymin = hh->GetBinContent(1) - up;
                 }
-                hh->SetMinimum(ymin);
-                hh->SetMaximum(ymax);
+                if (hh == hAxis && pad && !pad->GetLogy() && (log10(ymax) - log10(std::max(1e-15,ymin)))>=3) {
+                    // auto-log the pad
+                    pad->SetLogy();
+                }
+                if (hh == hAxis && pad && ymin==0 && pad->GetLogy()) {
+                    ymin=1e-2;
+                }
+                hh->SetMinimum(ymin);hh->SetMaximum(ymax);
                 hh->GetYaxis()->Set(1,ymin,ymax);
                 hh->SetAxisRange(ymin, ymax, "Y");
             }
@@ -4550,8 +4579,8 @@ void xRooNode::Draw(Option_t* opt) {
     }
 
     if (get()->InheritsFrom("RooAbsData")) {
-
-        if (auto s = parentPdf(); s && s->get<RooSimultaneous>()) {
+        auto s = parentPdf();
+        if (s && s->get<RooSimultaneous>()) {
             // drawing dataset associated to a simultaneous means must find subpads with variation names
             for(auto c : s->variations()) {
                 auto _pad = dynamic_cast<TPad*>(gPad->GetPrimitive(c->GetName()));
@@ -4567,7 +4596,26 @@ void xRooNode::Draw(Option_t* opt) {
             return;
         }
 
-        auto dataGraph = BuildGraph(v);
+        if (!s && hasSame) {
+            // draw onto all subpads with = in the name
+            // if has no such subpads, draw onto this pad
+            bool doneDraw=false;
+            for(auto o : *gPad->GetListOfPrimitives()) {
+                if (auto p = dynamic_cast<TPad*>(o); p && TString(p->GetName()).Contains('=')) {
+                    auto _tmp = gPad;
+                    p->cd();
+                    Draw(opt);
+                    gPad = _tmp;
+                    doneDraw=true;
+                }
+            }
+            if (doneDraw) {
+                gPad->Modified();
+                return;
+            }
+        }
+
+        auto dataGraph = BuildGraph(v,false,(!s && hasSame) ? gPad : nullptr);
         if (!dataGraph) return;
 
         dataGraph->SetBit(kCanDelete); // will be be deleted when pad is cleared
@@ -4596,9 +4644,12 @@ void xRooNode::Draw(Option_t* opt) {
 
         if (auto _pad = dynamic_cast<TPad*>(gPad->FindObject("auxPad")); _pad) {
             if( auto h = dynamic_cast<TH1*>( _pad->GetPrimitive("auxHist") ); h) {
-                if(auto mainHist = dynamic_cast<TH1*>( gPad->GetPrimitive(h->GetTitle()) ); mainHist) {
-                    // decide what to do based on name of auxHist y-axis
-                    if (strcmp(h->GetYaxis()->GetName(),"ratio")==0) {
+                TString histName = h->GetTitle(); // split it by | char
+                TString histType = histName(histName.Index('|')+1,histName.Length());
+                histName = histName(0,histName.Index('|'));
+                if(auto mainHist = dynamic_cast<TH1*>( gPad->GetPrimitive(histName) ); mainHist) {
+                    // decide what to do based on title of auxHist (previously used name of y-axis but that changed axis behaviour)
+                    if (histType=="ratio") {
                         auto ratioGraph = dynamic_cast<TGraphAsymmErrors*>(dataGraph->Clone(dataGraph->GetName()));
 
                         auto safeDiv = [](double a, double b) { if(a==0) return 0.; if(b==0 && a==0) return 1.; return a/b; };
@@ -4625,7 +4676,7 @@ void xRooNode::Draw(Option_t* opt) {
                         auto minMax = graphMinMax(ratioGraph);
                         adjustYRange(minMax.first,minMax.second,h,true);
                         _tmpPad->cd();
-                    } else if (strcmp(h->GetYaxis()->GetName(),"significance")==0) {
+                    } else if (histType=="significance") {
                         auto signif = [](double n, double b, double sigma) {
                             double t0 = 0;
                             if(sigma<=0.) {
@@ -4704,9 +4755,9 @@ void xRooNode::Draw(Option_t* opt) {
     if (hasSame) dOpt += " same";
     else hAxis = h;
 
-    if (dOpt.Contains("TEXT")) {
+    if (dOpt.Contains("TEXT") || sOpt.Contains("text")) {
         // adjust marker size so text is good
-        h->SetMarkerSize( gStyle->GetLabelSize("Z")/(0.02*gPad->GetAbsHNDC()) );
+        h->SetMarkerSize( gStyle->GetLabelSize("Z")/(0.02*gPad->GetHNDC()) );
     }
 
     bool hasError(false);
@@ -4742,7 +4793,7 @@ void xRooNode::Draw(Option_t* opt) {
             h->Draw(dOpt);
         }
     } else {
-        h->Draw(dOpt);
+        h->Draw(dOpt+sOpt);
     }
 
 
@@ -4867,7 +4918,7 @@ void xRooNode::Draw(Option_t* opt) {
         //ratioHist->SetMaximum(2);ratioHist->SetMinimum(0);
         ratioHist->GetYaxis()->SetNdivisions(5,0,0);
         ratioHist->GetYaxis()->SetTitle(hasSignificance ? "Signif" : "Ratio");
-        ratioHist->GetYaxis()->SetName(hasSignificance ? "significance" : "ratio"); // used when plotting data (above) to decide what to calculate
+        ratioHist->SetTitle(TString::Format("%s|%s",ratioHist->GetTitle(),hasSignificance ? "significance" : "ratio")); // used when plotting data (above) to decide what to calculate
         if (hasSignificance) { ratioHist->SetMaximum(4); ratioHist->SetMinimum(-4); ratioPad->SetGridy(); }
         else { ratioHist->SetMaximum();ratioHist->SetMinimum(); } // resets min and max
 

@@ -20,6 +20,7 @@ class RooAbsBinning;
 class TGraph;
 class RooFitResult;
 class TGListTreeItem;
+class TVirtualPad;
 
 #include "xRooFit/xRooFit.h"
 
@@ -194,7 +195,7 @@ public:
     void Checked(TObject* obj, bool val);
     void SetChecked(bool val=true) { Checked(this,val); }
 
-    TGraph* BuildGraph(RooAbsLValue* v=nullptr, bool includeZeros=false) const;
+    TGraph* BuildGraph(RooAbsLValue* v=nullptr, bool includeZeros=false, TVirtualPad* fromPad=nullptr) const;
     TH1* BuildHistogram(RooAbsLValue* v=nullptr, bool empty=false, bool errors=false, int binStart=1, int binEnd=0) const;
     xRooNode mainChild() const;
     void Draw(Option_t* opt="") override; // *MENU*
