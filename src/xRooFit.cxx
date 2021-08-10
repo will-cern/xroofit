@@ -84,7 +84,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
             RooArgSet* toy_gobs = new RooArgSet(uuid+"_gobs");
             //ensure we use the gobs from the model ...
             RooArgSet t; t.add(*_globs);
-            std::unique_ptr<RooArgSet> globs(pdf.getObservables(t));
+            std::unique_ptr<RooArgSet> globs(_pdf->getObservables(t));
             globs->snapshot(*toy_gobs);
             if (!toy_gobs->empty() && !dynamic_cast<RooSimultaneous*>(_pdf)) { // if was simPdf will call genSubPdf on each subpdf so no need to generate here
                 if(!expected) {

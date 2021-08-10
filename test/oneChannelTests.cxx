@@ -100,7 +100,7 @@ double oneChannel(double data, double bkg, double bkg_uncert, double sig, double
     auto nll = w["simPdf"]->createNLL("obsData");
 
     // Perform a hypothesis test of mu=1 hypothesis using mu=0 as alt hypothesis
-    auto hypoTest = nll.hypoTest("mu_Sig",1,0);
+    auto hypoTest = nll.hypoPoint("mu_Sig",1,0);
 
     auto _pll = hypoTest.pll();
     auto _sigma_mu = hypoTest.sigma_mu();
@@ -135,7 +135,7 @@ double oneChannel(double data, double bkg, double bkg_uncert, double sig, double
     for(int i=0;i<nToys;i++) {
         auto toy = nll.generate(); //xRooFit::generateFrom(*nll.fPdf,null_fit); //nll.generate();
         nll.setData(toy);
-        auto toy_pll = nll.hypoTest("mu_Sig",1,std::numeric_limits<double>::quiet_NaN(), xRooFit::Asymptotics::OneSidedPositive).pll();
+        auto toy_pll = nll.hypoPoint("mu_Sig",1,std::numeric_limits<double>::quiet_NaN(), xRooFit::Asymptotics::OneSidedPositive).pll();
         if (std::isnan(toy_pll.first)) std::cout << " nan null " << std::endl;
         if (toy_pll.first >= _pll.first) toy_clsb_obs++;
         toy_vals.push_back(toy_pll.first);
@@ -155,7 +155,7 @@ double oneChannel(double data, double bkg, double bkg_uncert, double sig, double
     for(int i=0;i<nToys/10;i++) {
         auto toy = nll.generate(); //xRooFit::generateFrom(*nll.fPdf,alt_fit); //nll.generate();
         nll.setData(toy);
-        auto toy_pll = nll.hypoTest("mu_Sig",1,std::numeric_limits<double>::quiet_NaN(), xRooFit::Asymptotics::OneSidedPositive).pll();
+        auto toy_pll = nll.hypoPoint("mu_Sig",1,std::numeric_limits<double>::quiet_NaN(), xRooFit::Asymptotics::OneSidedPositive).pll();
         if (std::isnan(toy_pll.first)) std::cout << " nan alt " << std::endl;
         if (toy_pll.first >= _pll.first) toy_clb_obs++;
         toy_vals_b.push_back(toy_pll.first);

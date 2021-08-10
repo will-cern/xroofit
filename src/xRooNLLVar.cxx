@@ -1,6 +1,7 @@
 
 #define protected public
 #include "RooFitResult.h"
+#include "RooNLLVar.h"
 #undef protected
 
 #include "xRooFit/xRooFit.h"
@@ -8,7 +9,7 @@
 #include "RooCmdArg.h"
 #include "RooAbsPdf.h"
 #include "RooAbsData.h"
-#include "RooNLLVar.h"
+
 #include "RooConstraintSum.h"
 #include "RooSimultaneous.h"
 #include "RooAbsCategoryLValue.h"
@@ -91,7 +92,7 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_
         auto _vars = std::unique_ptr<RooAbsCollection>( fPdf->getVariables() );
         auto _funcGlobs = std::unique_ptr<RooAbsCollection>(_vars->selectCommon(*globs->getSet(0)));
         fGlobs.reset( std::unique_ptr<RooAbsCollection>(globs->getSet(0)->selectCommon(*_funcGlobs))->snapshot() );
-        globs->setSet(0,dynamic_cast<RooArgSet&>(*fGlobs)); // use fGlobs because will stay alive as long as the linked list
+        globs->setSet(0,dynamic_cast<const RooArgSet&>(*_funcGlobs)); // globs in linked list has its own argset but args need to live as long as the func
         /*RooArgSet toRemove;
         for(auto a : *globs->getSet(0)) {
             if (!_vars->find(*a)) toRemove.add(*a);
@@ -232,20 +233,40 @@ double xRooNLLVar::getEntryVal(size_t entry) {
 }
 
 std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooNLLVar::getData() const {
-    return std::make_pair(fData,(fGlobs) ? std::shared_ptr<const RooAbsCollection>(fGlobs->snapshot()) : nullptr);
+    return std::make_pair(fData,fGlobs);
 }
 
 Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& _data) {
 
+    if (fData == _data.first && fGlobs == _data.second) return true;
+
     if (fGlobs) {
         if (!_data.second) throw std::runtime_error("Missing globs");
         if (!fGlobs->equals(*_data.second)) throw std::runtime_error("globs mismatch");
-        *fGlobs = *_data.second;
+        fGlobs = _data.second;
     }
 
-    auto out = nllTerm()->setData(*_data.first, false /* clone data? */);
-    fData = _data.first;
-    return out;
+    if (!std::shared_ptr<RooAbsReal>::get()) return true; // not loaded yet so nothing to do
+
+
+    try {
+        if (nllTerm()->operMode()==RooAbsTestStatistic::MPMaster) {
+            throw std::runtime_error("not supported");
+        }
+        auto out = nllTerm()->setData(*_data.first, false /* clone data? */);
+        fData = _data.first;
+        return out;
+    } catch(std::runtime_error&) {
+        // happens when using MP need to rebuild the nll instead
+        reset();
+        AutoRestorer snap(*fFuncVars);
+        // ensure the const state is back where it was at nll construction time;
+        fFuncVars->setAttribAll("Constant",false); fConstVars->setAttribAll("Constant",true);
+        fData = _data.first;
+        reinitialize();
+        return true;
+    }
+    throw std::runtime_error("Unable to setData");
 }
 
 std::shared_ptr<RooAbsReal> xRooNLLVar::func() const {
@@ -257,6 +278,11 @@ std::shared_ptr<RooAbsReal> xRooNLLVar::func() const {
     }
     if (fGlobs) *fFuncVars = *fGlobs;
     return *this;
+}
+
+void xRooNLLVar::AddOption(const RooCmdArg& opt) {
+    fOpts->Add(opt.Clone(nullptr));
+    reset(); // will trigger reinitialize
 }
 
 RooAbsData* xRooNLLVar::data() const {
@@ -291,16 +317,16 @@ RooConstraintSum* xRooNLLVar::constraintTerm() const {
     return *fFunc;
 }*/
 
-RooRealVar& xRooNLLVar::xRooHypoTestResult::mu_hat() const {
-    if (ufit) {
-        auto var = dynamic_cast<RooRealVar*>(ufit->floatParsFinal().find(fPOIName.c_str()));
+RooRealVar& xRooNLLVar::xRooHypoPoint::mu_hat() {
+    if (ufit()) {
+        auto var = dynamic_cast<RooRealVar*>(ufit()->floatParsFinal().find(fPOIName.c_str()));
         if (var) return *var;
         else throw std::runtime_error("Cannot find POI");
     }
     throw std::runtime_error("Unconditional fit unavailable");
 }
 
-double xRooNLLVar::xRooHypoTestResult::pNull_asymp(double nSigma) const {
+double xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma) {
     double k;
     if (std::isnan(nSigma)) {
         k = pll().first;
@@ -310,7 +336,7 @@ double xRooNLLVar::xRooHypoTestResult::pNull_asymp(double nSigma) const {
     return xRooFit::Asymptotics::PValue(fPllType,k,fNullVal,fNullVal,sigma_mu().first,mu_hat().getMin(),mu_hat().getMax());
 }
 
-double xRooNLLVar::xRooHypoTestResult::pAlt_asymp(double nSigma) const {
+double xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma) {
     double k;
     if (std::isnan(nSigma)) {
         k = pll().first;
@@ -320,46 +346,119 @@ double xRooNLLVar::xRooHypoTestResult::pAlt_asymp(double nSigma) const {
     return xRooFit::Asymptotics::PValue(fPllType,k,fNullVal,fAltVal,sigma_mu().first,mu_hat().getMin(),mu_hat().getMax());
 }
 
-void xRooNLLVar::xRooHypoTestResult::addNullToys(xRooNLLVar& nllFunc, int nToys) {
-    if (null_cfit) {
-        *nllFunc.fFuncVars = null_cfit->floatParsFinal();
-        *nllFunc.fConstVars = null_cfit->constPars();
-    } else {
 
-    }
-    auto _data = nllFunc.getData();
-    for(int i=0;i<nToys;i++) {
-        auto toy = nllFunc.generate(); //xRooFit::generateFrom(*nll.fPdf,null_fit); //nll.generate();
-        nllFunc.setData(toy);
-        auto toy_pll = nllFunc.hypoTest(fPOIName.c_str(), fNullVal, std::numeric_limits<double>::quiet_NaN(),
-                                        xRooFit::Asymptotics::OneSidedPositive).pll();
-        nullToys.push_back(toy_pll.first);
-    }
-    nllFunc.setData(_data);
-}
-
-std::pair<double,double> xRooNLLVar::xRooHypoTestResult::pll() const {
-    if (!ufit || ufit->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::pll() {
+    if (!ufit() || ufit()->status() != 0)  return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
     auto cFactor = xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal, mu_hat().getVal());
     if (cFactor == 0) return std::make_pair(0,0);
-    if (null_cfit->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);;
+    if (!null_cfit() || null_cfit()->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
     //std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
-    return std::make_pair(2.*cFactor*(null_cfit->minNll()-ufit->minNll()),2.*cFactor*sqrt(pow(null_cfit->edm(),2)+pow(ufit->edm(),2)));
+    return std::make_pair(2.*cFactor*(null_cfit()->minNll()-ufit()->minNll()),2.*cFactor*sqrt(pow(null_cfit()->edm(),2)+pow(ufit()->edm(),2)));
     //return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
 }
 
-std::pair<double,double> xRooNLLVar::xRooHypoTestResult::sigma_mu() const {
-    xRooHypoTestResult x = *this;
-    x.fPllType = xRooFit::Asymptotics::TwoSided;
-    x.ufit = asimov_ufit; x.null_cfit = asimov_cfit;
-    auto out = x.pll();
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
+    if (fUfit) return fUfit;
+    if (!nllVar) return nullptr;
+    AutoRestorer snap(*nllVar->fFuncVars);
+    nllVar->setData(data);
+    nllVar->fFuncVars->setAttribAll("Constant",false);
+    *nllVar->fFuncVars = *coords; // will reconst the coords
+    dynamic_cast<RooRealVar*>(nllVar->fFuncVars->find(fPOIName.c_str()))->setConstant(false);
+    if (fGenFit) {
+        // make initial guess same as pars we generated with
+        nllVar->fFuncVars->assignValueOnly(fGenFit->constPars());
+        nllVar->fFuncVars->assignValueOnly(fGenFit->floatParsFinal());
+    }
+    return (fUfit = nllVar->minimize());
+}
+
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::null_cfit() {
+    if (fNull_cfit) return fNull_cfit;
+    if (!nllVar) return nullptr;
+    AutoRestorer snap(*nllVar->fFuncVars);
+    nllVar->setData(data);
+    if (fUfit) {
+        // move to ufit coords before evaluating
+        *nllVar->fFuncVars = fUfit->floatParsFinal();
+    }
+    nllVar->fFuncVars->setAttribAll("Constant",false);
+    *nllVar->fFuncVars = *coords; // will reconst the coords
+    return (fNull_cfit = nllVar->minimize());
+}
+
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::alt_cfit() {
+    if (std::isnan(fAltVal)) return nullptr;
+    if (fAlt_cfit) return fAlt_cfit;
+    if (!nllVar) return nullptr;
+    AutoRestorer snap(*nllVar->fFuncVars);
+    nllVar->setData(data);
+    if (fUfit) {
+        // move to ufit coords before evaluating
+        *nllVar->fFuncVars = fUfit->floatParsFinal();
+    }
+    nllVar->fFuncVars->setAttribAll("Constant",false);
+    *nllVar->fFuncVars = *coords; // will reconst the coords
+    dynamic_cast<RooRealVar*>(nllVar->fFuncVars->find(fPOIName.c_str()))->setVal(fAltVal);
+    return (fAlt_cfit = nllVar->minimize());
+}
+
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
+
+    if (!fAsimov) {
+        if (!alt_cfit() || !nllVar) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+        AutoRestorer snap(*nllVar->fFuncVars);
+        *nllVar->fFuncVars = alt_cfit()->floatParsFinal();
+        *nllVar->fFuncVars = alt_cfit()->constPars();
+        auto asimov = nllVar->generate(true);
+        fAsimov = std::make_shared<xRooHypoPoint>(*this);
+        fAsimov->fPllType = xRooFit::Asymptotics::TwoSided;
+        fAsimov->fUfit.reset();fAsimov->fNull_cfit.reset();fAsimov->fAlt_cfit.reset();
+        fAsimov->data = asimov;
+    }
+    auto out = fAsimov->pll();
     return std::make_pair(std::abs(fNullVal - fAltVal)/sqrt(out.first), out.second*0.5*std::abs(fNullVal - fAltVal)/(out.first*sqrt(out.first)));
 }
 
-xRooNLLVar::xRooHypoTestResult xRooNLLVar::hypoTest(const char* parName, double value, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
-    xRooHypoTestResult out;
+xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateNull() {
+    xRooHypoPoint out;
+    out.fPOIName = fPOIName; out.coords = coords; out.fPllType = fPllType; out.fNullVal=fNullVal; out.fAltVal = fAltVal;
+    out.nllVar = nllVar;
+    if (!nllVar) return out;
+    *nllVar->fFuncVars = null_cfit()->floatParsFinal();
+    *nllVar->fFuncVars = null_cfit()->constPars();
+    out.data = nllVar->generate();
+    out.fGenFit = null_cfit();
+    return out;
+}
+
+xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt() {
+    xRooHypoPoint out;
+    out.fPOIName = fPOIName; out.coords = coords; out.fPllType = fPllType; out.fNullVal=fNullVal; out.fAltVal = fAltVal;
+    out.nllVar = nllVar;
+    if (!nllVar) return out;
+    if (!alt_cfit()) return out;
+    *nllVar->fFuncVars = alt_cfit()->floatParsFinal();
+    *nllVar->fFuncVars = alt_cfit()->constPars();
+    out.data = nllVar->generate();
+    out.fGenFit = alt_cfit();
+    return out;
+}
+
+xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double value, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
+    xRooHypoPoint out;
     out.fPOIName = parName;
     out.fNullVal = value; out.fAltVal = alt_value;
+    out.nllVar = this;
+    out.data = getData();
+
+    if (!fFuncVars) { reinitialize(); }
+
+    auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
+    if (!poi) return out;
+    poi->setVal(value);
+    poi->setConstant();
+    out.coords.reset( std::unique_ptr<RooAbsCollection>(fFuncVars->selectByAttrib("Constant",true))->snapshot() );
 
     auto _type = pllType;
     if (_type == xRooFit::Asymptotics::Unknown) {
@@ -370,50 +469,6 @@ xRooNLLVar::xRooHypoTestResult xRooNLLVar::hypoTest(const char* parName, double 
     }
 
     out.fPllType = _type;
-
-    // evaluate pll fits
-
-    // start by floating everything and consting all the const vars
-    if (!fFuncVars) {
-        reinitialize();
-    } else {
-        fFuncVars->setAttribAll("Constant",false);
-        fConstVars->setAttribAll("Constant",true);
-    }
-
-    auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
-    if (!poi) return out;
-
-    AutoRestorer snap(*fFuncVars);
-
-    poi->setConstant(false);
-    auto ufit = minimize();
-    if (ufit->status() != 0) return out;
-    auto cFactor = xRooFit::Asymptotics::CompatFactor(_type, value, static_cast<RooAbsReal*>(ufit->floatParsFinal().find(parName))->getVal());
-    if (cFactor != 0) {
-        poi->setConstant(true); poi->setVal(value);
-        out.null_cfit = minimize();
-    }
-    out.ufit = ufit;
-
-    // do sigma_mu calc if alt is not nan
-    if (!std::isnan(alt_value)) {
-        *fFuncVars = ufit->floatParsFinal(); // use ufit values as initial
-        poi->setConstant(true); poi->setVal(alt_value);
-        auto cfit_prime = minimize();
-        if (cfit_prime->status () != 0) return out;
-
-        auto oldData = getData();
-        setData(generate(true));
-        auto res = hypoTest(parName,value);
-
-        setData(oldData);
-
-        // transfer fits to result
-        out.alt_cfit = cfit_prime;
-        out.asimov_ufit = res.ufit;
-        out.asimov_cfit = res.null_cfit;
-    }
 
     return out;
 

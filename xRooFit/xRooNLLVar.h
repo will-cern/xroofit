@@ -33,6 +33,8 @@ public:
 
     void reinitialize();
 
+    void AddOption(const RooCmdArg& opt);
+
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> getData() const; // returns pointer to data and snapshot of globs
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generate(bool expected=false,int seed=0);
     //std::shared_ptr<const RooFitResult> snapshot();
@@ -45,37 +47,46 @@ public:
     std::pair<double,double> pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::TwoSided);
     std::pair<double,double> sigma_mu(const char* parName, double value, double prime_value);
 
-    class xRooHypoTestResult {
+    class xRooHypoPoint {
     public:
-        std::pair<double,double> pll() const; // observed test statistic value
-        std::pair<double,double> sigma_mu() const; // estimate of sigma_mu parameter
+        std::pair<double,double> pll(); // observed test statistic value
+        std::pair<double,double> sigma_mu(); // estimate of sigma_mu parameter
+        std::shared_ptr<const RooFitResult> ufit();
+        std::shared_ptr<const RooFitResult> null_cfit();
+        std::shared_ptr<const RooFitResult> alt_cfit();
+
+
+        std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> data;
 
         // leave nSigma=NaN for observed p-value
-        double pNull_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()) const;
-        double pAlt_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()) const;
-        double pCLs_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()) const { return (pNull_asymp(nSigma)==0) ? 0 : (pNull_asymp(nSigma)/pAlt_asymp(nSigma)); }
+        double pNull_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
+        double pAlt_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
+        double pCLs_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()) { return (pNull_asymp(nSigma)==0) ? 0 : (pNull_asymp(nSigma)/pAlt_asymp(nSigma)); }
 
-        double pNull_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) const;
-        double pAlt_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) const;
-        double pCLs_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) const { return (pNull_toys(nSigma)==0) ? 0 : (pNull_toys(nSigma)/pAlt_toys(nSigma)); }
+        double pNull_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
+        double pAlt_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
+        double pCLs_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) { return (pNull_toys(nSigma)==0) ? 0 : (pNull_toys(nSigma)/pAlt_toys(nSigma)); }
 
-        void addNullToys(xRooNLLVar& nllFunc, int nToys);
-        void addAltToys(xRooNLLVar& nllFunc, int nToys);
+        xRooHypoPoint generateNull();
+        xRooHypoPoint generateAlt();
 
-        RooRealVar& mu_hat() const; // throws exception if ufit not available
+        RooRealVar& mu_hat(); // throws exception if ufit not available
 
         std::string fPOIName;
         xRooFit::Asymptotics::PLLType fPllType;
         double fNullVal=1; double fAltVal=0;
 
-        std::shared_ptr<const RooFitResult> ufit;
-        std::shared_ptr<const RooFitResult> null_cfit; // required for test statistic value
-        std::shared_ptr<const RooFitResult> alt_cfit; // required for sigma_mu estimate and alt toys
-        std::shared_ptr<const RooFitResult> asimov_ufit;
-        std::shared_ptr<const RooFitResult> asimov_cfit;
+        std::shared_ptr<const RooAbsCollection> coords; // pars of the nll that will be held const alongside POI
+
+        std::shared_ptr<const RooFitResult> fUfit,fNull_cfit,fAlt_cfit;
+        std::shared_ptr<const RooFitResult> fGenFit; // if the data was generated, this is the fit is was generated from
+
+        std::shared_ptr<xRooHypoPoint> fAsimov; // same as this point but pllType is twosided and data is expected post alt-fit
 
         std::vector<double> nullToys; // would have to save these vectors for specific: null_cfit (genPoint), ufit, poiName, pllType, nullVal
         std::vector<double> altToys;
+
+        xRooNLLVar* nllVar = nullptr;
 
     };
 
@@ -90,7 +101,7 @@ public:
 //    };
 
     // use alt_value = nan to skip the asimov calculations
-    xRooHypoTestResult hypoTest(const char* parName, double value, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
+    xRooHypoPoint hypoPoint(const char* parName, double value, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
 
 
 
@@ -132,7 +143,7 @@ public:
     // but still work ok for assignment operations
     std::shared_ptr<RooAbsPdf> fPdf;
     std::shared_ptr<RooAbsData> fData;
-    std::shared_ptr<RooAbsCollection> fGlobs;
+    std::shared_ptr<const RooAbsCollection> fGlobs;
 
     std::shared_ptr<RooLinkedList> fOpts;
     std::shared_ptr<ROOT::Fit::FitConfig> fFitConfig;
