@@ -169,6 +169,7 @@ void xRooNLLVar::reinitialize() {
     }
 
     fFuncVars.reset( std::shared_ptr<RooAbsReal>::get()->getVariables() );
+    if(fGlobs) {fFuncGlobs.reset( fFuncVars->selectCommon(*fGlobs) );fFuncGlobs->setAttribAll("Constant",true);}
     fConstVars.reset( fFuncVars->selectByAttrib("Constant",true) ); // will check if any of these have floated
 }
 
@@ -183,7 +184,10 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
 }
 
 std::shared_ptr<const RooFitResult> xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& _config) {
-    return xRooFit::minimize(*get(),(_config) ? _config : fitConfig());
+    auto out = xRooFit::minimize(*get(),(_config) ? _config : fitConfig());
+    out->_constPars->setAttribAll("global",false);
+    if(fGlobs) std::unique_ptr<RooAbsCollection>(out->_constPars->selectCommon(*fGlobs))->setAttribAll("global",true);
+    return out;
 }
 
 class AutoRestorer {
@@ -421,7 +425,7 @@ std::shared_ptr<RooAbsReal> xRooNLLVar::func() const {
         std::cout << "Reinitializing because of change of const parameters" << std::endl;
         const_cast<xRooNLLVar*>(this)->reinitialize();
     }
-    if (fGlobs) *fFuncVars = *fGlobs;
+    if (fGlobs) {*fFuncGlobs = *fGlobs; fFuncGlobs->setAttribAll("Constant",true);}
     return *this;
 }
 
