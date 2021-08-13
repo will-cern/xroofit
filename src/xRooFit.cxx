@@ -93,7 +93,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
         std::unique_ptr<RooArgSet> _obs(_pdf->getVariables());_obs->remove(fr->constPars(),true,true);_obs->remove(fr->floatParsFinal(),true,true); // use this instead
 
         if(!_globs->empty()) {
-            RooArgSet* toy_gobs = new RooArgSet(uuid+"_gobs");
+            RooArgSet* toy_gobs = new RooArgSet(uuid+"_globs");
             //ensure we use the gobs from the model ...
             RooArgSet t; t.add(*_globs);
             std::unique_ptr<RooArgSet> globs(_pdf->getObservables(t));
@@ -213,7 +213,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
         if (auto s = dynamic_cast<RooSimultaneous*>(_pdf)) {
             // do subpdf's individually
             _obs->add(w);
-            out.first.reset(new RooDataSet(TString::Format("%s", TUUID().AsString()),
+            out.first.reset(new RooDataSet(uuid,
                                            TString::Format("%s %s", _pdf->GetTitle(), (expected) ? "Expected" : "Toy"),
                                            *_obs, "weightVar"));
 
