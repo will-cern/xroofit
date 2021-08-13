@@ -52,6 +52,16 @@ xRooNLLVar xRooFit::createNLL(RooAbsPdf& pdf, RooAbsData* data, const RooCmdArg 
 
 }
 
+std::shared_ptr<const RooFitResult> xRooFit::fitTo(RooAbsPdf& pdf, const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& data, const RooLinkedList& nllOpts, const ROOT::Fit::FitConfig& fitConf) {
+    return xRooNLLVar(std::shared_ptr<RooAbsPdf>(&pdf,[](RooAbsPdf*){}),data,nllOpts).minimize(std::shared_ptr<ROOT::Fit::FitConfig>(const_cast<ROOT::Fit::FitConfig*>(&fitConf),[](ROOT::Fit::FitConfig*){}));
+}
+
+std::shared_ptr<const RooFitResult> xRooFit::fitTo(RooAbsPdf& pdf, const std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts, const ROOT::Fit::FitConfig& fitConf) {
+    return xRooNLLVar(pdf,data,nllOpts).minimize(std::shared_ptr<ROOT::Fit::FitConfig>(const_cast<ROOT::Fit::FitConfig*>(&fitConf),[](ROOT::Fit::FitConfig*){}));
+}
+
+
+
 std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooFit::generateFrom(RooAbsPdf& pdf, const std::shared_ptr<const RooFitResult>& fr, bool expected, int seed) {
 
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> out;

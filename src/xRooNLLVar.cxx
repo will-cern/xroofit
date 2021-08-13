@@ -39,7 +39,7 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
     fOpts = std::shared_ptr<RooLinkedList>(new RooLinkedList,[](RooLinkedList* l) { if(l) l->Delete(); delete l; } );
 
     for(int i=0; i< opts.GetSize(); i++) {
-        if (strcmp(opts.At(i)->GetName(),"GlobalObservables")) {
+        if (strcmp(opts.At(i)->GetName(),"GlobalObservables")==0) {
             // will skip here to add with the obs from the function below
             // must match global observables
             auto gl = dynamic_cast<RooCmdArg*>(opts.At(i))->getSet(0);
@@ -347,7 +347,7 @@ void xRooNLLVar::Draw(Option_t* opt) {
             if (low > v->getMin()) {
                 v->setVal(low);
                 auto _v = func()->getVal();
-                if (std::isnan(_v)) {
+                if (std::isnan(_v) || std::isinf(_v)) {
                     if (bad->GetN()==0) gr->Add(bad,"P");
                     bad->SetPoint(bad->GetN(),low,out->GetPointY(0));
                 } else {
@@ -358,7 +358,7 @@ void xRooNLLVar::Draw(Option_t* opt) {
             if (high < v->getMax()) {
                 v->setVal(high);
                 auto _v = func()->getVal();
-                if (std::isnan(_v)) {
+                if (std::isnan(_v) || std::isinf(_v)) {
                     if (bad->GetN()==0) gr->Add(bad,"P");
                     bad->SetPoint(bad->GetN(),high,out->GetPointY(0));
                 } else {
