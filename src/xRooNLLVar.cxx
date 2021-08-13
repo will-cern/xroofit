@@ -18,19 +18,43 @@
 #include "RooRealVar.h"
 #include "Math/ProbFunc.h"
 
+#include "TPad.h"
+#include "TSystem.h"
 
 
 xRooNLLVar::~xRooNLLVar() {
 
 }
 
-xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_ptr<RooAbsData>& data, const RooLinkedList& opts) :
-    fPdf(pdf), fData(data) {
+xRooNLLVar::xRooNLLVar(RooAbsPdf& pdf,std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts)
+    : xRooNLLVar(std::shared_ptr<RooAbsPdf>(&pdf,[](RooAbsPdf*){}),std::make_pair(std::shared_ptr<RooAbsData>(data.first,[](RooAbsData*){}),std::shared_ptr<const RooAbsCollection>(data.second,[](const RooAbsCollection*){})),nllOpts) {
+
+}
+
+xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
+                       const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& data,
+                       const RooLinkedList& opts) : fPdf(pdf), fData(data.first), fGlobs(data.second) {
 
     fOpts = std::shared_ptr<RooLinkedList>(new RooLinkedList,[](RooLinkedList* l) { if(l) l->Delete(); delete l; } );
 
     for(int i=0; i< opts.GetSize(); i++) {
-        fOpts->Add( opts.At(i)->Clone(nullptr) ); //nullptr needed because accessing Clone via TObject base class puts "" instead, so doesnt copy names
+        if (strcmp(opts.At(i)->GetName(),"GlobalObservables")) {
+            // will skip here to add with the obs from the function below
+            // must match global observables
+            auto gl = dynamic_cast<RooCmdArg*>(opts.At(i))->getSet(0);
+            if (!fGlobs || !fGlobs->equals(*gl)) {
+                throw std::runtime_error("GlobalObservables mismatch");
+            }
+        } else {
+            fOpts->Add(opts.At(i)->Clone(
+                    nullptr)); //nullptr needed because accessing Clone via TObject base class puts "" instead, so doesnt copy names
+        }
+    }
+    if (fGlobs) {
+        // add global observables opt with function obs
+        auto _vars = std::unique_ptr<RooArgSet>( fPdf->getVariables() );
+        auto _funcGlobs = std::unique_ptr<RooArgSet>(dynamic_cast<RooArgSet*>(_vars->selectCommon(*fGlobs)));
+        fOpts->Add(RooFit::GlobalObservables(*_funcGlobs).Clone());
     }
 
     // if fit range specified, and pdf is a RooSimultaneous, may need to 'reduce' the model if some of the pdfs are in range and others are not
@@ -87,21 +111,35 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_
         }
     }
 
-    if (auto globs = dynamic_cast<RooCmdArg*>(fOpts->find("GlobalObservables"))) {
-        // first remove any obs the pdf doesnt depend on
-        auto _vars = std::unique_ptr<RooAbsCollection>( fPdf->getVariables() );
-        auto _funcGlobs = std::unique_ptr<RooAbsCollection>(_vars->selectCommon(*globs->getSet(0)));
-        fGlobs.reset( std::unique_ptr<RooAbsCollection>(globs->getSet(0)->selectCommon(*_funcGlobs))->snapshot() );
-        globs->setSet(0,dynamic_cast<const RooArgSet&>(*_funcGlobs)); // globs in linked list has its own argset but args need to live as long as the func
-        /*RooArgSet toRemove;
-        for(auto a : *globs->getSet(0)) {
-            if (!_vars->find(*a)) toRemove.add(*a);
-        }
-        const_cast<RooArgSet*>(globs->getSet(0))->remove(toRemove);
-        fGlobs.reset( globs->getSet(0)->snapshot() );
-        fGlobs->setAttribAll("Constant",true);
-        const_cast<RooArgSet*>(globs->getSet(0))->replace(*fGlobs);*/
-    }
+//    if (fGlobs) {
+//        // must check GlobalObservables is in the list
+//    }
+//
+//    if (auto globs = dynamic_cast<RooCmdArg*>(fOpts->find("GlobalObservables"))) {
+//        // first remove any obs the pdf doesnt depend on
+//        auto _vars = std::unique_ptr<RooAbsCollection>( fPdf->getVariables() );
+//        auto _funcGlobs = std::unique_ptr<RooAbsCollection>(_vars->selectCommon(*globs->getSet(0)));
+//        fGlobs.reset( std::unique_ptr<RooAbsCollection>(globs->getSet(0)->selectCommon(*_funcGlobs))->snapshot() );
+//        globs->setSet(0,dynamic_cast<const RooArgSet&>(*_funcGlobs)); // globs in linked list has its own argset but args need to live as long as the func
+//        /*RooArgSet toRemove;
+//        for(auto a : *globs->getSet(0)) {
+//            if (!_vars->find(*a)) toRemove.add(*a);
+//        }
+//        const_cast<RooArgSet*>(globs->getSet(0))->remove(toRemove);
+//        fGlobs.reset( globs->getSet(0)->snapshot() );
+//        fGlobs->setAttribAll("Constant",true);
+//        const_cast<RooArgSet*>(globs->getSet(0))->replace(*fGlobs);*/
+//    }
+
+
+};
+
+
+xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_ptr<RooAbsData>& data, const RooLinkedList& opts) :
+    xRooNLLVar(pdf,std::make_pair(data,std::shared_ptr<const RooAbsCollection>((opts.find("GlobalObservables")) ? dynamic_cast<RooCmdArg*>(opts.find("GlobalObservables"))->getSet(0)->snapshot() : nullptr)))
+     {
+
+
 
 }
 
@@ -230,6 +268,112 @@ double xRooNLLVar::getEntryVal(size_t entry) {
     auto _pdf = pdf();
     *std::unique_ptr<RooAbsCollection>(_pdf->getObservables(_data)) = *_data->get(entry);
     return -_data->weight()*_pdf->getLogVal(_data->get());
+}
+
+std::shared_ptr<RooArgSet> xRooNLLVar::pars(bool stripGlobalObs) {
+    auto out = std::shared_ptr<RooArgSet>(get()->getVariables());
+    if(stripGlobalObs && fGlobs) {
+        out->remove(*fGlobs,true,true);
+    }
+    return out;
+}
+
+#include "TMultiGraph.h"
+#include "TCanvas.h"
+
+void xRooNLLVar::Draw(Option_t* opt) {
+    TString sOpt(opt);
+
+    auto _pars = pars();
+
+    if (sOpt == "floating") {
+        // start scanning floating pars
+        auto floats = std::unique_ptr<RooAbsCollection>(_pars->selectByAttrib("Constant",false));
+        TVirtualPad* pad = gPad;
+        if (!pad) {
+            TCanvas::MakeDefCanvas();
+            pad = gPad;
+        }
+        TMultiGraph* gr = new TMultiGraph; gr->SetName("multigraph");
+        gr->SetTitle(TString::Format("%s;Normalized Parameter Value;#Delta NLL",get()->GetTitle()));
+        /*((TPad*)pad)->DivideSquare(floats->size());
+        int i=0;
+        for(auto a : *floats) {
+            i++;
+            pad->cd(i);
+            Draw(a->GetName());
+        }*/
+        return;
+    }
+
+
+
+    RooArgList vars;
+    TStringToken pattern(sOpt, ":");
+    while (pattern.NextToken()) {
+        TString s(pattern);
+        if(auto a = _pars->find(s); a) vars.add(*a);
+    }
+
+    if (vars.size()==1) {
+        TGraph *out = new TGraph;out->SetBit(kCanDelete);
+        TGraph *bad = new TGraph; bad->SetBit(kCanDelete); bad->SetMarkerColor(kRed); bad->SetMarkerStyle(5);
+        TMultiGraph* gr = (gPad) ? dynamic_cast<TMultiGraph*>(gPad->GetPrimitive("multigraph")) : nullptr;
+        bool normRange = false;
+        if (!gr) {
+            gr = new TMultiGraph;
+            gr->Add(out, "LP");
+            gr->SetBit(kCanDelete);
+        } else {
+            normRange = true;
+        }
+        out->SetName(get()->GetName());
+        gr->SetTitle(TString::Format("%s;%s;#Delta NLL",get()->GetTitle(),vars.at(0)->GetTitle()));
+        // scan outwards from current value towards limits
+        auto v = dynamic_cast<RooRealVar*>(vars.at(0));
+        double low = v->getVal(); double high = low;
+        double step = (v->getMax() - v->getMin())/100;
+        double init = v->getVal(); double initVal = func()->getVal();
+        double xscale = (normRange) ? (2.*(v->getMax() - v->getMin())) : 1.;
+        while( out->GetN() < 100 && (low > v->getMin() || high < v->getMax()) ) {
+            if(out->GetN()==0) {
+                out->SetPoint(out->GetN(),low,0);
+                low -= step; high += step;
+                gr->Draw("A");
+                gPad->SetGrid();
+                continue;
+            }
+            if (low > v->getMin()) {
+                v->setVal(low);
+                auto _v = func()->getVal();
+                if (std::isnan(_v)) {
+                    if (bad->GetN()==0) gr->Add(bad,"P");
+                    bad->SetPoint(bad->GetN(),low,out->GetPointY(0));
+                } else {
+                    out->SetPoint(out->GetN(), low, _v - initVal);
+                }
+                low -= step;
+            }
+            if (high < v->getMax()) {
+                v->setVal(high);
+                auto _v = func()->getVal();
+                if (std::isnan(_v)) {
+                    if (bad->GetN()==0) gr->Add(bad,"P");
+                    bad->SetPoint(bad->GetN(),high,out->GetPointY(0));
+                } else {
+                    out->SetPoint(out->GetN(), high, _v - initVal);
+                }
+                high += step;
+            }
+            out->Sort();
+            gPad->Modified();gPad->Update();gSystem->ProcessEvents();
+        }
+        v->setVal(init);
+    }
+
+
+
+
 }
 
 std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooNLLVar::getData() const {

@@ -29,9 +29,11 @@
 #include "RooMinimizer.h"
 #undef private
 
+
 xRooNLLVar xRooFit::createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts) {
     return xRooNLLVar(pdf,data,nllOpts);
 }
+
 
 xRooNLLVar xRooFit::createNLL(RooAbsPdf& pdf, RooAbsData* data, const RooLinkedList& nllOpts) {
     return createNLL(std::shared_ptr<RooAbsPdf>(&pdf,[](RooAbsPdf*){}),std::shared_ptr<RooAbsData>(data,[](RooAbsData*){}),nllOpts);
