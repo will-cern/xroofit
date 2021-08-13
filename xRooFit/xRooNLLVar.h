@@ -24,9 +24,10 @@ class xRooNLLVar : public std::shared_ptr<RooAbsReal> {
 public:
 
 
-    xRooNLLVar(RooAbsPdf& pdf,std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts = RooLinkedList());
+    xRooNLLVar(RooAbsPdf& pdf,const std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts = RooLinkedList());
     xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_ptr<RooAbsData>& data, const RooLinkedList& opts = RooLinkedList());
     xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& data, const RooLinkedList& opts = RooLinkedList());
+
     ~xRooNLLVar();
 
     // whenever implicitly converted to a RooAbsReal we will make sure our globs are set
@@ -133,6 +134,8 @@ public:
     std::shared_ptr<RooAbsReal> func() const; // will assign globs when called
     std::shared_ptr<RooAbsPdf> pdf() const { return fPdf; }
     RooAbsData* data() const; // returns the data hidden inside the NLLVar if there is some
+
+
 
     // get the Nll value for a specific entry.
     // total nll should be all these values + constraint term + extended term

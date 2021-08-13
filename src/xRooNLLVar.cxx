@@ -26,10 +26,11 @@ xRooNLLVar::~xRooNLLVar() {
 
 }
 
-xRooNLLVar::xRooNLLVar(RooAbsPdf& pdf,std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts)
+xRooNLLVar::xRooNLLVar(RooAbsPdf& pdf,const std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts)
     : xRooNLLVar(std::shared_ptr<RooAbsPdf>(&pdf,[](RooAbsPdf*){}),std::make_pair(std::shared_ptr<RooAbsData>(data.first,[](RooAbsData*){}),std::shared_ptr<const RooAbsCollection>(data.second,[](const RooAbsCollection*){})),nllOpts) {
 
 }
+
 
 xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
                        const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& data,
