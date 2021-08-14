@@ -4208,7 +4208,7 @@ void xRooNode::Draw(Option_t* opt) {
                     if (down > up) ymax = hh->GetBinContent(1) + down;
                     else ymin = hh->GetBinContent(1) - up;
                 }
-                if (hh == hAxis && pad && !pad->GetLogy() && (log10(ymax) - log10(std::max(1e-15,ymin)))>=3) {
+                if (hh == hAxis && pad && !pad->GetLogy() && ymin>0 && (log10(ymax) - log10(ymin))>=3) {
                     // auto-log the pad
                     pad->SetLogy();
                 }

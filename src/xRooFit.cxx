@@ -324,6 +324,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig() {
 
 std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std::shared_ptr<ROOT::Fit::FitConfig>& _fitConfig) {
 
+
     auto myFitConfig = _fitConfig ? _fitConfig : defaultFitConfig();
     auto& fitConfig = *myFitConfig;
 
@@ -404,6 +405,11 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
     }
 
     _minimizer.optimizeConst(2);
+
+    // todo use the fitConfig to store which pars are const etc to track the state of this ... doing what RooMinimizer does in fact
+    nll.constOptimizeTestStatistic(RooAbsArg::ConfigChange,true); // trigger a re-evaluate of which nodes to cache
+    nll.constOptimizeTestStatistic(RooAbsArg::ValueChange,true); // update the cache values -- is this needed??
+
 
     bool hesse = _minimizer.fitter()->Config().ParabErrors();
     _minimizer.fitter()->Config().SetParabErrors(false); // turn "off" so can run hesse as a separate step, appearing in status

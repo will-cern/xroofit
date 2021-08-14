@@ -185,6 +185,10 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
 
 std::shared_ptr<const RooFitResult> xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& _config) {
     auto out = xRooFit::minimize(*get(),(_config) ? _config : fitConfig());
+    // add any pars that are const here that aren't in constPars list because they may have been
+    // const-optimized and their values cached with the dataset, so if subsequently floated the
+    // nll wont evaluate correctly
+    //fConstVars.reset( fFuncVars->selectByAttrib("Constant",true) );
     out->_constPars->setAttribAll("global",false);
     if(fGlobs) std::unique_ptr<RooAbsCollection>(out->_constPars->selectCommon(*fGlobs))->setAttribAll("global",true);
     return out;
@@ -419,13 +423,13 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
 }
 
 std::shared_ptr<RooAbsReal> xRooNLLVar::func() const {
+    if (fGlobs && fFuncGlobs) {*fFuncGlobs = *fGlobs; fFuncGlobs->setAttribAll("Constant",true);}
     if (!(*this)) {
         const_cast<xRooNLLVar*>(this)->reinitialize();
-    } else if (!std::unique_ptr<RooAbsCollection>(fConstVars->selectByAttrib("Constant",false))->empty()) {
-        std::cout << "Reinitializing because of change of const parameters" << std::endl;
+    } else if (auto f = std::unique_ptr<RooAbsCollection>(fConstVars->selectByAttrib("Constant",false)); !f->empty()) {
+        std::cout << "Reinitializing because of change of const parameters:" << f->contentsString() << std::endl;
         const_cast<xRooNLLVar*>(this)->reinitialize();
     }
-    if (fGlobs) {*fFuncGlobs = *fGlobs; fFuncGlobs->setAttribAll("Constant",true);}
     return *this;
 }
 
@@ -607,7 +611,10 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double valu
     if (!poi) return out;
     poi->setVal(value);
     poi->setConstant();
-    out.coords.reset( std::unique_ptr<RooAbsCollection>(fFuncVars->selectByAttrib("Constant",true))->snapshot() );
+    auto _snap = std::unique_ptr<RooAbsCollection>(fFuncVars->selectByAttrib("Constant",true))->snapshot();
+    if(fGlobs) _snap->remove(*fGlobs,true,true);
+    out.coords.reset( _snap );
+
 
     auto _type = pllType;
     if (_type == xRooFit::Asymptotics::Unknown) {
