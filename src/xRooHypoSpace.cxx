@@ -13,7 +13,9 @@
 #include "TLine.h"
 #include "Math/ProbFunc.h"
 
-xRooHypoSpace::xRooHypoSpace() : TNamed(), fPOI(nullptr) { }
+#include "RooFormulaVar.h"
+
+xRooHypoSpace::xRooHypoSpace() : TNamed(), fPOI(nullptr), fAxisVars(nullptr) { }
 
 xRooHypoSpace::xRooHypoSpace(const char* name, const char* title, const RooAbsCollection& poi) : TNamed(name,title), fPOI(poi.snapshot()) {
 
@@ -58,21 +60,23 @@ xRooHypoPoint::xRooHypoPoint(xRooHypoSpace* space, const RooAbsCollection& coord
 
 
 
-double xRooHypoPoint::GetObs(const char* name) {
+double xRooHypoPoint::GetObs(const char* name) const {
     std::string sName( (name) ? name : fSpace->fObsName.c_str() );
     auto itr = fObs.find(sName);
     if (itr==fObs.end()) return std::numeric_limits<double>::quiet_NaN();
     return itr->second.first;
 }
 
-double xRooHypoPoint::GetObsError(const char* name) {
+double xRooHypoPoint::GetObsError(const char* name) const {
     std::string sName( (name) ? name : fSpace->fObsName.c_str() );
     auto itr = fObs.find(sName);
     if (itr==fObs.end()) return std::numeric_limits<double>::quiet_NaN();
     return itr->second.second;
 }
 
-double xRooHypoPoint::GetExp(double nSigma,bool asymptotics) {
+double xRooHypoPoint::GetExp(double nSigma,bool asymptotics) const {
+    if (!fAltPoint) return std::numeric_limits<double>::quiet_NaN();
+    if (fAltPoint != this) return fAltPoint->GetExp(nSigma,asymptotics);
     if (asymptotics) {
         if (fPllType == xRooFit::Asymptotics::Unknown) return  std::numeric_limits<double>::quiet_NaN();
         auto sigma_mu = GetSigmaMu();
@@ -83,14 +87,12 @@ double xRooHypoPoint::GetExp(double nSigma,bool asymptotics) {
         if (!vp) return  std::numeric_limits<double>::quiet_NaN();
         return xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),v->getVal(),vp->getVal(),sigma_mu.first,v->getMin(),v->getMax());
     }
-
-    if (!fAltPoint) return std::numeric_limits<double>::quiet_NaN();
     std::sort(fAltPoint->fNull.begin(),fAltPoint->fNull.end());
     return fAltPoint->fNull.at( fAltPoint->fNull.size()*ROOT::Math::gaussian_cdf_c(nSigma) ).first;
 
 }
 
-std::pair<double,double> xRooHypoPoint::GetSigmaMu() {
+std::pair<double,double> xRooHypoPoint::GetSigmaMu() const {
     auto asi = GetObs("asimov");
     if (std::isnan(asi) || asi<=0 || fPOI->size() != 1 || !fAltPoint) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
 
@@ -102,14 +104,14 @@ std::pair<double,double> xRooHypoPoint::GetSigmaMu() {
 
 }
 
-double xRooHypoPoint::GetPAlt(double value, bool asymptotics) {
+double xRooHypoPoint::GetPAlt(double value, bool asymptotics) const {
     if (!fAltPoint) return std::numeric_limits<double>::quiet_NaN();
     return fAltPoint->GetPNull(value,asymptotics);
 }
 
-double xRooHypoPoint::GetPNull(double value, bool asymptotics) {
+double xRooHypoPoint::GetPNull(double value, bool asymptotics) const {
     if (std::isnan(value)) { value = GetObs(); }
-
+    if (std::isnan(value)) return std::numeric_limits<double>::quiet_NaN();
     if (asymptotics) {
         if (fPllType == xRooFit::Asymptotics::Unknown) return  std::numeric_limits<double>::quiet_NaN();
         auto sigma_mu = GetSigmaMu();
@@ -129,6 +131,23 @@ double xRooHypoPoint::GetPNull(double value, bool asymptotics) {
         }
     }
     return n/d;
+}
+
+const char* xRooHypoPoint::GetTitle() const {
+    if (!fSpace) return TNamed::GetTitle();
+    TString s;
+    for(auto f : fSpace->GetAxisVars()) {
+        if(auto v = dynamic_cast<RooRealVar*>(fCoords->find(*f)); v) {
+            if (s!="") s += ", ";
+            s += TString::Format("%s = %g",f->GetTitle(),v->getVal());
+        }
+    }
+    const_cast<xRooHypoPoint*>(this)->SetTitle(s);
+    return TNamed::GetTitle();
+}
+
+const RooArgList& xRooHypoSpace::GetAxisVars() const {
+    return *fAxisVars;
 }
 
 void xRooHypoPoint::Draw(Option_t* opt) {
@@ -203,6 +222,7 @@ void xRooHypoPoint::Draw(Option_t* opt) {
     }
 
     auto h = new TH1D((isAlt) ? "alt" : "null","",100,_min,_max + (_max-_min)*0.01);
+    h->SetDirectory(0);
     size_t nBadOrZero=0;
     for(auto& p : fNull) {
         double w = std::isnan(p.second) ? 0 : p.second;
@@ -257,10 +277,13 @@ void xRooHypoPoint::Draw(Option_t* opt) {
 
 
     TLegend* l = nullptr;
+    TString htitle = h->GetTitle();
     if (!hasSame) {
         gPad->SetLogy();
         h->SetMinimum(1e-3);
-        h->Draw("axis"); hAxis=h;
+        h->SetTitle(GetTitle());
+        h->Draw("histe");//h->Draw("axis"); cant use axis option if want title drawn
+        hAxis=h;
         l = new TLegend(0.4,0.7,1.-gPad->GetRightMargin(),1.-gPad->GetTopMargin());
         l->SetName("legend");
         l->SetFillStyle(0);l->SetBorderSize(0);
@@ -274,10 +297,10 @@ void xRooHypoPoint::Draw(Option_t* opt) {
     }
 
     if(l) {
-        l->AddEntry(h,h->GetTitle(),"l");
+        l->AddEntry(h,htitle,"l");
     }
 
-    h->Draw("histesame");
+    if (hasSame) h->Draw( "histesame" );
 
     if (!std::isnan(asi) && asi>0 && fPOI->size()==1 && fPllType != xRooFit::Asymptotics::Unknown && fAltPoint) {
         auto _my_mu = dynamic_cast<RooRealVar*>(fCoords->find(*fPOI->first()))->getVal();
@@ -372,11 +395,164 @@ RooArgSet stringToSet(const std::string& coords, const RooAbsCollection* ref) {
 xRooHypoPoint* xRooHypoSpace::GetPoint(const std::string& coords, const std::string& alt_coords) {
 
     auto out = new xRooHypoPoint(this,stringToSet(coords,fPOI),stringToSet(alt_coords,fPOI));
+
+    if (!fAxisVars) fAxisVars = new RooArgList;
+
+    for(auto p : fPoints) {
+        for(auto a : *out->fCoords) {
+            if(fAxisVars->find(*a)) continue;
+            auto v = dynamic_cast<RooRealVar*>(a);
+            if (!v) continue;
+            auto v2 = dynamic_cast<RooRealVar*>(p->fCoords->find(*a)); // allow not to exist??
+            if (!v2 || v->getVal()!=v2->getVal()) {
+                fAxisVars->addClone(*v);
+            }
+        }
+    }
     fPoints.push_back(out);
     return out;
 
 }
 
-void xRooHypoSpace::Draw(Option_t* opt) {
+void xRooHypoSpace::Draw(Option_t* opt, Option_t* select) {
+    TString sOpt(opt);
 
+    bool hasSame = sOpt.Contains("same");
+    TVirtualPad* pad = gPad;
+    if (!pad && hasSame) return;
+
+    if (!pad) {
+        TCanvas::MakeDefCanvas();
+        pad = gPad;
+    }
+    if (!hasSame) pad->Clear();
+
+    if(sOpt.Contains("dist")) {
+        // draw distributions for selected points
+        std::vector<xRooHypoPoint*> selPoints;
+        for(auto p : fPoints) {
+            RooArgList l; l.add(*p->fCoords);
+            if(!select || strlen(select)==0 || RooFormulaVar("select",select,l,false).getVal()) {
+                selPoints.push_back(p);
+            }
+        }
+        if (selPoints.empty()) {
+            Warning("Draw","No points selected");
+            return;
+        }
+        if (selPoints.size()>1) ((TPad*)(gPad))->DivideSquare(selPoints.size());
+        int i=0;
+        for(auto p : selPoints) {
+            i++;
+            if(selPoints.size()>1) pad->cd(i);
+            p->Draw();
+        }
+        pad->cd();
+        pad->Modified();
+    }
+}
+
+void xRooHypoSpace::Draw(Option_t* opt) {
+    Draw(opt,"");
+}
+
+#include "Math/BrentRootFinder.h"
+#include "Math/WrappedFunction.h"
+#include "Math/Functor.h"
+#include "TGraph2D.h"
+
+double xRooHypoSpace::GetGraphX(const TGraph& graph, double y0, Option_t* opt) {
+    if (graph.GetN()<2) return std::numeric_limits<double>::quiet_NaN();
+    // todo: allow to control if looking for upcrossing (lower limit) or downcrossing (upper limit)
+    TString sOpt(opt);
+    sOpt.ToLower();
+    bool doSpline = (sOpt.Contains("s"));
+    auto func = [&](double x) {
+        return (doSpline) ? graph.Eval(x, nullptr, "S") - y0 : graph.Eval(x) - y0;
+    };
+    ROOT::Math::Functor1D f1d(func);
+
+    ROOT::Math::BrentRootFinder brf;
+    brf.SetFunction(f1d,graph.GetPointX(0),graph.GetPointX(graph.GetN()-1));
+    brf.SetNpx(TMath::Max(graph.GetN()*2,100) );
+    bool ret = brf.Solve(100, 1.E-16, 1.E-6);
+    if (!ret) return std::numeric_limits<double>::quiet_NaN();
+    return brf.Root();
+}
+
+double xRooHypoSpace::FindLimit(const char* what) {
+    std::unique_ptr<TGraph> gr(dynamic_cast<TGraph*>(Scan(what)));
+    if (!gr) return std::numeric_limits<double>::quiet_NaN();
+    TString sWhat(what);
+    return GetGraphX(*gr,0.05, sWhat.Contains("spline") ? "S" : "");
+}
+
+TObject* xRooHypoSpace::Scan(const char* what, const char* select) {
+
+    TString sWhat(what);
+
+    TStringToken pattern(sWhat,":");
+    std::vector<TString> parts;
+    while(pattern.NextToken()) {
+        parts.push_back( pattern.Data() );
+    }
+
+    if (parts.empty()) parts.push_back("");
+
+    if (parts.size()==1) {
+        parts.push_back( (fAxisVars && !fAxisVars->empty() ) ? fAxisVars->at(0)->GetName() : "0" );
+    }
+
+    sWhat = parts.at(0);
+    sWhat += " ";
+    sWhat.ToLower();
+
+    double nSigma = std::numeric_limits<double>::quiet_NaN();
+    if (auto i = sWhat.Index("exp"); i != -1) {
+        nSigma = TString(sWhat(i+3, sWhat.Index(" ",i)-(i+3))).Atof();
+    }
+
+    // scan through points building graph of p-values
+    TNamed* out;
+    if(parts.size()>2) out = new TGraph2D; else out = new TGraph;
+    TString xTitle = parts.at(1);
+    if (fAxisVars) {
+        for(auto a : *fAxisVars) { xTitle.ReplaceAll(a->GetName(),a->GetTitle()); }
+    }
+    TString title = sWhat;
+    if (select && strlen(select)>0) {title += "[["; title += select; title += "]]";}
+    out->SetTitle(TString::Format("%s;%s",title.Data(),xTitle.Data()));
+    for(auto p : fPoints) {
+        RooArgList l; l.add(*p->fCoords);
+        if (select && strlen(select)>0) {
+            if (RooFormulaVar("select",select,l,false).getVal()==0) continue;
+        }
+
+        double x = RooFormulaVar("x",parts.at(1),l,false).getVal();
+        double y = (parts.size()>2) ? RooFormulaVar("y",parts.at(2),l,false).getVal() : 0;
+        double v = 0;
+
+        bool doAsymp = !sWhat.Contains("toys");
+
+        double ts = std::isnan(nSigma) ? p->GetObs() : p->GetExp(nSigma,doAsymp);
+
+        if (sWhat.Contains("ts ")) {
+            v = ts;
+        } else if (sWhat.Contains("null ")) {
+            v = p->GetPNull(ts,doAsymp);
+        } else if (sWhat.Contains("alt ")) {
+            v = p->GetPAlt(ts,doAsymp);
+        } else {
+            v = p->GetPCLs(ts,doAsymp);
+        }
+
+        if (!std::isnan(v) && !std::isinf(v)) {
+            if(parts.size()>2) dynamic_cast<TGraph2D*>(out)->SetPoint(dynamic_cast<TGraph2D*>(out)->GetN(),x,y,v);
+            else dynamic_cast<TGraph*>(out)->SetPoint(dynamic_cast<TGraph*>(out)->GetN(),x,v);
+        }
+    }
+
+    if(auto g = dynamic_cast<TGraph*>(out); g) g->Sort();
+
+    return out;
 }
