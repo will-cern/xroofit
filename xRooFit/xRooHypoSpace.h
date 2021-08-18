@@ -77,6 +77,7 @@ public:
 
     std::vector<xRooHypoPoint*> fPoints;
     std::string fObsName = "obs"; // name of the observed value in points
+    std::string fAsimovName = "asimov"; // name of the obs value to use for asymptotics
 
     const RooAbsCollection* fPOI = nullptr;
 

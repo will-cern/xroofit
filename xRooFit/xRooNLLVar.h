@@ -23,6 +23,7 @@ class xRooNLLVar : public std::shared_ptr<RooAbsReal> {
 
 public:
 
+    void Print(Option_t* opt="");
 
     xRooNLLVar(RooAbsPdf& pdf,const std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts = RooLinkedList());
     xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_ptr<RooAbsData>& data, const RooLinkedList& opts = RooLinkedList());
@@ -143,6 +144,9 @@ public:
 
     RooNLLVar* nllTerm() const;
     RooConstraintSum* constraintTerm() const;
+    double extendedTerm() const;
+    double simTerm() const;
+    double binnedDataTerm() const;
 
     // change the dataset - will check globs are the same
     Bool_t setData(const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& _data);

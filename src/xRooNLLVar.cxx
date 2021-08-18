@@ -21,6 +21,7 @@
 #include "TPad.h"
 #include "TSystem.h"
 
+#include "coutCapture.h"
 
 xRooNLLVar::~xRooNLLVar() {
 
@@ -144,27 +145,39 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_
 
 }
 
-struct cout_redirect {
-    cout_redirect(std::string& _out) : out(_out) { old = std::cout.rdbuf(buffer.rdbuf()); old2 = std::cerr.rdbuf(buffer.rdbuf());
-        old3 = stdout;
-        fp = fmemopen(buffer2,1024*1024,"w");
-        stdout = fp;
+
+
+void xRooNLLVar::Print(Option_t*) {
+    std::cout << "PDF: "; if(fPdf) fPdf->Print(); else std::cout << "<null>" << std::endl;
+    std::cout << "Data: "; if(fData) fData->Print(); else std::cout << "<null>" << std::endl;
+    std::cout << "NLL Options: " << std::endl;
+    for(int i=0;i < fOpts->GetSize();i++) {
+        auto c = dynamic_cast<RooCmdArg*>(fOpts->At(i));
+        if (!c) continue;
+        std::cout << " " << c->GetName() << " : ";
+        if (c->getString(0)) std::cout << c->getString(0);
+        else if(c->getSet(0) && !c->getSet(0)->empty()) std::cout << (c->getSet(0)->contentsString());
+        else std::cout << c->getInt(0);
+        std::cout << std::endl;
     }
-    ~cout_redirect( ) { std::cout.rdbuf( old ); std::cerr.rdbuf(old2); std::fclose(fp);stdout = old3;
-        out = buffer.str(); out += buffer2;
+    if(fFitConfig) {
+        std::cout << "Fit Config: " << std::endl;
+        std::cout << "  UseParabErrors: " << (fFitConfig->ParabErrors() ? "True" : "False") << "  [toggles HESSE algorithm]" << std::endl;
+        std::cout << "  MinimizerOptions: " << std::endl;
+        fFitConfig->MinimizerOptions().Print();
     }
-private:
-    std::streambuf * old, *old2;
-    std::stringstream buffer;
-    char buffer2[1024*1024];
-    FILE* fp;
-    FILE* old3;
-    std::string& out;
-};
+}
 
 void xRooNLLVar::reinitialize() {
     {
         cout_redirect c(fFuncCreationLog);
+        // need to find all RooRealSumPdf nodes and mark them binned or unbinned as required
+        RooArgSet s; fPdf->treeNodeServerList(&s,nullptr,true,false);
+        bool isBinned=false;
+        if (auto a = dynamic_cast<RooCmdArg*>(fOpts->find("Binned"));a && a->getInt(0)) isBinned=true;
+        for(auto a : s) {
+            if (a->InheritsFrom("RooRealSumPdf")) a->setAttribute("BinnedLikelihood",isBinned);
+        }
         this->reset( fPdf->createNLL(*fData,*fOpts) );
     }
 
@@ -276,6 +289,7 @@ double xRooNLLVar::getEntryVal(size_t entry) {
     if (_data->numEntries()<=entry) return 0;
     auto _pdf = pdf();
     *std::unique_ptr<RooAbsCollection>(_pdf->getObservables(_data)) = *_data->get(entry);
+    //if (auto s = dynamic_cast<RooSimultaneous*>(_pdf.get());s) return -_data->weight()*s->getPdf(s->indexCat().getLabel())->getLogVal(_data->get());
     return -_data->weight()*_pdf->getLogVal(_data->get());
 }
 
@@ -453,6 +467,27 @@ RooNLLVar* xRooNLLVar::nllTerm() const {
         if (auto a = dynamic_cast<RooNLLVar*>(s); a) return a;
     }
     return nullptr;
+}
+
+double xRooNLLVar::extendedTerm() const {
+    return fPdf->extendedTerm(fData->sumEntries(), fData->get());
+}
+
+double xRooNLLVar::simTerm() const {
+    if(auto s = dynamic_cast<RooSimultaneous*>(fPdf.get()); s) {
+       return fData->sumEntries()*log(1.0*(s->servers().size()-1)); //one of the servers is the cat
+    }
+    return 0;
+}
+
+double xRooNLLVar::binnedDataTerm() const {
+    // this is only relevant if BinnedLikelihood active
+    double out=0;
+    for(int i=0;i<fData->numEntries();i++){
+        fData->get(i);
+        out += TMath::LnGamma(fData->weight()+1);
+    }
+    return out;
 }
 
 RooConstraintSum* xRooNLLVar::constraintTerm() const {

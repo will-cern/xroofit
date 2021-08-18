@@ -93,14 +93,14 @@ double xRooHypoPoint::GetExp(double nSigma,bool asymptotics) const {
 }
 
 std::pair<double,double> xRooHypoPoint::GetSigmaMu() const {
-    auto asi = GetObs("asimov");
+    auto asi = GetObs(fSpace->fAsimovName.c_str());
     if (std::isnan(asi) || asi<=0 || fPOI->size() != 1 || !fAltPoint) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
 
     auto v = dynamic_cast<RooRealVar*>(fPOI->first());
     auto va = dynamic_cast<RooRealVar*>(fAltPoint->fCoords->find(*fPOI->first()));
 
     if (!v || !va) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
-    return std::make_pair( abs(v->getVal() - va->getVal())/sqrt(asi), 0.5*GetObsError("asimov")*abs(v->getVal() - va->getVal())/(asi*sqrt(asi)));
+    return std::make_pair( abs(v->getVal() - va->getVal())/sqrt(asi), 0.5*GetObsError(fSpace->fAsimovName.c_str())*abs(v->getVal() - va->getVal())/(asi*sqrt(asi)));
 
 }
 
@@ -214,7 +214,7 @@ void xRooHypoPoint::Draw(Option_t* opt) {
         _max = std::max(obs+abs(obs)*0.1,_max);
     }
 
-    auto asi = GetObs("asimov");
+    auto asi = GetObs(fSpace->fAsimovName.c_str());
     if (!std::isnan(asi) && asi>0 && fPOI->size()==1 && fPllType != xRooFit::Asymptotics::Unknown && fAltPoint) {
         // can calculate asymptotic distributions,
         _min = std::min(asi-abs(asi),_min);
@@ -449,7 +449,52 @@ void xRooHypoSpace::Draw(Option_t* opt, Option_t* select) {
         }
         pad->cd();
         pad->Modified();
+        return;
     }
+
+    // default to draw pvalues
+    // get all the graphs first so can decide if can draw toys and asymptotics or just one
+    std::vector<std::string> graphStr = {"","exp-2","exp-1","exp0","exp1","exp2"};
+    std::vector<TGraph*> toy_graphs;
+    std::vector<TGraph*> asymp_graphs;
+    for(auto s : graphStr) {
+        toy_graphs.push_back(dynamic_cast<TGraph*>(Scan((s+" toys").c_str())));
+        asymp_graphs.push_back(dynamic_cast<TGraph*>(Scan(s.c_str())));
+    }
+
+    auto& graphs = toy_graphs;
+    auto drawBand = [&](int i1, int i2) {
+        if (graphs[i1] && graphs[i2] && graphs[i1]->GetN() && graphs[i2]->GetN()) {
+            // can draw band, put graphs together as a band and shade
+            graphs[i1]->Sort(TGraph::CompareX, false);
+            TList l;
+            l.Add(graphs[i1]);
+            graphs[i2]->Merge(&l);
+            l.Clear();
+            delete graphs[i1];
+            graphs[i2]->SetBit(kCanDelete);
+            graphs[i2]->SetFillColor((i2==5) ? kYellow : kGreen);
+            TString opt = "F";
+            if (gPad->GetListOfPrimitives()->IsEmpty()) opt += "A";
+            graphs[i2]->SetName((i2==5) ? "exp2" : "exp1");
+            graphs[i2]->GetHistogram()->SetYTitle("p-value");
+            graphs[i2]->Draw(opt);
+        }
+    };
+
+    drawBand(1,5); drawBand(2,4);
+    TString lOpt = "L";
+    if (gPad->GetListOfPrimitives()->IsEmpty()) lOpt += "A";
+    if(graphs[3] && graphs[3]->GetN()) {graphs[3]->SetBit(kCanDelete);graphs[3]->Draw(lOpt);}
+    else if(graphs[3]) { delete graphs[3]; }
+    lOpt = "L";
+    if (gPad->GetListOfPrimitives()->IsEmpty()) lOpt += "A";
+    if(graphs[0] && graphs[0]->GetN()) {graphs[0]->SetBit(kCanDelete);graphs[0]->Draw(lOpt);}
+    else if(graphs[0]) { delete graphs[0]; }
+
+    gPad->RedrawAxis();
+
+
 }
 
 void xRooHypoSpace::Draw(Option_t* opt) {
@@ -460,6 +505,7 @@ void xRooHypoSpace::Draw(Option_t* opt) {
 #include "Math/WrappedFunction.h"
 #include "Math/Functor.h"
 #include "TGraph2D.h"
+#include "TGraphAsymmErrors.h"
 
 double xRooHypoSpace::GetGraphX(const TGraph& graph, double y0, Option_t* opt) {
     if (graph.GetN()<2) return std::numeric_limits<double>::quiet_NaN();
@@ -514,7 +560,11 @@ TObject* xRooHypoSpace::Scan(const char* what, const char* select) {
 
     // scan through points building graph of p-values
     TNamed* out;
-    if(parts.size()>2) out = new TGraph2D; else out = new TGraph;
+    if(parts.size()>2) {
+        out = new TGraph2D;
+    } else {
+        out = new TGraph;
+    }
     TString xTitle = parts.at(1);
     if (fAxisVars) {
         for(auto a : *fAxisVars) { xTitle.ReplaceAll(a->GetName(),a->GetTitle()); }
@@ -522,6 +572,20 @@ TObject* xRooHypoSpace::Scan(const char* what, const char* select) {
     TString title = sWhat;
     if (select && strlen(select)>0) {title += "[["; title += select; title += "]]";}
     out->SetTitle(TString::Format("%s;%s",title.Data(),xTitle.Data()));
+
+
+    auto valGetter = [&](xRooHypoPoint* p, double ts, bool doAsymp) {
+        if (sWhat.Contains("ts ")) {
+            return ts;
+        } else if (sWhat.Contains("null ")) {
+            return p->GetPNull(ts,doAsymp);
+        } else if (sWhat.Contains("alt ")) {
+            return p->GetPAlt(ts,doAsymp);
+        } else {
+            return p->GetPCLs(ts,doAsymp);
+        }
+    };
+
     for(auto p : fPoints) {
         RooArgList l; l.add(*p->fCoords);
         if (select && strlen(select)>0) {
@@ -530,29 +594,25 @@ TObject* xRooHypoSpace::Scan(const char* what, const char* select) {
 
         double x = RooFormulaVar("x",parts.at(1),l,false).getVal();
         double y = (parts.size()>2) ? RooFormulaVar("y",parts.at(2),l,false).getVal() : 0;
-        double v = 0;
 
-        bool doAsymp = !sWhat.Contains("toys");
+
+        bool doAsymp = !sWhat.Contains("toy");
 
         double ts = std::isnan(nSigma) ? p->GetObs() : p->GetExp(nSigma,doAsymp);
 
-        if (sWhat.Contains("ts ")) {
-            v = ts;
-        } else if (sWhat.Contains("null ")) {
-            v = p->GetPNull(ts,doAsymp);
-        } else if (sWhat.Contains("alt ")) {
-            v = p->GetPAlt(ts,doAsymp);
-        } else {
-            v = p->GetPCLs(ts,doAsymp);
-        }
+        double v = valGetter(p,ts,doAsymp);
 
         if (!std::isnan(v) && !std::isinf(v)) {
             if(parts.size()>2) dynamic_cast<TGraph2D*>(out)->SetPoint(dynamic_cast<TGraph2D*>(out)->GetN(),x,y,v);
             else dynamic_cast<TGraph*>(out)->SetPoint(dynamic_cast<TGraph*>(out)->GetN(),x,v);
         }
+
     }
 
-    if(auto g = dynamic_cast<TGraph*>(out); g) g->Sort();
+    if(auto g = dynamic_cast<TGraph*>(out); g) {
+        g->Sort();
+        if(!std::isnan(nSigma)) g->SetLineStyle(2);
+    }
 
     return out;
 }
