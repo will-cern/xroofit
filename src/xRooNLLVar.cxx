@@ -40,6 +40,7 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
     fOpts = std::shared_ptr<RooLinkedList>(new RooLinkedList,[](RooLinkedList* l) { if(l) l->Delete(); delete l; } );
 
     for(int i=0; i< opts.GetSize(); i++) {
+        if (strlen(opts.At(i)->GetName())==0) continue; // skipping "none" cmds
         if (strcmp(opts.At(i)->GetName(),"GlobalObservables")==0) {
             // will skip here to add with the obs from the function below
             // must match global observables
@@ -138,7 +139,7 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
 
 
 xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf, const std::shared_ptr<RooAbsData>& data, const RooLinkedList& opts) :
-    xRooNLLVar(pdf,std::make_pair(data,std::shared_ptr<const RooAbsCollection>((opts.find("GlobalObservables")) ? dynamic_cast<RooCmdArg*>(opts.find("GlobalObservables"))->getSet(0)->snapshot() : nullptr)))
+    xRooNLLVar(pdf,std::make_pair(data,std::shared_ptr<const RooAbsCollection>((opts.find("GlobalObservables")) ? dynamic_cast<RooCmdArg*>(opts.find("GlobalObservables"))->getSet(0)->snapshot() : nullptr)),opts)
      {
 
 

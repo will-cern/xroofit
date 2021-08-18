@@ -156,8 +156,14 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
     }
 }
 
-xRooNode::xRooNode(const TObject& comp, const std::shared_ptr<xRooNode>& parent) : xRooNode(
-        (dynamic_cast<const RooAbsArg*>(&comp) && dynamic_cast<const RooAbsArg*>(&comp)->getStringAttribute("alias")) ? dynamic_cast<const RooAbsArg*>(&comp)->getStringAttribute("alias") : comp.GetName(),
+xRooNode::xRooNode(const TObject& comp, const std::shared_ptr<xRooNode>& parent) : xRooNode(/*[](const TObject& c) {
+    c.InheritsFrom("RooAbsArg");
+    if (s) {
+        return (s->getStringAttribute("alias")) ? s->getStringAttribute("alias") : c.GetName();
+    }
+    return c.GetName();
+}(comp)*/
+        (comp.InheritsFrom("RooAbsArg") && dynamic_cast<const RooAbsArg*>(&comp)->getStringAttribute("alias")) ? dynamic_cast<const RooAbsArg*>(&comp)->getStringAttribute("alias") : comp.GetName(),
         std::shared_ptr<TObject>(const_cast<TObject*>(&comp),[](TObject*){}),parent) {
 
 }
