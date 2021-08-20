@@ -297,6 +297,12 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
 
 }
 
+std::shared_ptr<RooLinkedList> xRooFit::defaultNLLOptions() {
+    auto out = std::shared_ptr<RooLinkedList>(new RooLinkedList, [](RooLinkedList* l) { l->Delete(); delete l; });
+    out->Add(RooFit::Offset().Clone());
+    return out;
+}
+
 std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig() {
     auto fFitConfig = std::make_shared<ROOT::Fit::FitConfig>();
     auto &fitConfig = *fFitConfig;

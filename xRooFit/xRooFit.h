@@ -52,6 +52,7 @@ public:
 
     // obtain instance of default fit configuration
     static std::shared_ptr<ROOT::Fit::FitConfig> defaultFitConfig();
+    static std::shared_ptr<RooLinkedList> defaultNLLOptions();
 
     static std::shared_ptr<const RooFitResult> minimize(RooAbsReal& nll, const std::shared_ptr<ROOT::Fit::FitConfig>& fitConfig = nullptr);
 
