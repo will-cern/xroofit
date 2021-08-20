@@ -37,6 +37,8 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
                        const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& data,
                        const RooLinkedList& opts) : fPdf(pdf), fData(data.first), fGlobs(data.second) {
 
+    RooMsgService::instance().getStream(RooFit::INFO).removeTopic(RooFit::NumIntegration);
+
     fOpts = std::shared_ptr<RooLinkedList>(new RooLinkedList,[](RooLinkedList* l) { if(l) l->Delete(); delete l; } );
 
     for(int i=0; i< opts.GetSize(); i++) {
