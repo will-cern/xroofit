@@ -139,7 +139,7 @@ public:
 
 
     // get the Nll value for a specific entry.
-    // total nll should be all these values + constraint term + extended term
+    // total nll should be all these values + constraint term + extended term + simTerm [+binnedDataTerm if activated binnedL option]
     double getEntryVal(size_t entry);
 
     RooNLLVar* nllTerm() const;

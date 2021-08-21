@@ -312,6 +312,12 @@ void xRooNLLVar::Draw(Option_t* opt) {
 
     auto _pars = pars();
 
+    if (sOpt == "sensitivity") {
+
+        // will make a plot of DeltaNLL
+
+    }
+
     if (sOpt == "floating") {
         // start scanning floating pars
         auto floats = std::unique_ptr<RooAbsCollection>(_pars->selectByAttrib("Constant",false));
@@ -412,7 +418,20 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
 
     if (fGlobs) {
         if (!_data.second) throw std::runtime_error("Missing globs");
-        if (!fGlobs->equals(*_data.second)) throw std::runtime_error("globs mismatch");
+        // ignore 'extra' globs
+        RooArgSet s;s.add(*fGlobs);
+        std::unique_ptr<RooAbsCollection> _actualGlobs(fPdf->getObservables(s));
+        RooArgSet s2; s2.add(*_data.second);
+        std::unique_ptr<RooAbsCollection> _actualGlobs2(fPdf->getObservables(s2));
+        if (!_actualGlobs->equals(*_actualGlobs2)) {
+            RooArgSet rC; rC.add(*_actualGlobs2);
+            rC.remove(*std::unique_ptr<RooAbsCollection>(rC.selectCommon(*_actualGlobs)));
+            TString r = (!rC.empty()) ? rC.contentsString() : "";
+            RooArgSet lC; lC.add(*_actualGlobs);
+            lC.remove(*std::unique_ptr<RooAbsCollection>(lC.selectCommon(*_actualGlobs2)));
+            TString l = (!lC.empty()) ? lC.contentsString() : "";
+            throw std::runtime_error(TString::Format("globs mismatch: adding %s removing %s",r.Data(),l.Data()));
+        }
         fGlobs = _data.second;
     }
 
@@ -473,6 +492,7 @@ RooNLLVar* xRooNLLVar::nllTerm() const {
 }
 
 double xRooNLLVar::extendedTerm() const {
+    // returns Nexp - Nobs*log(Nexp)
     return fPdf->extendedTerm(fData->sumEntries(), fData->get());
 }
 
