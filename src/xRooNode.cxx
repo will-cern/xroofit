@@ -2169,7 +2169,7 @@ xRooNode xRooNode::constraints() const {
                 parNames.insert(_cName);
                 _cName = "";
                 for(auto& x : parNames) { if(!_cName.empty()) _cName +=";"; _cName+=x; }
-                c->SetName(_cName.c_str());
+                c->TNamed::SetName(_cName.c_str());
                 break;
             }
         }
@@ -2366,7 +2366,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject>& arg, 
             RooMsgService::instance().setGlobalKillBelow(msglevel);
             return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject*){});
         } else if(arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree")) {
-            if (_ws->import(*arg.get())) {
+            if (_ws->import(*arg.get(),true/*replace existing*/)) {
                 RooMsgService::instance().setGlobalKillBelow(msglevel);
                 return nullptr;
             }
@@ -3291,13 +3291,91 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros, TVirtualPad* fr
 
 }
 
-xRooNode xRooNode::fitResult() const {
+void xRooNode::SetFitResult(const RooFitResult* fr) {
+    if(fr){
+        if (auto _w = ws(); _w) {
+            auto res = acquire(std::shared_ptr<RooFitResult>(const_cast<RooFitResult*>(fr),[](RooFitResult*){}));
+            for (auto o : _w->allGenericObjects()) {
+                if (auto fr = dynamic_cast<RooFitResult *>(o); fr) {
+                    fr->ResetBit(1<<20);
+                }
+            }
+            res->SetBit(1<<20);
+            // assign values
+            auto allVars = _w->allVars();
+            allVars = fr->floatParsFinal(); allVars = fr->constPars();
+        } else {
+            // need to add to memory as a specific name
+            throw std::runtime_error("Not supported yet"); // complication is how to replace an existing fitResult in .memory
+            //auto _clone = std::make_shared<RooFitResult>(*fr);
+            //_clone->SetName("fitResult");
+        }
+    } else {
+        SetFitResult(fitResult("prefit").get<RooFitResult>());
+    }
+}
+
+xRooNode xRooNode::fitResult(const char* opt) const {
 
     if (get<RooFitResult>()) return *this;
 
-    if (auto f = find(".fitResult"); f) {
-        return *f;
+    TString sOpt(opt);
+    if(sOpt=="prefit") {
+        // build a fitResult using nominal values and infer errors from constraints
+        // that aren't the 'main' constraints
+        //Warning("fitResult","Building prefitResult by examining pdf. Consider setting an explicit prefitResult (SetFitResult(fr)) where fr name is prefitResult");
+
+        std::unique_ptr<RooArgList> _pars(dynamic_cast<RooArgList*>(pars().argList().selectByAttrib("Constant",false)));
+        auto fr = std::make_shared<RooFitResult>("prefitResult","Prefit");
+        fr->setFinalParList(*_pars);
+        for(auto& p : fr->floatParsFinal()) {
+            auto _v = dynamic_cast<RooRealVar *>(p);
+            if (!_v) continue;
+            if(auto s = _v->getStringAttribute("nominal");s) _v->setVal(TString(s).Atof());
+            auto _constr = xRooNode(fParent->getObject<RooRealVar>(p->GetName()),*this).constraints();
+            std::shared_ptr<xRooNode> pConstr;
+            for(auto& c : _constr) {
+                if (c->get<RooPoisson>() || c->get<RooGaussian>()) { pConstr = c; break; }
+            }
+            if (pConstr) {
+                // there will be 3 deps, one will be this par, the other two are the mean and error (or error^2 in case of poisson
+                // use the one that's a ConstVar as the error to break a tie ...
+                double prefitVal=0,prefitError=0;
+                for(auto& _d : pConstr->deps()) {
+                    if (strcmp(p->GetName(),_d->get()->GetName())==0) continue;
+                    if (auto _c = _d->get<RooConstVar>(); _c && _c->getVal()!=0) {
+                        if(prefitError) prefitVal = prefitError; // loading val into error already, so move it over
+                        prefitError = _c->getVal();
+                    }
+                    else if(prefitError==0) prefitError = _d->get<RooAbsReal>()->getVal();
+                    else prefitVal = _d->get<RooAbsReal>()->getVal();
+                }
+                //std::cout << p->GetName() << " extracted " << prefitVal << " " << prefitError << " from "; pConstr->deps().Print();
+                if (pConstr->get<RooPoisson>()) {
+                    // prefitVal will be the global observable value, need to divide that by tau
+                    prefitVal /= prefitError;
+                    // prefiterror will be tau ... need 1/sqrt(tau) for error
+                    prefitError = 1./sqrt(prefitError);
+                }
+                if(!_v->getStringAttribute("nominal")) _v->setVal(prefitVal);
+                _v->setError(prefitError);
+            } else {
+                // unconstrained, remove error
+                _v->removeError();
+            }
+        }
+        auto _args = args().argList();
+        // global obs are added to constPars list too
+        _args.add( globs().argList() );
+        fr->setConstParList(_args);
+        std::unique_ptr<RooArgList> _snap(dynamic_cast<RooArgList*>(_pars->snapshot()));
+        for(auto& p : *_snap) {
+            if (auto atr = p->getStringAttribute("initVal");atr && dynamic_cast<RooRealVar*>(p)) dynamic_cast<RooRealVar*>(p)->setVal(TString(atr).Atof());
+        }
+        fr->setInitParList(*_snap);
+        return xRooNode(fr,*this);
     }
+
 
     // return first checked fit result present in the workspace
     if (auto _w = ws(); _w) {
@@ -3305,6 +3383,12 @@ xRooNode xRooNode::fitResult() const {
             if (auto fr = dynamic_cast<RooFitResult*>(o); fr && fr->TestBit(1<<20)) {
                 return xRooNode(*fr,*_w);
             }
+        }
+    } else {
+        // objects not in workspaces are allowed to have a fitResult set in their memory
+        // use getObject to get it
+        if (auto fr = getObject<RooFitResult>("fitResult"); fr) {
+            return xRooNode(fr,*this);
         }
     }
 
@@ -4276,8 +4360,11 @@ void xRooNode::Draw(Option_t* opt) {
 
         for(auto i = 0; i<pullGraph->GetN();i++) {
             auto g = new TGraphAsymmErrors; g->SetName(pullGraph->GetHistogram()->GetXaxis()->GetBinLabel(i+1));
-            auto _p = _fr.get<RooFitResult>()->floatParsFinal().find(g->GetName());
-            g->SetTitle(TString::Format("%s=%g",strlen(_p->GetTitle()) ? _p->GetTitle() : _p->GetName(),dynamic_cast<RooAbsReal*>(_p)->getVal()));
+            auto _p = dynamic_cast<RooRealVar*>(_fr.get<RooFitResult>()->floatParsFinal().find(g->GetName()));
+            if (!_p) {
+                Warning("Draw","Found a non-var in the floatParsFinal list: %s - this shouldn't happen",g->GetName()); continue;
+            }
+            g->SetTitle(TString::Format("%s=%g +/- %s [%g,%g]",strlen(_p->GetTitle()) ? _p->GetTitle() : _p->GetName(),_p->getVal(),_p->hasAsymError() ? TString::Format("(%g,%g)",_p->getAsymErrorHi(),_p->getAsymErrorLo()).Data() : TString::Format("%g",_p->getError()).Data(),pullGraph->GetHistogram()->GetBinContent(i+1),pullGraph->GetHistogram()->GetBinError(i+1)));
             g->SetPoint(0,pullGraph->GetPointX(i),pullGraph->GetPointY(i));
             g->SetPointEYhigh(0,pullGraph->GetErrorYhigh(i));
             g->SetPointEYlow(0,pullGraph->GetErrorYlow(i));

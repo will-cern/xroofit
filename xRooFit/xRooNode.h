@@ -175,7 +175,8 @@ public:
     std::pair<double,double> IntegralAndError(const RooFitResult* fr = nullptr) const;
 
     xRooNLLVar createNLL(const char* datasetName) const;
-    xRooNode fitResult() const; // todo: make this 'fitResults'
+    xRooNode fitResult(const char* opt="") const; // todo: make this 'fitResults'
+    void SetFitResult(const RooFitResult* fr = nullptr); // null means will load prefit
 
 //    xRooNode fitTo_(const char* datasetName) const; // *MENU*
 //    xRooNode fitTo(const char* datasetName) const;
