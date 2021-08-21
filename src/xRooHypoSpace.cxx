@@ -229,7 +229,7 @@ void xRooHypoPoint::Draw(Option_t* opt) {
         if (w==0) nBadOrZero++;
         h->Fill(p.first,w);
     }
-    h->Scale( 1./h->Integral(0,h->GetNbinsX()+1));
+    if(h->GetEntries()>0) h->Scale( 1./h->Integral(0,h->GetNbinsX()+1));
     TString title;
     if (fAltPoint) {
         // add POI values to identify hypos

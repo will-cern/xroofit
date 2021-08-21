@@ -1079,7 +1079,7 @@ void xRooNode::Print(Option_t *opt) const {
     if (sOpt!="") _more = true;
     if (get() && get()!=this) {
         std::cout << ": ";
-        if (_more || (get<RooAbsArg>() && get<RooAbsArg>()->isFundamental())) get()->Print(sOpt);
+        if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental()||get<RooConstVar>()))) get()->Print(sOpt);
         else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
     } else if(!get()) {
         std::cout << std::endl;
@@ -1089,7 +1089,7 @@ void xRooNode::Print(Option_t *opt) const {
     for (auto &k : *this) {
         std::cout << i++ << ") " << k->GetName() << " : ";
         if(k->get()){
-            if (_more || (k->get<RooAbsArg>() && k->get<RooAbsArg>()->isFundamental())) k->get()->Print(opt);
+            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>()))) k->get()->Print(opt);
             else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
         }
         else std::cout << " NULL " << std::endl;
@@ -2790,6 +2790,19 @@ xRooNode xRooNode::components() const {
             out.emplace_back(std::make_shared<xRooNode>(*o,*this));
         }
     } else if(auto p = get<RooRealSumPdf>(); p) {
+        // check for common prefixes and suffixes, will use to define aliases to shorten names
+        // if have more than 1 function
+        TString commonPrefix=""; TString commonSuffix="";
+        if (p->funcList().size() > 1) {
+            bool checked=false;
+            for(auto& o : p->funcList()) {
+                if (!checked) {
+                    commonPrefix = o->GetName(); commonSuffix = o->GetName(); checked=true;
+                } else {
+
+                }
+            }
+        }
         for(auto& o : p->funcList()) {
             out.emplace_back(std::make_shared<xRooNode>(*o,*this));
         }
