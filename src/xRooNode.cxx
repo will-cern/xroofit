@@ -464,6 +464,17 @@ TAxis* xRooNode::GetXaxis() const {
 
     // decide binning to use
     TString binningName = o->getStringAttribute("binning");
+    auto _bnames = x->getBinningNames();
+    bool hasBinning = false;
+    for(auto& b : _bnames) { if(b==binningName) { hasBinning=true; break; }}
+    if (!hasBinning) {
+        // doesn't have binning, so clear binning attribute
+        // this can happen after Combine of models because binning don't get combined yet (should fix this)
+        Warning("GetXaxis","Binning %s not defined on %s - clearing",binningName.Data(),dynamic_cast<TObject*>(x)->GetName());
+        o->setStringAttribute("binning",nullptr);
+        binningName = "";
+    }
+
     if(binningName=="" && o != dynamic_cast<TObject*>(x)) {
         // has var has a binning matching this nodes name then use that
         auto _bnames = x->getBinningNames();
@@ -1019,6 +1030,8 @@ xRooNode xRooNode::Combine(const xRooNode& rhs) {
             Vary(*v);
         }
     }
+
+    // todo: Should also transfer over binnings of observables
 
     return *this;
 
