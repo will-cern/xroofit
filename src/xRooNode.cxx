@@ -498,6 +498,7 @@ TAxis* xRooNode::GetXaxis() const {
                     _v->getBinning(o->GetName()).SetTitle(strlen(dynamic_cast<TObject*>(x)->GetTitle()) ? dynamic_cast<TObject*>(x)->GetTitle() : dynamic_cast<TObject*>(x)->GetName());
                 }
                 binningName = o->GetName();
+                delete bins;
             } else if (_parentX) {
                 // use parent axis binning if defined, otherwise we will default
                 binningName = _parentX->GetName();
@@ -1631,6 +1632,12 @@ bool xRooNode::SetContents(double value, const char* par, double val) {
     return SetContents(RooConstVar(GetName(),GetTitle(),value),par,val);
 }
 
+struct BinningRestorer {
+    ~BinningRestorer() { if(x && b) x->setBinning(*b); if(b) delete b; }
+    RooRealVar* x = nullptr;
+    RooAbsBinning* b = nullptr;
+};
+
 xRooNode& xRooNode::operator=(const TObject& o) {
 
     if (!get()) {
@@ -1658,12 +1665,15 @@ xRooNode& xRooNode::operator=(const TObject& o) {
 
         }*/
         bool _isData = get<RooAbsData>();
+        BinningRestorer _b;
         if (_isData) {
             // need to ensure x-axis matches this h
             auto ax = GetXaxis();
             if (!ax) throw std::runtime_error("no xaxis");
             auto _v = dynamic_cast<RooRealVar *>(ax->GetParent());
             if (_v) {
+                _b.x = _v;
+                _b.b = dynamic_cast<RooAbsBinning*>(_v->getBinningPtr(0)->Clone());
                 if (h->GetXaxis()->IsVariableBinSize()) {
                     _v->setBinning(
                             RooBinning(h->GetNbinsX(), h->GetXaxis()->GetXbins()->GetArray()));
@@ -1819,7 +1829,7 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
                 //delete _data->addColumns(l);
             }
             // before adding, ensure range is good to cover
-            for(auto o : obs) {
+            for(auto& o : obs) {
                 if (auto v = dynamic_cast<RooRealVar*>(o); v) {
                     if (auto dv = dynamic_cast<RooRealVar*>(_data->get()->find(v->GetName())); dv) {
                         if(v->getMin() < dv->getMin()) dv->setMin(v->getMin());
@@ -2466,7 +2476,14 @@ bool xRooNode::SetXaxis(const RooAbsBinning& binning) {
     if (_x->getBinningNames().size()==2) {
         // this was the first binning, so copy it over to be the default binning too
         _x->setBinning(_x->getBinning(a->GetName()));
+    } else {
+        // ensure the default binning is wide enough to cover this range
+        // the alternative to this would be to ensure setNormRange of all pdfs
+        // are set to correct range (then default can be narrower than some of the named binnings)
+        if (_x->getMax() < high) _x->setMax(high);
+        if (_x->getMin() > low) _x->setMin(low);
     }
+
 
     if (!_deps.find(name) && get<RooAbsPdf>()) {
         // creating a variable for a pdf we will assume it should be an observable
@@ -3907,6 +3924,7 @@ TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binS
         } else if (auto _boundaries = _or_func(/*rar->plotSamplingHint(*x,x->getMin(),x->getMax())*/(std::list<double>*)(nullptr) , rar->binBoundaries(*x,x->getMin(),x->getMax())); _boundaries) {
             std::vector<double> _bins; for(auto& b : *_boundaries) {if(_bins.empty() || std::abs(_bins.back()-b)>1e-5*_bins.back()) _bins.push_back(b); } // found sometimes get virtual duplicates in the binning
             h = new TH1D(rar->GetName(), rar->GetTitle(), _bins.size()-1, &_bins[0]);
+            delete _boundaries;
         } else if(!x->hasMax() || !x->hasMin()) {
             // use current value of x to estimate range with
             h = new TH1D(rar->GetName(), rar->GetTitle(), v->numBins(), x->getVal()*0.2, x->getVal()*5);
