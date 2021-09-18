@@ -435,7 +435,10 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
         fGlobs = _data.second;
     }
 
-    if (!std::shared_ptr<RooAbsReal>::get()) return true; // not loaded yet so nothing to do
+    if (!std::shared_ptr<RooAbsReal>::get()) {
+        fData = _data.first;
+        return true; // not loaded yet so nothing to do
+    }
 
 
     try {
@@ -459,13 +462,13 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
 }
 
 std::shared_ptr<RooAbsReal> xRooNLLVar::func() const {
-    if (fGlobs && fFuncGlobs) {*fFuncGlobs = *fGlobs; fFuncGlobs->setAttribAll("Constant",true);}
     if (!(*this)) {
         const_cast<xRooNLLVar*>(this)->reinitialize();
     } else if (auto f = std::unique_ptr<RooAbsCollection>(fConstVars->selectByAttrib("Constant",false)); !f->empty()) {
         std::cout << "Reinitializing because of change of const parameters:" << f->contentsString() << std::endl;
         const_cast<xRooNLLVar*>(this)->reinitialize();
     }
+    if (fGlobs && fFuncGlobs) {*fFuncGlobs = *fGlobs; fFuncGlobs->setAttribAll("Constant",true);}
     return *this;
 }
 

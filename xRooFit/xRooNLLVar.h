@@ -150,6 +150,9 @@ public:
 
     // change the dataset - will check globs are the same
     Bool_t setData(const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& _data);
+    Bool_t setData(const std::shared_ptr<RooAbsData>& data,const std::shared_ptr<const RooAbsCollection>& globs) {
+        return setData(std::pair(data,globs));
+    }
 
     // using shared ptrs everywhere, even for RooLinkedList which needs custom deleter to clear itself
     // but still work ok for assignment operations
