@@ -144,7 +144,7 @@ public:
     //Node2 fitTo(const char* dataName);
 
     // following versions are for the menu in the GUI
-    void Add_(const char* what); // *MENU*
+    void Add_(const char* name, const char* opt); // *MENU*
     xRooNode Multiply_(const char* what) {return Multiply(what); } // *MENU*
     void Vary_(const char* what); // *MENU*
     xRooNode Constrain_(const char* what) {return Constrain(what); } // *MENU*
@@ -158,7 +158,9 @@ public:
     bool SetContents(const TObject& obj, const char* par, double parVal) { variations()[TString::Format("%s=%g",par,parVal).Data()]->operator=(obj); return true; }
     bool SetBinError(int bin, double value);
     bool SetBinContent(int bin, double value, const char* par=nullptr, double parVal=1);
+    bool SetBinData(int bin, double value, const char* dataName="obsData"); // only valid for pdf nodes
 
+    void SetBinContent_(int bin, double value, const char* par="", double parVal=1); // *MENU*
 
     bool SetXaxis(const RooAbsBinning& binning);
     bool SetXaxis(const char* name, const char* title, int nbins, double low, double high);
@@ -175,6 +177,7 @@ public:
     std::pair<double,double> IntegralAndError(const RooFitResult* fr = nullptr) const;
 
     xRooNLLVar createNLL(const char* datasetName) const;
+    xRooNLLVar createNLL(const xRooNode& _data) const;
     xRooNode fitResult(const char* opt="") const; // todo: make this 'fitResults'
     void SetFitResult(const RooFitResult* fr = nullptr); // null means will load prefit
 

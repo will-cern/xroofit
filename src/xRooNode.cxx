@@ -211,7 +211,7 @@ void xRooNode::Browse(TBrowser* b) {
     if (blockBrowse) return;
     if (b==0) {
         auto b = dynamic_cast<TBrowser*>(gROOT->GetListOfBrowsers()->Last());
-        if (!b) {
+        if (!b || !b->GetBrowserImp()) { // no browser imp if browser was closed
             blockBrowse=true;
             gEnv->SetValue("X11.UseXft","no"); // for faster x11
             b = new TBrowser("nodeBrowser",this,"RooFit Browser");
@@ -250,8 +250,7 @@ void xRooNode::Browse(TBrowser* b) {
     }
 
     bool hasFolders = false;
-    if (strlen(GetName())>0 && GetName()[0]!='!') {
-        // folders don't have folders
+    if (strlen(GetName())>0 && GetName()[0]!='!') { // folders don't have folders
         for (auto &c : *this) {
             if (!c->fFolder.empty()) {
                 hasFolders = true;
@@ -286,7 +285,11 @@ void xRooNode::Browse(TBrowser* b) {
         if (strcmp(v->GetName(),".folders")==0) continue; // never 'browse' the folders property
         int _checked = (v->get<RooAbsData>() || v->get<RooFitResult>()) ? v->get()->TestBit(1<<20) : -1;
         TString _name = v->GetName();
-        if (v->get() && !v->get<TFile>()) _name = TString::Format("%s::%s",v->get()->ClassName(),_name.Data());
+        if (_name.BeginsWith(".")) {
+            // property node -- display the  name of the contained object
+            if (v->get()) _name = TString::Format("%s: %s::%s",_name.Data(),v->get()->ClassName(),
+                                                  (v->get<RooAbsArg>() && v->get<RooAbsArg>()->getStringAttribute("alias")) ? v->get<RooAbsArg>()->getStringAttribute("alias") : v->get()->GetName());
+        } else if (v->get() && !v->get<TFile>()) _name = TString::Format("%s::%s",v->get()->ClassName(),_name.Data());
         if (auto _type = v->GetNodeType(); strlen(_type)) {
             // decided not to show const values until figure out how to update if value changes
             /*if (TString(_type)=="Const") _name += TString::Format(" [%s=%g]",_type,v->get<RooConstVar>()->getVal());
@@ -594,9 +597,9 @@ xRooNode xRooNode::coords() const {
     return out;
 }
 
-void xRooNode::Add_(const char* what) {
+void xRooNode::Add_(const char* name, const char* opt) {
     try {
-        Add(what,"+");
+        Add(name,opt);
     } catch(const std::exception& e) {
         new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
     }
@@ -1732,6 +1735,14 @@ xRooNode& xRooNode::operator=(const TObject& o) {
 
 #include "RooFormulaVar.h"
 
+void xRooNode::SetBinContent_(int bin, double value, const char* par, double parVal) {
+    try {
+        SetBinContent(bin,value, strlen(par)>0 ? par : nullptr, parVal);
+    } catch(const std::exception& e) {
+        new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
+    }
+}
+
 bool xRooNode::SetBinContent(int bin, double value, const char* par, double parVal) {
 
     // create if needed
@@ -1958,9 +1969,12 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
         // changing nominal value
         f->setNominal(value);
     }
-    Print();
-    throw std::runtime_error(TString::Format("unable to set bin content of %s",GetName()));
+    throw std::runtime_error(TString::Format("unable to set bin content of %s",GetPath().c_str()));
 
+}
+
+bool xRooNode::SetBinData(int bin, double value, const char* dataName) {
+    return datasets()[dataName]->SetBinContent(bin,value);
 }
 
 bool xRooNode::SetBinError(int bin, double value) {
@@ -2011,7 +2025,12 @@ bool xRooNode::SetBinError(int bin, double value) {
             h->SetName("statFactor");
             h->SetTitle(TString::Format("StatFactor of %s",f->GetTitle()));
             h->SetOption("statshape");
-            f_stat = dynamic_cast<ParamHistFunc*>(Multiply(*h).get());
+
+            // multiply parent if is nominal
+            auto toMultiply = this;
+            if(strcmp(GetName(),"nominal")==0 && fParent && fParent->get<PiecewiseInterpolation>()) toMultiply=fParent.get();
+
+            f_stat = dynamic_cast<ParamHistFunc*>(toMultiply->Multiply(*h).get());
             delete h;
             if (!f_stat) {
                 throw std::runtime_error("Failed creating stat shapeFactor");
@@ -2335,6 +2354,10 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
 
         fComp = _f;
         return _f;
+    } else if(!get() && TString(GetName()).BeginsWith("factory:") && acquirer.ws()) {
+        TString s(GetName()); s = TString(s(8,s.Length()));
+        fComp.reset( acquirer.ws()->factory(s), [](TObject*){} );
+        return fComp;
     }
 
     return fComp;
@@ -2664,9 +2687,32 @@ xRooNode& xRooNode::browse() {
         addedChildren += appendChildren(variations());
     }
 
-    // if has no children and is a RooAbsArg, add all the servers
+    // if has no children and is a RooAbsArg, add all the proxies
     if (auto arg=get<RooAbsArg>(); arg && addedChildren==0) {
-        for(auto& s : arg->servers()) {
+        for(int i=0;i<arg->numProxies();i++) {
+            auto _proxy = arg->getProxy(i);
+            if(auto a = dynamic_cast<RooArgProxy*>(_proxy)) {
+                auto c = std::make_shared<xRooNode>(TString::Format(".%s",_proxy->name()),*(a->absArg()),*this);
+                if (auto existing = findByObj(c); existing) {
+                    existing->fTimes++;
+                    existing->fFolder = c->fFolder; // transfer folder assignment
+                } else {
+                    emplace_back(c);
+                }
+            } else if(auto s = dynamic_cast<RooAbsCollection*>(_proxy)) {
+                for(auto a : *s) {
+                    auto c = std::make_shared<xRooNode>(*a,*this);
+                    c->fFolder = std::string("!.") + _proxy->name();
+                    if (auto existing = findByObj(c); existing) {
+                        existing->fTimes++;
+                        existing->fFolder = c->fFolder; // transfer folder assignment
+                    } else {
+                        emplace_back(c);
+                    }
+                }
+            }
+        }
+        /*for(auto& s : arg->servers()) {
             auto c = std::make_shared<xRooNode>(*s,*this);
             if (auto existing = findByObj(c); existing) {
                 existing->fTimes++;
@@ -2674,7 +2720,7 @@ xRooNode& xRooNode::browse() {
             } else {
                 emplace_back(c);
             }
-        }
+        }*/
     }
 
     // clear anything that has fTimes = 0 still
@@ -2684,7 +2730,7 @@ xRooNode& xRooNode::browse() {
             for(auto o : *gROOT->GetListOfBrowsers()) {
                 auto b = dynamic_cast<TBrowser*>(o);
                 if(b) {
-                    std::cout << GetPath() << " Removing " << it->get()->GetPath() << std::endl;
+                    //std::cout << GetPath() << " Removing " << it->get()->GetPath() << std::endl;
 
                     if(auto _b = dynamic_cast<TGFileBrowser*>( dynamic_cast<TRootBrowser*>(b->GetBrowserImp())->fActBrowser ); _b) {
                         auto _root = _b->fRootDir;
@@ -3478,8 +3524,6 @@ const char* xRooNode::GetRange() const {
 #include "TRegexp.h"
 
 xRooNLLVar xRooNode::createNLL(const char* datasetName) const {
-
-    auto _pdf = get<RooAbsPdf>();
     auto _data = strlen(datasetName) ? datasets().find(datasetName) : nullptr;
     if (!_data) {
         // create a dummy dataset with the observables
@@ -3487,7 +3531,14 @@ xRooNLLVar xRooNode::createNLL(const char* datasetName) const {
         _obs.remove(*std::unique_ptr<RooAbsCollection>(_obs.selectByAttrib("global",true)));
         _data = std::make_shared<xRooNode>(std::make_shared<RooDataSet>("dummy","dummy",_obs),*this);
     }
-    auto _globs = _data->globs(); // keep alive because may own the globs
+    return createNLL(*_data);
+}
+
+xRooNLLVar xRooNode::createNLL(const xRooNode& _data) const {
+
+    auto _pdf = get<RooAbsPdf>();
+
+    auto _globs = _data.globs(); // keep alive because may own the globs
 
     RooLinkedList l;
     RooArgSet _globsSet(_globs.argList());
@@ -3498,7 +3549,7 @@ xRooNLLVar xRooNode::createNLL(const char* datasetName) const {
     l.Add(RooFit::Offset(true).Clone());
 
     // use shared_ptr method so NLLVar will take ownership of datasets etc if created above
-    auto out = xRooFit::createNLL(std::dynamic_pointer_cast<RooAbsPdf>(fComp),std::dynamic_pointer_cast<RooAbsData>(_data->fComp),l);
+    auto out = xRooFit::createNLL(std::dynamic_pointer_cast<RooAbsPdf>(fComp),std::dynamic_pointer_cast<RooAbsData>(_data.fComp),l);
     l.Delete();
     return out;
 
@@ -4598,24 +4649,32 @@ void xRooNode::Draw(Option_t* opt) {
                 if (c->get<RooPoisson>() || c->get<RooGaussian>()) { pConstr = c; break; }
             }
             if (pConstr) {
+
+
+
                 // there will be 3 deps, one will be this par, the other two are the mean and error (or error^2 in case of poisson
-                // use the one that's a ConstVar as the error to break a tie ...
-                prefitError=0;
-                for(auto& _d : pConstr->deps()) {
-                    if (strcmp(p->GetName(),_d->get()->GetName())==0) continue;
-                    if (auto _c = _d->get<RooConstVar>(); _c && _c->getVal()!=0) {
-                        if(prefitError) prefitVal = prefitError; // loading val into error already, so move it over
-                        prefitError = _c->getVal();
-                    }
-                    else if(prefitError==0) prefitError = _d->get<RooAbsReal>()->getVal();
-                    else /*if(fParent->globs().find(_d->GetName()))*/ prefitVal = _d->get<RooAbsReal>()->getVal(); // to use globs need to get the pdf
-                }
+
                 //std::cout << p->GetName() << " extracted " << prefitVal << " " << prefitError << " from "; pConstr->deps().Print();
+                pConstr->browse();
                 if (pConstr->get<RooPoisson>()) {
+                    std::string xName = pConstr->find(".x")->get()->GetName();
+                    prefitVal = pConstr->find(".x")->get<RooAbsReal>()->getVal();
+                    for(auto& _d : pConstr->deps()) {
+                        if (strcmp(p->GetName(),_d->get()->GetName())==0) continue;
+                        if (xName==_d->get()->GetName()) continue;
+                        prefitError = _d->get<RooAbsReal>()->getVal();
+                    }
                     // prefitVal will be the global observable value, need to divide that by tau
                     prefitVal /= prefitError;
                     // prefiterror will be tau ... need 1/sqrt(tau) for error
                     prefitError = 1./sqrt(prefitError);
+                } else if(auto _g = pConstr->get<RooGaussian>(); _g) {
+                    prefitError = pConstr->find(".sigma")->get<RooAbsReal>()->getVal();
+                    prefitVal = pConstr->find(".x")->get<RooAbsReal>()->getVal(); // usually the globs
+                    if (strcmp(p->GetName(),pConstr->find(".x")->get<RooAbsReal>()->GetName())==0) {
+                        // hybrid construction case,
+                        prefitVal = pConstr->find(".mean")->get<RooAbsReal>()->getVal();
+                    }
                 }
 
                 if(prefitError==0) prefitError = dynamic_cast<RooRealVar*>(fr->floatParsInit().find(p->GetName()))->getError();
