@@ -118,6 +118,8 @@ At this point it's a good idea to declare what your observable is for this chann
 w["simPdf/CR"].SetXaxis("my observable",5,0,5) # can use over TH1-like methods for binnings (e.g. variable bin widths)
 ```
 
+Note: `xRooNode` will try to create things automatically if they don't already exist when you call `SetXXXX` methods. What this means is if you started with an empty workspace you could call the above line and it would automatically create a model and a channel for you. This is a feature the quickstart example above was making use of. This applies for methods below as well but I will continue to be explicit for completeness...
+
 We normally think about 'adding samples' to a channel. But this is a `RooProdPdf` ... which we would normally think of as being something that can get multiplied by a pdf node. But we can 'Add' to a RooProdPdf a sample:
 
 ```python
