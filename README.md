@@ -142,6 +142,8 @@ We can carry on adding samples to our channel, or add new channels and add sampl
 
 ```python
 w["simPdf/CR"].SetBinData(1,2)
+w["simPdf/CR"].datasets()["obsData"].SetBinContent(1,2) # equivalent to line above
+w["simPdf"].datasets()["obsData"].Draw("same") # show data
 ```
 
 Samples can be modified by multiplying them by various types of factor, or by varying them. The modifying factors are included with commands like:
@@ -191,4 +193,3 @@ We can see all the dependents we have created so far with:
 ```python
 w["simPdf"].deps().Print()
 ```
-
