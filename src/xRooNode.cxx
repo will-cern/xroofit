@@ -434,7 +434,7 @@ TAxis* xRooNode::GetXaxis() const {
         // need to choose from dependent fundamentals, in following order:
         // parentX, obs, globs, vars, args
 
-        if (_parentX && o->dependsOn(*dynamic_cast<RooAbsArg*>(_parentX->GetParent()))) {
+        if (_parentX && (o->dependsOn(*dynamic_cast<RooAbsArg*>(_parentX->GetParent())) || deps().size()==0)) {
             x = dynamic_cast<RooAbsLValue*>(_parentX->GetParent());
         } else if(auto _obs = obs(); !_obs.empty()) {
             for(auto& v : _obs) {

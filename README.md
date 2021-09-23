@@ -54,3 +54,98 @@ w["simPdf/SR"].SetBinData(1,4) # example of setting data
 w.Browse() # explore what you've created
 ```
 
+The methods of `xRooNode` can be split into the following categories:
+
+  * Graph Modifiers: Methods that alter the 'graph' representing the likelihood function
+    * Add(...)
+    * Multiply(...)
+    * Vary(...)
+    * Constrain(...)
+    * Remove(...)
+    * Combine(...)
+    * Reduce(...)
+  * Object Modifiers: Modify the object that the node wraps (or potentially one of the objects of the child nodes)
+    * SetBinContent(bin, value [,parName, parVal] )
+    * SetBinError(bin, value)
+    * SetBinData(bin, value [,dsName])
+    * SetXaxis(...)
+  * Related nodes: these methods return the collection of nodes related to this node in some way:
+    * components(): the nodes that "add" together to make this node
+    * factors(): the nodes that "multiply" together to make this node
+    * variations(): the nodes that are "varied" (interpolated) between to make this node
+    * constraints(): the nodes that "constrain" this node (relevant for parameter nodes)
+    * datasets(): the nodes that represent data corresponding to this node (relevant for pdf nodes)
+      <br><br>
+    * deps(): the fundmanental (leaf) nodes that this node depends on (=obs()+pars())
+    * obs(): the leaf nodes that are observables
+    * globs(): the leaf nodes that are global observables (subset of observables)
+    * pars(): the leaf nodes that are parameters (i.e. not observables)
+    * vars(): the parameters that are not constant and so would float in a fit
+    * args(): the parameters that are currently constant
+  * Inspection methods: tell you about the node
+    * Print(): lists the child nodes (components/factors/variations) of a node
+    * Draw(): Visualize the node
+    
+Starting from an empty workspace, how can you start to build up a likelihood?
+
+```python
+ws = ROOT.RooWorkspace("w","w");w = ROOT.xRooNode(ws)
+```
+
+What can we do with a workspace object? We can `Add` things to it. We can `Add` a new model like this:
+
+```python
+w.Add("simPdf","model")
+```
+
+The node accessed by `w["simPdf"]` is a `RooSimultaneous`, which is the roofit object designed to handle pdfs that depend on a category observable. Essentially, it allows you to have different channels where the value of the category labels which channel you are in. You add a channel to the model by 'varying' it:
+
+```python
+w["simPdf"].Vary("CR")
+```
+
+You've now made a channel called CR, which is represented by a `RooProdPdf`, i.e. a channel is a product of PDF objects. (see `w["simPdf/CR"].Print()` to confirm it's a `RooProdPdf`).
+
+At this point it's a good idea to declare what your observable is for this channel. You do this with `SetXaxis` method:
+
+```python
+w["simPdf/CR"].SetXaxis("my observable",5,0,5) # can use over TH1-like methods for binnings (e.g. variable bin widths)
+```
+
+We normally think about 'adding samples' to a channel. But this is a `RooProdPdf` ... which we would normally think of as being something that can get multiplied by a pdf node. But we can 'Add' to a RooProdPdf a sample:
+
+```python
+w["simPdf/CR"].Add("bkg","sample")
+```
+
+This gets added inside of a `samples` node (which is a `RooRealSumPdf`, so we've satisfied the requirement that `RooProdPdf`'s children are pdf objects). We can now modify its content:
+
+```python
+w["simPdf/CR/samples/bkg"].SetBinContent(1,2)
+```
+
+We can visualize what we have so far:
+
+```python
+w["simPdf"].Draw()
+```
+
+We can carry on adding samples to our channel, or add new channels and add samples to those channels. We can also add data to a channel with:
+
+```python
+w["simPdf/CR"].SetBinData(1,2)
+```
+
+
+We can 'multiply' or 'vary' any of the samples. Examples of multiply would be to scale by a normfactor:
+
+```python
+w["simPdf/CR/samples/bkg"].Multiply("mu_bkg","norm")
+```
+
+We can see all the dependents we have created so far with:
+
+```python
+w["simPdf"].deps().Print()
+```
+
