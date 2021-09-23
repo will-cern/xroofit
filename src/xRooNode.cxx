@@ -312,10 +312,10 @@ void xRooNode::Browse(TBrowser* b) {
     if (get<RooAbsPdf>()) {
         auto dsets = datasets();
         if (!dsets.empty()) {
-            // check if already have .datasets in browsables
+            // check if already have .datasets() in browsables
             bool found(false);
             for(auto& p : fBrowsables) {
-                if (TString(p->GetName())==".datasets") {found=true;
+                if (TString(p->GetName())==".datasets()") {found=true;
                     // add
                     break;
                 }
@@ -672,7 +672,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
     } else if(strcmp(GetName(),".constraints")==0) {
         // constrain the parent
         return fParent->Constrain(child);
-    } else if(strcmp(GetName(),".datasets")==0) {
+    } else if(strcmp(GetName(),".datasets()")==0) {
         // create a dataset - only allowed for pdfs or workspaces
         if (auto _ws = ws(); _ws && fParent) {
             if (!fParent->get<RooAbsPdf>() && !fParent->get<RooWorkspace>()) {
@@ -968,7 +968,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
         // actually maybe not want this :-/
         //out.fParent = std::make_shared<Node2>(*this);
         for(auto o : *gROOT->GetListOfBrowsers()) {
-            if(auto b = dynamic_cast<TBrowser*>(o); b){
+            if(auto b = dynamic_cast<TBrowser*>(o); b && b->GetBrowserImp()){
                 if(auto _b = dynamic_cast<TGFileBrowser*>( dynamic_cast<TRootBrowser*>(b->GetBrowserImp())->fActBrowser ); _b) {
                     auto _root = _b->fRootDir;
                     if (!_root) _root = _b->fListTree->GetFirstItem();
@@ -2603,11 +2603,12 @@ std::shared_ptr<xRooNode> xRooNode::operator[](const std::string& name) {
 TGListTreeItem* xRooNode::GetTreeItem(TBrowser* b) const {
     if (!b) {
         for(auto o : *gROOT->GetListOfBrowsers()) {
-            b = dynamic_cast<TBrowser*>(o); if (!b) continue;
+            b = dynamic_cast<TBrowser*>(o); if (!b || !b->GetBrowserImp()) continue;
             if(auto out = GetTreeItem(b); out) return out;
         }
         return nullptr;
     }
+    if (!b->GetBrowserImp()) return nullptr;
     if(auto _b = dynamic_cast<TGFileBrowser*>( dynamic_cast<TRootBrowser*>(b->GetBrowserImp())->fActBrowser ); _b) {
         auto _root = _b->fRootDir;
         if (!_root) _root = _b->fListTree->GetFirstItem();
@@ -2729,7 +2730,7 @@ xRooNode& xRooNode::browse() {
         if (it->get()->fTimes == 0) {
             for(auto o : *gROOT->GetListOfBrowsers()) {
                 auto b = dynamic_cast<TBrowser*>(o);
-                if(b) {
+                if(b && b->GetBrowserImp()) { // browserImp is null if browser was closed
                     //std::cout << GetPath() << " Removing " << it->get()->GetPath() << std::endl;
 
                     if(auto _b = dynamic_cast<TGFileBrowser*>( dynamic_cast<TRootBrowser*>(b->GetBrowserImp())->fActBrowser ); _b) {
@@ -3192,7 +3193,7 @@ RooArgList xRooNode::argList() const {
 }
 
 xRooNode xRooNode::datasets() const {
-    xRooNode out(".datasets",nullptr,*this);
+    xRooNode out(".datasets()",nullptr,*this);
     out.fBrowseOperation = [](xRooNode* f) { return f->fParent->datasets(); };
 
     if (auto _ws = get<RooWorkspace>(); _ws) {
@@ -4135,12 +4136,18 @@ TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binS
     return h;
 }
 
+double xRooNode::GetBinData(int bin, const char* dataName) {
+    auto node = datasets().find(dataName);
+    if( !node ) return std::numeric_limits<double>::quiet_NaN();
+    return node->GetBinContent(bin);
+}
+
 std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const {
     std::vector<double> out;
     if(get<RooAbsData>()) {
         auto g = BuildGraph(nullptr,true/*include points for zeros*/);
         if (!g) return out;
-        for(int i =binStart-1; i<g->GetN() && i<binEnd;i++) {
+        for(int i =binStart-1; i<g->GetN() && (binEnd==0 || i<binEnd);i++) {
             out.push_back( g->GetPointY(i) );
         }
         delete g;
@@ -4149,6 +4156,7 @@ std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const {
 
     auto h = BuildHistogram(nullptr,false,false,binStart,binEnd);
     if (!h) { throw std::runtime_error(TString::Format("%s has no content",GetName())); }
+    if (binEnd==0) binEnd=h->GetNbinsX();
     for(int i=binStart;i<=binEnd;i++) {
         out.push_back(h->GetBinContent(i));
     }
@@ -4461,7 +4469,7 @@ void xRooNode::Draw(Option_t* opt) {
 
         gPad->AddExec("interactivePull","xRooNode::Interactive_Pull()");
 
-        pad->cd(0);
+        pad->cd();
         return;
     }
 
@@ -4801,7 +4809,7 @@ void xRooNode::Draw(Option_t* opt) {
                     auto _tmp = gPad;
                     p->cd();
                     Draw(opt);
-                    gPad = _tmp;
+                    _tmp->cd();
                     doneDraw=true;
                 }
             }
@@ -5144,29 +5152,35 @@ void xRooNode::Draw(Option_t* opt) {
         // need to draw histogram in the ratio pad ...
         // if doing overlay need to update histogram
         if(auto hr = dynamic_cast<TH1*>( ratioPad->GetPrimitive("auxHist") ); hr) {
-            if (auto hnom = dynamic_cast<TH1 *>(gPad->GetPrimitive(hr->GetTitle())); hnom) {
-                h = dynamic_cast<TH1 *>(h->Clone(h->GetName()));
-                for (int i = 1; i <= hnom->GetNbinsX(); i++) {
-                    h->SetBinContent(i, h->GetBinContent(i) / hnom->GetBinContent(i));
-                }
-                auto _tmpPad = gPad;
-                ratioPad->cd();
-                if (hasOverlay) {
-                    if (auto existing = dynamic_cast<TH1 *>(ratioPad->GetPrimitive(h->GetName())); existing) {
-                        existing->Reset();
-                        existing->Add(h);
-                        delete h;
-                        h = existing;
-                        overlayExisted = true;
+            TString histName = hr->GetTitle(); // split it by | char
+            TString histType = histName(histName.Index('|')+1,histName.Length());
+            histName = histName(0,histName.Index('|'));
+            if (auto hnom = dynamic_cast<TH1 *>(gPad->GetPrimitive(histName)); hnom) {
+                if (histType=="ratio") {
+                    h = dynamic_cast<TH1 *>(h->Clone(h->GetName()));
+                    h->SetBit(kCanDelete);
+                    for (int i = 1; i <= hnom->GetNbinsX(); i++) {
+                        h->SetBinContent(i, h->GetBinContent(i) / hnom->GetBinContent(i));
+                    }
+                    auto _tmpPad = gPad;
+                    ratioPad->cd();
+                    if (hasOverlay) {
+                        if (auto existing = dynamic_cast<TH1 *>(ratioPad->GetPrimitive(h->GetName())); existing) {
+                            existing->Reset();
+                            existing->Add(h);
+                            delete h;
+                            h = existing;
+                            overlayExisted = true;
+                        } else {
+                            h->Draw(dOpt);
+                        }
                     } else {
                         h->Draw(dOpt);
                     }
-                } else {
-                    h->Draw(dOpt);
+                    adjustYRange(h->GetMinimum() * 0.9, h->GetMaximum() * 1.1, hr, true);
+                    gPad->Modified();
+                    _tmpPad->cd();
                 }
-                adjustYRange(h->GetMinimum()*0.9,h->GetMaximum()*1.1,hr,true);
-                gPad->Modified();
-                _tmpPad->cd();
             }
         }
     }
@@ -5334,7 +5348,10 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const RooFi
         // pdfs of samples embedded in a sumpdf (aka have a coef) will convert their density value to a content
         doBinWidth=true;
     }
-
+    if (binEnd==0) {
+        if (ax) binEnd = ax->GetNbins();
+        else binEnd = binStart;
+    }
     for(int bin=binStart;bin<=binEnd;bin++) {
         if(ax) dynamic_cast<RooAbsLValue*>(ax->GetParent())->setBin(bin-1,ax->GetName());
         //if (!SetBin(bin)) { return out; }

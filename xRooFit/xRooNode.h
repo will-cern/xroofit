@@ -170,10 +170,11 @@ public:
 
     TAxis* GetXaxis() const;
 
+    double GetBinData(int bin, const char* dataName="obsData");
     double GetBinContent(int bin) const { return GetBinContents(bin,bin).at(0); }
-    std::vector<double> GetBinContents(int binStart, int binEnd) const;
+    std::vector<double> GetBinContents(int binStart=1, int binEnd=0) const; // default will get all bins
     double GetBinError(int bin, const RooFitResult* fr = nullptr) const;
-    std::vector<double> GetBinErrors(int binStart, int binEnd, const RooFitResult* fr = nullptr) const;
+    std::vector<double> GetBinErrors(int binStart=1, int binEnd=0, const RooFitResult* fr = nullptr) const;
     std::pair<double,double> IntegralAndError(const RooFitResult* fr = nullptr) const;
 
     xRooNLLVar createNLL(const char* datasetName) const;
