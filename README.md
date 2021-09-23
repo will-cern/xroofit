@@ -98,7 +98,13 @@ What can we do with a workspace object? We can `Add` things to it. We can `Add` 
 w.Add("simPdf","model")
 ```
 
-The node accessed by `w["simPdf"]` is a `RooSimultaneous`, which is the roofit object designed to handle pdfs that depend on a category observable. Essentially, it allows you to have different channels where the value of the category labels which channel you are in. You add a channel to the model by 'varying' it:
+The node accessed by `w["simPdf"]` is a `RooSimultaneous`, which is the roofit object designed to handle pdfs that depend on a category observable. Essentially, it allows you to have different channels where the value of the category labels which channel you are in. You can see that we've created a category observable by doing:
+
+```python
+w["simPdf"].obs().Print()
+```
+
+You add a channel to the model by 'varying' it:
 
 ```python
 w["simPdf"].Vary("CR")
@@ -136,12 +142,47 @@ We can carry on adding samples to our channel, or add new channels and add sampl
 w["simPdf/CR"].SetBinData(1,2)
 ```
 
-
-We can 'multiply' or 'vary' any of the samples. Examples of multiply would be to scale by a normfactor:
+Samples can be modified by multiplying them by various types of factor, or by varying them. The modifying factors are included with commands like:
 
 ```python
-w["simPdf/CR/samples/bkg"].Multiply("mu_bkg","norm")
+w["simPdf/CR/samples/bkg"].Multiply("factorName","type")
 ```
+
+where `"factorName"` is any uniquely-identifying name for the factor (note that factors can be shared between samples, just give them the same name), and `"type"` is one of the following types:
+
+  * "norm": floating scale factor
+  * "overall": parameterized (in nuisance params) scale factor
+  * "histo": histogram factor (parameterized in x-observable)
+  * "shape": histogram factor with each bin having a floating scale factor
+
+You should think of each sample as initially being a single factor of the `"histo"` type, and you can multiply it by other types of factor.
+
+The `"overall"` (behaves like it only has 1 bin) and `"histo"` factor types can be Varied. There are two ways to do this:
+
+```python
+w["simPdf/CR/samples/bkg/factorName"].Vary("alpha=1").SetBinContent(1,2)
+w["simPdf/CR/samples/bkg/factorName"].SetBinContent(1,2,"alpha",1)
+```
+
+This makes the factor become a function of the parameter (`alpha` in this case, which is created on-the-fly if necessary), taking on the given value in the given bin when the parameter value equals 1. The *nominal* parameter values are taken to be when the parameter equals 0. 
+
+Once you have created parameterized variations you can decide to add a constraint term for that parameter. This introduces you to `Constrain` method:
+
+```python
+w["simPdf"].pars()["alpha"].Constrain("gaussian(0,1)")
+```
+
+This will create a gaussian pdf and add it to every channel that the `alpha` parameter appears in. You can see this pdf in:
+
+```python
+w["simPdf/CR"].Print()
+```
+
+The types of constraint you can have are:
+
+  * gaussian(x,y): globs_value=x, std.dev=y, mean = par
+  * normal: == gaussian(0,1)
+  * poisson(x): globs_value = x, mean = par*x
 
 We can see all the dependents we have created so far with:
 
