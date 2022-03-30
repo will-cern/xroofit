@@ -5087,9 +5087,29 @@ void xRooNode::Draw(Option_t* opt) {
         }
     } else if(!overlayExisted) {
 
+
         if (errHist) {
             addLegendEntry(errHist,strlen(errHist->GetTitle()) ? errHist->GetTitle() : GetName(),"fl");
         } else {
+            if (rar->InheritsFrom("RooAbsPdf") && !(rar->InheritsFrom("RooRealSumPdf") || rar->InheritsFrom("RooAddPdf"))) {
+                // append parameter values to title if has such
+                RooArgSet s;
+                rar->leafNodeServerList(&s);
+                if(v) s.remove(*dynamic_cast<RooAbsArg*>(v));
+                if(!s.empty()) {
+                    TString ss = h->GetTitle();
+                    ss += " [";bool first=true;
+                    for(auto _p : s) {
+                        auto _v = dynamic_cast<RooAbsReal*>(_p); if (!_v) continue;
+                        if (!first) ss += ","; first=false;
+                        ss += TString::Format("%s=%g",strlen(_p->GetTitle()) ? _p->GetTitle() : _p->GetName(),_v->getVal());
+                    }
+                    ss += "]";
+                    h->SetTitle(ss);
+                }
+
+            }
+
             addLegendEntry(h,strlen(h->GetTitle()) ? h->GetTitle() : GetName(),"l");
         }
     }
