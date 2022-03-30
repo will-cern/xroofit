@@ -76,8 +76,8 @@ public:
 
 
     // needed in pyROOT to avoid it creating iterators that follow the 'get' to death
-    auto begin() const { return std::vector<std::shared_ptr<xRooNode>>::begin(); }
-    auto end() const { return std::vector<std::shared_ptr<xRooNode>>::end(); }
+    auto begin() const -> decltype(std::vector<std::shared_ptr<xRooNode>>::begin()) { return std::vector<std::shared_ptr<xRooNode>>::begin(); }
+    auto end() const  -> decltype(std::vector<std::shared_ptr<xRooNode>>::end()) { return std::vector<std::shared_ptr<xRooNode>>::end(); }
 
     void Browse(TBrowser* b = nullptr) override; // will browse the children that aren't "null" nodes
     bool IsFolder() const override;
