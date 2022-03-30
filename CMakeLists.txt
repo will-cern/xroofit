@@ -43,7 +43,7 @@ target_include_directories(xRooFit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_dependencies(xRooFit xRooFit_version)
 
 
-if (ENABLED_TESTS)
+if (ENABLE_TESTS)
     add_subdirectory(test)
 endif()
 

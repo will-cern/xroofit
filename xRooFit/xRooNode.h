@@ -2,11 +2,11 @@
 // Created by Will Buttinger on 13/03/2021.
 //
 
-#ifndef WSMANAGER_NODE2_H
-#define WSMANAGER_NODE2_H
+#pragma once
 
 #include "TNamed.h"
 #include <vector>
+#include <functional>
 
 class TAxis;
 
@@ -20,6 +20,7 @@ class RooAbsBinning;
 class TGraph;
 class RooFitResult;
 class TGListTreeItem;
+class TVirtualPad;
 
 #include "xRooFit/xRooFit.h"
 
@@ -143,7 +144,7 @@ public:
     //Node2 fitTo(const char* dataName);
 
     // following versions are for the menu in the GUI
-    void Add_(const char* what); // *MENU*
+    void Add_(const char* name, const char* opt); // *MENU*
     xRooNode Multiply_(const char* what) {return Multiply(what); } // *MENU*
     void Vary_(const char* what); // *MENU*
     xRooNode Constrain_(const char* what) {return Constrain(what); } // *MENU*
@@ -153,9 +154,13 @@ public:
 
     bool SetContents(const TObject& obj) { operator=(obj); return true; } // populates the node's comp (creating if necessary)  from given object
     bool SetContents(double value); // *MENU* uses a RooConst
+    bool SetContents(double value, const char* par, double parVal=1); // shortcut to setting a variation content
+    bool SetContents(const TObject& obj, const char* par, double parVal) { variations()[TString::Format("%s=%g",par,parVal).Data()]->operator=(obj); return true; }
     bool SetBinError(int bin, double value);
     bool SetBinContent(int bin, double value, const char* par=nullptr, double parVal=1);
+    bool SetBinData(int bin, double value, const char* dataName="obsData"); // only valid for pdf nodes
 
+    void SetBinContent_(int bin, double value, const char* par="", double parVal=1); // *MENU*
 
     bool SetXaxis(const RooAbsBinning& binning);
     bool SetXaxis(const char* name, const char* title, int nbins, double low, double high);
@@ -167,14 +172,17 @@ public:
 
     TAxis* GetXaxis() const;
 
+    double GetBinData(int bin, const char* dataName="obsData");
     double GetBinContent(int bin) const { return GetBinContents(bin,bin).at(0); }
-    std::vector<double> GetBinContents(int binStart, int binEnd) const;
+    std::vector<double> GetBinContents(int binStart=1, int binEnd=0) const; // default will get all bins
     double GetBinError(int bin, const RooFitResult* fr = nullptr) const;
-    std::vector<double> GetBinErrors(int binStart, int binEnd, const RooFitResult* fr = nullptr) const;
+    std::vector<double> GetBinErrors(int binStart=1, int binEnd=0, const RooFitResult* fr = nullptr) const;
     std::pair<double,double> IntegralAndError(const RooFitResult* fr = nullptr) const;
 
     xRooNLLVar createNLL(const char* datasetName) const;
-    xRooNode fitResult() const; // todo: make this 'fitResults'
+    xRooNLLVar createNLL(const xRooNode& _data) const;
+    xRooNode fitResult(const char* opt="") const; // todo: make this 'fitResults'
+    void SetFitResult(const RooFitResult* fr = nullptr); // null means will load prefit
 
 //    xRooNode fitTo_(const char* datasetName) const; // *MENU*
 //    xRooNode fitTo(const char* datasetName) const;
@@ -194,7 +202,7 @@ public:
     void Checked(TObject* obj, bool val);
     void SetChecked(bool val=true) { Checked(this,val); }
 
-    TGraph* BuildGraph(RooAbsLValue* v=nullptr, bool includeZeros=false) const;
+    TGraph* BuildGraph(RooAbsLValue* v=nullptr, bool includeZeros=false, TVirtualPad* fromPad=nullptr) const;
     TH1* BuildHistogram(RooAbsLValue* v=nullptr, bool empty=false, bool errors=false, int binStart=1, int binEnd=0) const;
     xRooNode mainChild() const;
     void Draw(Option_t* opt="") override; // *MENU*
@@ -234,5 +242,3 @@ public:
 
 };
 
-
-#endif //WSMANAGER_NODE2_H

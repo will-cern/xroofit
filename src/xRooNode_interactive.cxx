@@ -29,6 +29,7 @@ void xRooNode::Interactive_Pull() {
                 auto _gr = dynamic_cast<TGraph*>(dynamic_cast<TMultiGraph*>(gPad->GetPrimitive("editables"))->GetListOfGraphs()->FindObject(parName.c_str()));
                 _gr->SetPoint(0, i - 1,dynamic_cast<TGraph *>(gPad->GetPrimitive("nominal"))->GetPointY(i - 1));
             }
+            gPad->GetMother()->cd();
             return;
         }
         // mouse up event, if this was an original point it needs snapping back
@@ -91,7 +92,7 @@ void xRooNode::Interactive_Pull() {
         _node->Draw(TString::Format("same overlay%s",_varyName.Data()));
         gStyle->SetLineColor(_tmp);
         _pars = *snap;
-        _tmpPad->cd();
+        _tmpPad->GetMother()->cd();
 
     }
 }

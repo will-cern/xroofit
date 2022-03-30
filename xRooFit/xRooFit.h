@@ -25,12 +25,20 @@ class xRooFit {
 
 public:
 
+    // Static methods that work with the 'first class' object types:
+    //    Pdfs: RooAbsPdf
+    //    Datasets: std::pair<RooAbsData,const RooAbsCollection>
+    //    NLLOptions: RooLinkedList
+    //    FitOptions: ROOT::Fit::FitConfig
+
 
     // fit result flags in its constPars list which are global observables with the "global" attribute
-    static std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generateFrom(RooAbsPdf& pdf, const std::shared_ptr<RooFitResult>& fr, bool expected=false, int seed=0);
+    static std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generateFrom(RooAbsPdf& pdf, const std::shared_ptr<const RooFitResult>& fr, bool expected=false, int seed=0);
+    static std::shared_ptr<const RooFitResult> fitTo(RooAbsPdf& pdf, const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& data, const RooLinkedList& nllOpts, const ROOT::Fit::FitConfig& fitConf);
+    static std::shared_ptr<const RooFitResult> fitTo(RooAbsPdf& pdf, const std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts, const ROOT::Fit::FitConfig& fitConf);
 
-    static std::shared_ptr<RooFitResult> fitTo(RooAbsPdf& pdf, std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>);
 
+    static xRooNLLVar createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts);
     static xRooNLLVar createNLL(RooAbsPdf& pdf, RooAbsData* data, const RooLinkedList& nllOpts);
     static xRooNLLVar createNLL(RooAbsPdf& pdf, RooAbsData* data, const RooCmdArg & 	arg1 = RooCmdArg::none(),
                                  const RooCmdArg & 	arg2 = RooCmdArg::none(),
@@ -41,11 +49,12 @@ public:
                                  const RooCmdArg & 	arg7 = RooCmdArg::none(),
                                  const RooCmdArg & 	arg8 = RooCmdArg::none() );
 
+
     // obtain instance of default fit configuration
     static std::shared_ptr<ROOT::Fit::FitConfig> defaultFitConfig();
+    static std::shared_ptr<RooLinkedList> defaultNLLOptions();
 
     static std::shared_ptr<const RooFitResult> minimize(RooAbsReal& nll, const std::shared_ptr<ROOT::Fit::FitConfig>& fitConfig = nullptr);
-
 
     class Asymptotics {
 
@@ -138,3 +147,4 @@ public:
 };
 
 #include "xRooFit/xRooNLLVar.h"
+#include "xRooFit/xRooHypoSpace.h"
