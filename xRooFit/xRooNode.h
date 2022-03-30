@@ -163,6 +163,8 @@ public:
     bool SetXaxis(const char* title, int nbins, double low, double high) { return SetXaxis("xaxis",title,nbins,low,high); }
     bool SetXaxis(const char* title, int nbins, double* bins) { return SetXaxis("xaxis",title,nbins,bins); }
 
+    void SetFillColor(Color_t fcolor);
+
     TAxis* GetXaxis() const;
 
     double GetBinContent(int bin) const { return GetBinContents(bin,bin).at(0); }

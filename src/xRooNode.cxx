@@ -876,6 +876,11 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                 return (*this)["samples"]->Add(child);
             }
         }
+    } else if(sOpt=="dataset") {
+        if (get<RooWorkspace>()) {
+            //const_cast<xRooNode&>(child).fFolder = "!datasets";return Add(child);
+            return (*this).datasets().Add(child);
+        }
     }
 
 
@@ -1343,7 +1348,7 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
             s->addPdf(*_pdf,label.c_str());
             sterilize();
             browse();
-            return xRooNode(_pdf,*this);
+            return xRooNode(TString::Format("%s=%s",s->indexCat().GetName(),label.data()),_pdf,*this);
         }
 
     } else if(auto p = get<RooStats::HistFactory::FlexibleInterpVar>();p) {
@@ -1980,6 +1985,8 @@ xRooNode xRooNode::constraints() const {
     for(auto& p : deps()) {
         auto v = dynamic_cast<RooAbsReal*>(p->get());
         if (!v) continue;
+        if(v->getAttribute("Constant")) continue; // skip constants ?
+        if(v->getAttribute("obs")) continue; // skip observables ... constraints constrain pars not obs
         getConstraint(*this,*v,get<RooAbsPdf>());
         /*if (auto c = ; c) {
             out.emplace_back(std::make_shared<Node2>(p->GetName(), *c, *this));
@@ -2147,6 +2154,10 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
 
     return fComp;
 
+}
+
+void xRooNode::SetFillColor(Color_t fcolor) {
+    if(auto a = get<RooAbsArg>(); a) a->setStringAttribute("FillColor",TString::Format("%d",fcolor));
 }
 
 std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject>& arg, bool checkFactory, bool mustBeNew) {
@@ -2605,6 +2616,10 @@ xRooNode xRooNode::deps() const {
         }
     } else if(auto w = get<RooWorkspace>(); w) {
         for(auto a : w->allVars()) {
+            out.emplace_back(std::make_shared<xRooNode>(*a,*this));
+        }
+        // add all cats as well
+        for(auto a : w->allCats()) {
             out.emplace_back(std::make_shared<xRooNode>(*a,*this));
         }
     }
