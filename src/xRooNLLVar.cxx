@@ -465,7 +465,9 @@ std::shared_ptr<RooAbsReal> xRooNLLVar::func() const {
     if (!(*this)) {
         const_cast<xRooNLLVar*>(this)->reinitialize();
     } else if (auto f = std::unique_ptr<RooAbsCollection>(fConstVars->selectByAttrib("Constant",false)); !f->empty()) {
-        std::cout << "Reinitializing because of change of const parameters:" << f->contentsString() << std::endl;
+        // have to reinitialize if const par values have changed - const optimization forces this
+        // TODO: currently changes to globs also triggers this since the vars includes globs (vars are the non-obs pars)
+        //std::cout << "Reinitializing because of change of const parameters:" << f->contentsString() << std::endl;
         const_cast<xRooNLLVar*>(this)->reinitialize();
     }
     if (fGlobs && fFuncGlobs) {*fFuncGlobs = *fGlobs; fFuncGlobs->setAttribAll("Constant",true);}
