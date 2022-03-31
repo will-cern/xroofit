@@ -643,6 +643,9 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
 
 xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
 
+        class AutoUpdater { public: AutoUpdater(xRooNode& _n) : n(_n) { } ~AutoUpdater() { n.browse(); } xRooNode& n; };
+        AutoUpdater xxx(*this);
+
     TString sOpt(opt);
     bool considerType(sOpt=="+");
 
@@ -1225,17 +1228,59 @@ xRooNode xRooNode::Constrain(const xRooNode& child) {
 }
 
 xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
+
+    class AutoUpdater { public: AutoUpdater(xRooNode& _n) : n(_n) { } ~AutoUpdater() { n.browse(); } xRooNode& n; };
+    AutoUpdater xxx(*this);
+
     if (!get() && fParent) {
-        // try to 'create' object based on parentage
-        // add child as a temporary child to help with decision making
-        auto _ref = emplace_back(std::shared_ptr<xRooNode>(&const_cast<xRooNode&>(child),[](TObject*){}));
-        try {
-            fComp = fParent->Add(*this, "+").fComp;
-        } catch(...) {
-            resize(size()-1);
-            std::rethrow_exception( std::current_exception() );
+        if(fBinNumber!=-1) {
+            if (child.get<RooAbsReal>()) { // if not child then let fall through to create a child and call self again below
+                // doing a bin-multiplication .. the parent should have a ParamHistFunc called binFactors
+                // if it doesn't then create one
+                auto o = std::dynamic_pointer_cast<RooAbsReal>(acquire(child.fComp));
+
+                auto binFactors = fParent->factors().find("binFactors");
+                if (!binFactors) {
+                    fParent->Multiply("binFactors",
+                                      "statshape"); // creates ParamHistFunc with all pars = 1 (shared const)
+                    binFactors = fParent->factors().find("binFactors");
+                    if (!binFactors) {
+                        throw std::runtime_error("Could not create binFactors in parent");
+                    }
+                }
+                // then scale the relevant bin ... if the relevent bin is a "1" then just drop in our factor
+                auto _bin = binFactors->bins().at(fBinNumber - 1);
+                if (auto phf = binFactors->get<ParamHistFunc>(); phf && _bin) {
+                    if (strcmp(_bin->GetName(), "1") == 0) {
+                        RooArgList all;
+                        for (int i = 0; i < phf->_paramSet.getSize(); i++) {
+                            if (i != fBinNumber - 1) all.add(*phf->_paramSet.at(i));
+                            else all.add(*o);
+                        }
+                        phf->_paramSet.removeAll();
+                        phf->_paramSet.add(all);
+                    } else {
+                        // multiply the element
+                        // note: if this factor is the factor of multiple bins then the replaceServer will replace it in
+                        // all those bins ... this isn't desired behaviour so should be revisited as some point.
+                        return _bin->Multiply(child,opt);
+                    }
+                }
+                return xRooNode(*o,binFactors);
+            }
+        } else {
+
+            // try to 'create' object based on parentage
+            // add child as a temporary child to help with decision making
+            auto _ref = emplace_back(std::shared_ptr<xRooNode>(&const_cast<xRooNode &>(child), [](TObject *) {}));
+            try {
+                fComp = fParent->Add(*this, "+").fComp;
+            } catch (...) {
+                resize(size() - 1);
+                std::rethrow_exception(std::current_exception());
+            }
+            resize(size() - 1); // remove the temporarily added node
         }
-        resize(size()-1); // remove the temporarily added node
     }
 
     if (!child.get()) {
@@ -1245,7 +1290,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             return Multiply(xRooNode(o,child.fParent));
         } else if (sOpt=="norm") {
             return Multiply(RooRealVar(child.GetName(),child.GetTitle(),1,0,100));
-        } else if (sOpt=="shape" || sOpt=="histo") {
+        } else if (sOpt=="shape" || sOpt=="histo" || sOpt=="statshape") {
             // needs axis defined
             if (auto ax = GetXaxis(); ax) {
                 auto h = BuildHistogram(dynamic_cast<RooAbsLValue*>(ax->GetParent()),true);
@@ -1256,7 +1301,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                 h->SetMinimum(0);h->SetMaximum(100);
                 h->SetName(TString::Format(";%s",child.GetName())); // ; char indicates don't "rename" this thing
                 h->SetTitle(child.GetTitle());
-                if(sOpt=="shape") h->SetOption("shape");
+                if(sOpt.Contains("shape")) h->SetOption(sOpt);
                 auto out = Multiply(*h);
                 delete h;
                 return out;
@@ -1264,6 +1309,13 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
         } else if (sOpt=="overall") {
             return Multiply(acquire<RooStats::HistFactory::FlexibleInterpVar>(child.GetName(),child.GetTitle(),RooArgList(),1,std::vector<double>(),std::vector<double>()));
         }
+    }
+    if(auto w = get<RooWorkspace>(); w) {
+        // just acquire
+        std::shared_ptr<TObject> out;
+        child.convertForAcquisition(*this);
+        if (child.get<RooAbsReal>()) out = acquire(child.fComp);
+        return out;
     }
     if(auto p = get<RooProduct>();p) {
         std::shared_ptr<TObject> out;
@@ -1379,6 +1431,13 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
         std::set<RooAbsArg*> cl;
         for(auto& arg : p->clients()) {cl.insert(arg);}
 
+        // if multiple clients, see if only one client is in parentage route
+        // if so, then assume thats the only client we should replace in
+        if(cl.size()>1) {
+            if(cl.count( fParent->get<RooAbsArg>() )>0) { cl.clear(); cl.insert(fParent->get<RooAbsArg>()); }
+            else { Warning("Multiply","Scaling %s that has multiple clients",p->GetName()); }
+        }
+
         auto new_p = acquireNew<RooProduct>(TString::Format("prod_%s",p->GetName()),p->GetTitle(),RooArgList(*p));
         // copy attributes over
         for(auto& a : p->attributes()) new_p->setAttribute(a.c_str());
@@ -1400,6 +1459,9 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
 
 
 xRooNode xRooNode::Vary(const xRooNode& child) {
+
+    class AutoUpdater { public: AutoUpdater(xRooNode& _n) : n(_n) { } ~AutoUpdater() { n.browse(); } xRooNode& n; };
+    AutoUpdater xxx(*this);
 
     if (!get() && fParent) {
         // try to 'create' object based on parentage
@@ -1583,6 +1645,12 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
         // get the list of clients BEFORE creating the new interpolation ... seems list of clients is inaccurate after
         std::set<RooAbsArg*> cl;
         for(auto& arg : p->clients()) {cl.insert(arg);}
+        // if multiple clients, see if only one client is in parentage route
+        // if so, then assume thats the only client we should replace in
+        if(cl.size()>1) {
+            if(cl.count( fParent->get<RooAbsArg>() )>0) { cl.clear(); cl.insert(fParent->get<RooAbsArg>()); }
+            else { Warning("Vary","Varying %s that has multiple clients",p->GetName()); }
+        }
         p->setStringAttribute("origName",p->GetName());
         TString n=p->GetName();p->SetName(Form("%s_nominal",p->GetName())); // if problems should perhaps not rename here
 
@@ -1608,6 +1676,12 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
         // get the list of clients BEFORE creating the new interpolation ... seems list of clients is inaccurate after
         std::set<RooAbsArg*> cl;
         for(auto& arg : p->clients()) {cl.insert(arg);}
+        // if multiple clients, see if only one client is in parentage route
+        // if so, then assume thats the only client we should replace in
+        if(cl.size()>1) {
+            if(cl.count( fParent->get<RooAbsArg>() )>0) { cl.clear(); cl.insert(fParent->get<RooAbsArg>()); }
+            else { Warning("Vary","Varying %s that has multiple clients",p->GetName()); }
+        }
         p->setStringAttribute("origName",p->GetName());
         TString n=p->GetName();p->SetName(Form("%s_nominal",p->GetName())); // if problems should perhaps not rename here
 
@@ -3058,6 +3132,23 @@ xRooNode xRooNode::components() const {
     return out;
 }
 
+xRooNode xRooNode::bins() const {
+    xRooNode out(".bins",nullptr,*this);
+
+    if(auto phf = get<ParamHistFunc>(); phf) {
+        for(auto par : phf->_paramSet) {
+            out.emplace_back(std::make_shared<xRooNode>(par->GetName(),*par,*this));
+        }
+    } else if (auto ax = GetXaxis(); ax) {
+        for(int i=1;i<=ax->GetNbins();i++) {
+            out.emplace_back(std::make_shared<xRooNode>(TString::Format("%d", i), nullptr, *this));
+            out.back()->fBinNumber = i;
+        }
+    }
+
+    return out;
+}
+
 xRooNode xRooNode::coefs() const {
     RooArgList coefs;
 
@@ -3188,6 +3279,7 @@ xRooNode xRooNode::variations() const {
                                                       RooFit::RooConst(p->_low.at(i)), *this));
         }
     } else if(auto p = get<ParamHistFunc>(); p) {
+        // I *think* I put this here so that can browse into a ParamHistFunc
         int i=0;
         for(auto par : p->_paramSet) {
             TString _name = par->GetName();

@@ -60,7 +60,7 @@ public:
     explicit operator bool() const { return strlen(GetName()) || get(); } // the 'null' Component is the empty string
 
 
-    const std::shared_ptr<xRooNode>& at(ssize_t idx) const { IsFolder(); return std::vector<std::shared_ptr<xRooNode>>::at(idx); }
+    const std::shared_ptr<xRooNode>& at(ssize_t idx, bool browseResult=true) const { IsFolder(); auto& out = std::vector<std::shared_ptr<xRooNode>>::at(idx); if(browseResult && out) out->browse(); return out; }
     std::shared_ptr<xRooNode> at(const std::string& name,bool browseResult=true) const;
 
     RooArgList argList() const;
@@ -128,6 +128,7 @@ public:
     xRooNode variations() const; // interpolated children (are bins a form of variation?)
     xRooNode coefs() const;
     xRooNode coords() const; // will move to the coords in the process
+    xRooNode bins() const;
 
     xRooNode constraints() const; // pdfs other than the node's parent pdf where the deps of this node appear
     xRooNode datasets() const; // datasets corresponding to this pdf (parent nodes that do observable selections automatically applied)
@@ -216,6 +217,7 @@ public:
 
     mutable std::shared_ptr<TObject> fComp; //!
     int fTimes = 1; // when the same comp appears multiple times in a parent node, this is increased to reflect that
+    int fBinNumber = -1; // used by 'bin' nodes (a node that refers to a specific bin of a parent)
     std::shared_ptr<xRooNode> fParent; //!
     std::string fFolder = ""; // folder to put this node in when 'organising' the parent
 
