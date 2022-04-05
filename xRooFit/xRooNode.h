@@ -120,8 +120,8 @@ public:
     xRooNode globs() const; // just the global obs
     xRooNode pars() const; // vars and args
     xRooNode deps() const; // obs,globs,vars,args
-    xRooNode args() const;
-    xRooNode vars() const;
+    xRooNode args() const; // const pars
+    xRooNode vars() const; // unconst pars
 
     xRooNode components() const; // additive children
     xRooNode factors() const; // multiplicative children

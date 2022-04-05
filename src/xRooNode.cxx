@@ -413,7 +413,6 @@ std::shared_ptr<TObject> xRooNode::getObject(const std::string& name, const std:
 
 TAxis* xRooNode::GetXaxis() const {
     if (fXAxis) { return fXAxis.get(); }
-
     RooAbsLValue* x = nullptr;
     if (auto a = get<RooAbsArg>();a && a->isFundamental()) x = dynamic_cast<RooAbsLValue*>(a); // self-axis
 
@@ -530,7 +529,6 @@ TAxis* xRooNode::GetXaxis() const {
 
     fXAxis->SetName(binningName);
     fXAxis->SetParent(dynamic_cast<TObject*>(x));
-
     return fXAxis.get();
 }
 
@@ -1309,6 +1307,10 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
         } else if (sOpt=="overall") {
             return Multiply(acquire<RooStats::HistFactory::FlexibleInterpVar>(child.GetName(),child.GetTitle(),RooArgList(),1,std::vector<double>(),std::vector<double>()));
         }
+    }
+    if(auto h = child.get<TH1>(); h && strlen(h->GetOption())==0 && strlen(opt)>0) {
+        // put the option in the hist
+        h->SetOption(opt);
     }
     if(auto w = get<RooWorkspace>(); w) {
         // just acquire
@@ -4757,11 +4759,15 @@ void xRooNode::Draw(Option_t* opt) {
             double prefitError = dynamic_cast<RooRealVar*>(fr->floatParsInit().find(p->GetName()))->getError();
             double prefitVal = dynamic_cast<RooRealVar*>(fr->floatParsInit().find(p->GetName()))->getVal();
 
-
-            auto _constr = xRooNode(fParent->getObject<RooRealVar>(p->GetName()),*this).constraints();
             std::shared_ptr<xRooNode> pConstr;
-            for(auto& c : _constr) {
-                if (c->get<RooPoisson>() || c->get<RooGaussian>()) { pConstr = c; break; }
+            if(fParent && fParent->getObject<RooRealVar>(p->GetName())) {
+                auto _constr = xRooNode(fParent->getObject<RooRealVar>(p->GetName()), *this).constraints();
+                for (auto &c: _constr) {
+                    if (c->get<RooPoisson>() || c->get<RooGaussian>()) {
+                        pConstr = c;
+                        break;
+                    }
+                }
             }
             if (pConstr) {
 
