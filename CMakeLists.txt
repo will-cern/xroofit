@@ -27,11 +27,11 @@ add_definitions(${ROOT_CXX_FLAGS})
 
 
 
-file(GLOB HEADERS xRooFit/*.h)
+file(GLOB HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} xRooFit/*.h)
+file(GLOB SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*.cxx)
 
 ROOT_GENERATE_DICTIONARY(G__xRooFit ${HEADERS} LINKDEF src/LinkDef.h)
 
-file(GLOB SOURCES src/*.cxx)
 
 add_library(xRooFit SHARED ${SOURCES} G__xRooFit )
 target_link_libraries(xRooFit ${ROOT_LIBRARIES})
