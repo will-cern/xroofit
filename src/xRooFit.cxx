@@ -661,6 +661,8 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
 
     Info("hypoTest","Using PDF: %s",model->GetName());
 
+    double CL = 0.95; // TODO: make configurable
+
     //2. Determine the data (including globs). if more than 1 then exit and tell user they need to flag
     RooAbsData* obsData = nullptr;
     std::shared_ptr<RooArgSet> obsGlobs = nullptr;
@@ -719,8 +721,6 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
     xRooNLLVar nll(*model,std::make_pair(obsData,obsGlobs.get()),*nllOpts);
     nll.SetFitConfig(fitConfig);
 
-    double CL = 0.95;
-
     if(poi.size()==1) {
         auto mu = dynamic_cast<RooRealVar*>(poi.first());
 
@@ -752,15 +752,48 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
             return out;
         };
 
-        for(int i=0;i<mu->getBins("hypoPoints");i++) {
-            double testVal = mu->getBinning("hypoPoints").binCenter(i);
+        auto testPoint = [&](double testVal) {
+            Info("hypoTest","Testing %s=%g",mu->GetName(),testVal);
             auto hp = nll.hypoPoint(mu->GetName(), testVal, altVal, pllType);
             obs_ts->AddPoint(testVal,hp.pll().first);obs_ts->SetPointError(obs_ts->GetN()-1,0,hp.pll().second);
             obs_pcls->AddPoint(testVal,hp.pCLs_asymp());
             for(auto& s : expSig) {
                 exp_pcls[s].AddPoint(testVal,hp.pCLs_asymp(s));
             }
+        };
+
+        if (mu->getBins("hypoPoints")<=0) {
+            // autoTesting
+            // evaluate min and max points
+            testPoint(mu->getMin("hypoPoints"));
+            testPoint(mu->getMax("hypoPoints"));
+            testPoint((mu->getMax("hypoPoints")+mu->getMin("hypoPoints"))/2.);
+
+            while(abs(obs_pcls->GetPointY(obs_pcls->GetN()-1) - (1.-CL))>0.01) {
+                obs_pcls->Sort();
+                double nextTest = getLimit(*obs_pcls);
+                if (std::isnan(nextTest)) break;
+                testPoint(nextTest);
+            }
+            for(auto s : expSig) {
+                while (abs(exp_pcls[s].GetPointY(exp_pcls[s].GetN() - 1) - (1. - CL)) > 0.01) {
+                    exp_pcls[s].Sort();
+                    double nextTest = getLimit(exp_pcls[s]);
+                    if (std::isnan(nextTest)) break;
+                    testPoint(nextTest);
+                }
+            }
+            obs_ts->Sort();
+            obs_pcls->Sort();
+            for(auto& s : expSig) exp_pcls[s].Sort();
+
+        } else {
+            for(int i=0;i<=mu->getBins("hypoPoints");i++) {
+                testPoint( (i==mu->getBins("hypoPoints")) ? mu->getBinning("hypoPoints").binHigh(i-1) : mu->getBinning("hypoPoints").binLow(i) );
+            }
         }
+
+
 
         obs_cls->AddPoint(getLimit(*obs_pcls),0.05);
         for(auto& s : expSig) {

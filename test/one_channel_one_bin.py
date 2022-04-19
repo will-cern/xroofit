@@ -24,26 +24,30 @@ sig_sr.SetBinContent(1,n_sig)
 if n_sig_uncert>0:
     sig_sr.SetBinContent(1,n_sig+n_sig_uncert,"alpha_sig",1) # add a variation
     m.pars()["alpha_sig"].Constrain("normal") # ensure alpha is constrained (use a normal gaussian constraint)
-mu = sig_sr.Multiply("mu","norm") # multiply by a norm factor
+mu = sig_sr.Multiply("mu","norm") # multiply sig by a floating norm factor
+
+d = c.datasets()["obsData"].SetBinContent(1,n_data) # add the data
 
 # set the physically allowed range of mu and expand slightly the fittable range
 mu.setRange(-0.1,100)
 mu.setRange("physical",0,10)
-mu.setRange("scan",0.1,10)
-mu.setBinning(ROOT.RooUniformBinning(0,10,20),"hypoPoints")
+mu.setBinning(ROOT.RooUniformBinning(0.1,10,20),"hypoPoints") # defines points to test: 21 points between 0 and 10 (uses bin boundaries) - use 0 bins for autoscan
 
-d = c.datasets()["obsData"].SetBinContent(1,n_data)
+ht = ROOT.xRooFit.hypoTest(w.get())
+# can extract results from the ht canvas like this:
+print("Observed CLs Limit:",ht.GetPrimitive("obs_CLs").GetPointX(0))
+print("Expected CLs Limits [-2,-1,0,1,2]:",
+      ht.GetPrimitive("exp-2_CLs").GetPointX(0),
+      ht.GetPrimitive("exp-1_CLs").GetPointX(0),
+      ht.GetPrimitive("exp0_CLs").GetPointX(0),
+      ht.GetPrimitive("exp1_CLs").GetPointX(0),
+      ht.GetPrimitive("exp2_CLs").GetPointX(0))
 
-#d = w.Add("obsData","dataset"); d["channelCat=sr"].SetBinContent(1,5) -- TODO should make this sort of thing work
-
-dd = ROOT.xRooFit.hypoTest(w.get())
 
 
-# # cosmetics
-# bkg_sr.SetFillColor(ROOT.kGreen)
-# sig_sr.SetFillColor(ROOT.kRed)
+## The rest of this code shows how to manually produce the results of the hypoTest function
 #
-#
+# mu.setRange("scan",0.1,10)
 # # build NLL function from model and dataset
 # nll = m.createNLL("obsData")
 #
