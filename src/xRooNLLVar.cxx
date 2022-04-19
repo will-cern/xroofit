@@ -212,10 +212,15 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::minimize(const std::shared_ptr<R
 
 class AutoRestorer {
 public:
-    AutoRestorer(const RooAbsCollection& s) : fSnap(s.snapshot()) { fPars.add(s); }
-    ~AutoRestorer() { ((RooAbsCollection&)fPars) = *fSnap; }
+    AutoRestorer(const RooAbsCollection& s, xRooNLLVar* nll=nullptr) : fSnap(s.snapshot()), fNll(nll) {
+        fPars.add(s);
+        if(fNll) fOldData = fNll->getData();
+    }
+    ~AutoRestorer() { ((RooAbsCollection&)fPars) = *fSnap; if(fNll) fNll->setData(fOldData); }
     RooArgSet fPars;
     std::unique_ptr<RooAbsCollection> fSnap;
+    xRooNLLVar* fNll = nullptr;
+    std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> fOldData;
 };
 
 std::shared_ptr<ROOT::Fit::FitConfig> xRooNLLVar::fitConfig() {
@@ -533,6 +538,39 @@ RooConstraintSum* xRooNLLVar::constraintTerm() const {
     return *fFunc;
 }*/
 
+void xRooNLLVar::xRooHypoPoint::Print() {
+    std::cout << "mu: " << fPOIName << std::endl;
+    std::cout << "null: " << fNullVal << " , alt: " << fAltVal << std::endl;
+    std::cout << "ufit: ";
+    if(fUfit) {
+        std::cout << fUfit->minNll() << " (status=" << fUfit->status() << ") (mu_hat: " << mu_hat().getVal() << " +/- " << mu_hat().getError() << ")" << std::endl;
+    } else {
+        std::cout << " Not calculated" << std::endl;
+    }
+    std::cout << "null cfit: ";
+    if(fNull_cfit) {
+        std::cout << fNull_cfit->minNll() << " (status=" << fNull_cfit->status() << ")" << std::endl;
+    } else {
+        std::cout << " Not calculated" << std::endl;
+    }
+    if (!std::isnan(fAltVal)) {
+        std::cout << "alt cfit: ";
+        if (fAlt_cfit) {
+            std::cout << fAlt_cfit->minNll() << " (status=" << fAlt_cfit->status() << ")" << std::endl;
+        } else {
+            std::cout << " Not calculated" << std::endl;
+        }
+        std::cout << "sigma_mu: ";
+        if (!fAsimov || !fAsimov->fUfit || !fAsimov->fNull_cfit) {
+            std::cout << " Not calculated" << std::endl;
+        } else {
+            std::cout << sigma_mu().first << " +/- " << sigma_mu().second << std::endl;
+        }
+    }
+    std::cout << "genFit: "; if(fGenFit) std::cout << fGenFit->GetName() << std::endl; else std::cout << " Not generated data" << std::endl;
+    std::cout << "nllVar: " << nllVar << std::endl;
+}
+
 RooRealVar& xRooNLLVar::xRooHypoPoint::mu_hat() {
     if (ufit()) {
         auto var = dynamic_cast<RooRealVar*>(ufit()->floatParsFinal().find(fPOIName.c_str()));
@@ -543,23 +581,15 @@ RooRealVar& xRooNLLVar::xRooHypoPoint::mu_hat() {
 }
 
 double xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma) {
-    double k;
-    if (std::isnan(nSigma)) {
-        k = pll().first;
-    } else {
-        k = xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal,fAltVal,sigma_mu().first,0);
-    }
-    return xRooFit::Asymptotics::PValue(fPllType,k,fNullVal,fNullVal,sigma_mu().first,mu_hat().getMin(),mu_hat().getMax());
+    return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal,fNullVal,sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
 }
 
 double xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma) {
-    double k;
-    if (std::isnan(nSigma)) {
-        k = pll().first;
-    } else {
-        k = xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal,fAltVal,sigma_mu().first,0);
-    }
-    return xRooFit::Asymptotics::PValue(fPllType,k,fNullVal,fAltVal,sigma_mu().first,mu_hat().getMin(),mu_hat().getMax());
+    return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal,fAltVal,sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
+}
+
+double xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma) {
+    return (std::isnan(nSigma)) ? pll().first : xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal,fAltVal,sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
 }
 
 
@@ -576,7 +606,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::pll() {
 std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
     if (fUfit) return fUfit;
     if (!nllVar) return nullptr;
-    AutoRestorer snap(*nllVar->fFuncVars);
+    AutoRestorer snap(*nllVar->fFuncVars, nllVar);
     nllVar->setData(data);
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
@@ -592,7 +622,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
 std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::null_cfit() {
     if (fNull_cfit) return fNull_cfit;
     if (!nllVar) return nullptr;
-    AutoRestorer snap(*nllVar->fFuncVars);
+    AutoRestorer snap(*nllVar->fFuncVars, nllVar);
     nllVar->setData(data);
     if (fUfit) {
         // move to ufit coords before evaluating
@@ -607,7 +637,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::alt_cfit() {
     if (std::isnan(fAltVal)) return nullptr;
     if (fAlt_cfit) return fAlt_cfit;
     if (!nllVar) return nullptr;
-    AutoRestorer snap(*nllVar->fFuncVars);
+    AutoRestorer snap(*nllVar->fFuncVars, nllVar);
     nllVar->setData(data);
     if (fUfit) {
         // move to ufit coords before evaluating
@@ -636,19 +666,19 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
     return std::make_pair(std::abs(fNullVal - fAltVal)/sqrt(out.first), out.second*0.5*std::abs(fNullVal - fAltVal)/(out.first*sqrt(out.first)));
 }
 
-xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateNull() {
+xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateNull(int seed) {
     xRooHypoPoint out;
     out.fPOIName = fPOIName; out.coords = coords; out.fPllType = fPllType; out.fNullVal=fNullVal; out.fAltVal = fAltVal;
     out.nllVar = nllVar;
     if (!nllVar) return out;
     *nllVar->fFuncVars = null_cfit()->floatParsFinal();
     *nllVar->fFuncVars = null_cfit()->constPars();
-    out.data = nllVar->generate();
+    out.data = nllVar->generate(false,seed);
     out.fGenFit = null_cfit();
     return out;
 }
 
-xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt() {
+xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
     xRooHypoPoint out;
     out.fPOIName = fPOIName; out.coords = coords; out.fPllType = fPllType; out.fNullVal=fNullVal; out.fAltVal = fAltVal;
     out.nllVar = nllVar;
@@ -656,7 +686,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt() {
     if (!alt_cfit()) return out;
     *nllVar->fFuncVars = alt_cfit()->floatParsFinal();
     *nllVar->fFuncVars = alt_cfit()->constPars();
-    out.data = nllVar->generate();
+    out.data = nllVar->generate(false,seed);
     out.fGenFit = alt_cfit();
     return out;
 }

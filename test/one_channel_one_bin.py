@@ -7,12 +7,13 @@ n_bkg = 100
 n_bkg_uncert = 20
 n_sig = 10
 n_sig_uncert = 0
+n_data = 110
 
 
 w = ROOT.xRooNode("RooWorkspace","combined","my workspace")
 m = w.Add("simPdf","model") # add a model
 c = m.Add("sr","channel") # add "signal region" (sr) channel
-c.SetXaxis("obs","dummy obs",1,0,1) # single bin channel
+c.SetXaxis("dummy obs",1,0,1) # single bin channel
 bkg_sr = c.Add("bkg","sample") # add a sample (component) to the channel called "bkg"
 bkg_sr.SetBinContent(1,n_bkg)
 if n_bkg_uncert>0:
@@ -29,42 +30,51 @@ mu = sig_sr.Multiply("mu","norm") # multiply by a norm factor
 mu.setRange(-0.1,100)
 mu.setRange("physical",0,10)
 mu.setRange("scan",0.1,10)
+mu.setBinning(ROOT.RooUniformBinning(0,10,20),"hypoPoints")
 
-d = c.datasets()["obsData"].SetBinContent(1,n_bkg)
+d = c.datasets()["obsData"].SetBinContent(1,n_data)
 
 #d = w.Add("obsData","dataset"); d["channelCat=sr"].SetBinContent(1,5) -- TODO should make this sort of thing work
 
-# cosmetics
-bkg_sr.SetFillColor(ROOT.kGreen)
-sig_sr.SetFillColor(ROOT.kRed)
+dd = ROOT.xRooFit.hypoTest(w.get())
 
 
-# build NLL function from model and dataset
-nll = m.createNLL("obsData")
-
-def getPValues(mu_test):
-
-    pllType = ROOT.xRooFit.Asymptotics.OneSidedPositive # for upperLimits
-    pll_obs = nll.pll("mu",mu_test,pllType)
-    sigma_mu = nll.sigma_mu("mu",mu_test,0)
-    pval_sb = ROOT.xRooFit.Asymptotics.PValue(pllType,pll_obs,mu_test,mu_test,sigma_mu,mu.getMin("physical"),mu.getMax("physical"))
-    pval_b = ROOT.xRooFit.Asymptotics.PValue(pllType,pll_obs,mu_test,0.,sigma_mu,mu.getMin("physical"),mu.getMax("physical"))
-
-    return pval_sb,pval_b
-
-def clsPValue(mu_test):
-    pval = getPValues(mu_test)
-    print(mu_test,pval[0],pval[1])
-    if pval[0]==pval[1]: return 1.
-    return pval[0]/pval[1]
-
-# find what value of mu has clsPValue=0.05 ... that's the upper limit
-gr = ROOT.TGraph()
-step = (mu.getMax("scan")-mu.getMin("scan"))/19
-mu_test = mu.getMin("scan")
-while mu_test <= mu.getMax("scan"):
-    gr.SetPoint(gr.GetN(),mu_test,clsPValue(mu_test))
-    mu_test += step
-
-gr.DrawClone("ALP")
-ROOT.TLine().DrawLine(mu.getMin("scan"),0.05,mu.getMax("scan"),0.05)
+# # cosmetics
+# bkg_sr.SetFillColor(ROOT.kGreen)
+# sig_sr.SetFillColor(ROOT.kRed)
+#
+#
+# # build NLL function from model and dataset
+# nll = m.createNLL("obsData")
+#
+# # find what value of mu has clsPValue=0.05 ... that's the upper limit
+# gr = ROOT.TGraph();
+# from collections import defaultdict
+# expected_gr = defaultdict(ROOT.TGraph)
+# step = (mu.getMax("scan")-mu.getMin("scan"))/19
+# mu_test = mu.getMin("scan")
+# mu_alt = 0.
+# pllType = ROOT.xRooFit.Asymptotics.OneSidedPositive # for upperLimits
+# while mu_test <= mu.getMax("scan"):
+#     gr.SetPoint(gr.GetN(),mu_test,nll.hypoPoint("mu",mu_test,mu_alt,pllType).pCLs_asymp())
+#     for i in range(-2,3): expected_gr[i].SetPoint(expected_gr[i].GetN(),mu_test,nll.hypoPoint("mu",mu_test,mu_alt,pllType).pCLs_asymp(i))
+#     mu_test += step
+#
+# expected_2sigma = ROOT.TGraph(expected_gr[-2]);expected_2sigma.SetTitle(f";{mu.GetTitle()};p-value")
+# expected_2sigma.Sort(ROOT.TGraph.CompareX,False)
+# cc = ROOT.TList(); cc.Add(expected_gr[2]);expected_2sigma.Merge(cc)
+# expected_2sigma.SetFillColor(ROOT.kYellow)
+#
+# expected_1sigma = ROOT.TGraph(expected_gr[-1])
+# expected_1sigma.Sort(ROOT.TGraph.CompareX,False)
+# cc = ROOT.TList(); cc.Add(expected_gr[1]);expected_1sigma.Merge(cc)
+# expected_1sigma.SetFillColor(ROOT.kGreen)
+#
+#
+# xx = ROOT.TCanvas()
+# expected_2sigma.DrawClone("AF");
+# expected_1sigma.DrawClone("F");
+# expected_gr[0].SetLineStyle(2);expected_gr[0].DrawClone("L")
+# gr.DrawClone("LP")
+# ROOT.TLine().DrawLine(mu.getMin("scan"),0.05,mu.getMax("scan"),0.05)
+# ROOT.gPad.RedrawAxis();

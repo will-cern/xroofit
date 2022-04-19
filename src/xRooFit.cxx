@@ -31,6 +31,9 @@
 
 #include "coutCapture.h"
 
+#include "TCanvas.h"
+#include "TGraphErrors.h"
+
 xRooNLLVar xRooFit::createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts) {
     return xRooNLLVar(pdf,data,nllOpts);
 }
@@ -628,4 +631,220 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
 
     return std::shared_ptr<const RooFitResult>(out);
 
+}
+
+TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType& pllType) {
+    TCanvas* out = nullptr;
+
+    //1. Determine pdf: use top-level, if more than 1 then exit and tell user they need to flag
+    RooAbsPdf* model = nullptr;
+    std::deque<RooAbsArg*> topPdfs;int flagCount=0;
+    for(auto p : w.allPdfs()) {
+        if (p->hasClients()) continue;
+        flagCount += p->getAttribute("hypoTest");
+        if(p->getAttribute("hypoTest")) topPdfs.push_front(p); else topPdfs.push_back(p);
+    }
+    if (topPdfs.empty()) {
+        Error("hypoTest", "Cannot find top-level pdf in workspace");
+        return nullptr;
+    } else if(topPdfs.size()>1) {
+        // should be one flagged
+        if (flagCount==0) {
+            Error("hypoTest","Multiple top-level pdfs. Flag which one to test with w->pdf(\"pdfName\")->setAttribute(\"hypoTest\",true)");
+            return out;
+        } else if(flagCount!=1) {
+            Error("hypoTest","Multiple top-level pdfs flagged for hypoTest -- pick one.");
+            return out;
+        }
+    }
+    model = dynamic_cast<RooAbsPdf*>(topPdfs.front());
+
+    Info("hypoTest","Using PDF: %s",model->GetName());
+
+    //2. Determine the data (including globs). if more than 1 then exit and tell user they need to flag
+    RooAbsData* obsData = nullptr;
+    std::shared_ptr<RooArgSet> obsGlobs = nullptr;
+
+    for(auto p : w.allData()) {
+        if (obsData) {
+            Error("hypoTest","Multiple datasets in workspace. Flag which one to test with w->data(\"dataName\")->setAttribute(\"hypoTest\",true)");
+            return out;
+        }
+        obsData = p;
+    }
+
+    if (!obsData) {
+        Error("hypoTest","No data -- cannot determine observables");
+        return nullptr;
+    }
+
+    Info("hypoTest","Using Dataset: %s",obsData->GetName());
+
+    {
+        auto _globs = xRooNode(w).datasets()[obsData->GetName()]->globs(); // keep alive because may own the globs
+        obsGlobs = std::make_shared<RooArgSet>(); obsGlobs->addClone(_globs.argList());
+        Info("hypoTest","Using Globs: %s", (obsGlobs->empty()) ? " <NONE>" : obsGlobs->contentsString().c_str());
+    }
+
+    //3. Determine the POI and args - look for model pars with "hypoPoints" binning, if none then cannot scan
+    // args are const, poi are floating - exception is if only one then assume it is the POI
+    auto _vars = std::unique_ptr<RooArgSet>( model->getVariables() );
+    RooArgSet poi;
+    RooArgSet args;
+    for(auto _v : *_vars) {
+        if(auto v = dynamic_cast<RooRealVar*>(_v); v && v->hasBinning("hypoPoints")) {
+            poi.add(*v);
+        }
+    }
+    if (poi.size()>1) {
+        auto _const = std::unique_ptr<RooAbsCollection>( poi.selectByAttrib("Constant",true) );
+        args.add(*_const); poi.remove(*_const);
+    }
+    if (!args.empty()) {
+        Info("hypoTest","Using Arguments: %s",args.contentsString().c_str());
+    }
+    if (poi.empty()) {
+        Error("hypoTest","No POI detected: add the hypoPoints binning to at least one non-const model parameter e.g.:\n w->var(\"mu\")->setBinning(RooUniformBinning(0,10,10),\"hypoPoints\"))");
+        return nullptr;
+    }
+
+    Info("hypoTest","Using Parameters of Interest: %s",poi.contentsString().c_str());
+
+    out = TCanvas::MakeDefCanvas();
+
+    // should check if exist in workspace
+    auto nllOpts = defaultNLLOptions();
+    auto fitConfig = defaultFitConfig();
+
+    xRooNLLVar nll(*model,std::make_pair(obsData,obsGlobs.get()),*nllOpts);
+    nll.SetFitConfig(fitConfig);
+
+    double CL = 0.95;
+
+    if(poi.size()==1) {
+        auto mu = dynamic_cast<RooRealVar*>(poi.first());
+
+        auto obs_ts = new TGraphErrors;obs_ts->SetNameTitle("obs_ts",TString::Format("Observed TestStat;%s",mu->GetTitle()));
+        auto obs_pcls = new TGraphErrors;obs_pcls->SetNameTitle("obs_pCLs",TString::Format("Observed p_{CLs};%s",mu->GetTitle()));
+        auto obs_cls = new TGraphErrors;obs_cls->SetNameTitle("obs_CLs",TString::Format("Observed CLs;%s",mu->GetTitle()));
+
+        std::vector<int> expSig = {-2,-1,0,1,2};
+        std::map<int,TGraphErrors> exp_pcls,exp_cls;
+        for(auto& s : expSig) {
+            exp_pcls[s].SetNameTitle(TString::Format("exp%d_pCLs",s),TString::Format("Expected (%d#sigma) CLs;%s",s,mu->GetTitle()));
+            exp_cls[s].SetNameTitle(TString::Format("exp%d_CLs",s),TString::Format("Expected (%d#sigma) CLs;%s",s,mu->GetTitle()));
+        }
+
+        double altVal = 0.;
+
+        auto getLimit = [CL](TGraphErrors& pValues) {
+            double out = std::numeric_limits<double>::quiet_NaN();
+            bool lastAbove=false;
+            for(int i=0;i<pValues.GetN();i++) {
+                bool thisAbove = pValues.GetPointY(i) >= (1.-CL);
+                if (i!=0 && thisAbove!=lastAbove) {
+                    // crossed over ... find limit by interpolation
+                    // using linear interpolation so far
+                    out = pValues.GetPointX(i-1) + (pValues.GetPointX(i)-pValues.GetPointX(i-1))*((1.-CL)-pValues.GetPointY(i-1))/(pValues.GetPointY(i) - pValues.GetPointY(i-1));
+                }
+                lastAbove = thisAbove;
+            }
+            return out;
+        };
+
+        for(int i=0;i<mu->getBins("hypoPoints");i++) {
+            double testVal = mu->getBinning("hypoPoints").binCenter(i);
+            auto hp = nll.hypoPoint(mu->GetName(), testVal, altVal, pllType);
+            obs_ts->AddPoint(testVal,hp.pll().first);obs_ts->SetPointError(obs_ts->GetN()-1,0,hp.pll().second);
+            obs_pcls->AddPoint(testVal,hp.pCLs_asymp());
+            for(auto& s : expSig) {
+                exp_pcls[s].AddPoint(testVal,hp.pCLs_asymp(s));
+            }
+        }
+
+        obs_cls->AddPoint(getLimit(*obs_pcls),0.05);
+        for(auto& s : expSig) {
+            exp_cls[s].AddPoint(getLimit(exp_pcls[s]),0.05);
+        }
+
+
+        // if more than two hypoPoints, visualize as bands
+        if (exp_pcls[2].GetN()>1) {
+            TGraph* band2 = new TGraph; band2->SetNameTitle(".pCLs_2sigma","2 sigma band");
+            TGraph* band2up = new TGraph; band2up->SetNameTitle(".pCLs_2sigma_upUncert","");
+            TGraph* band2down = new TGraph; band2down->SetNameTitle(".pCLs_2sigma_downUncert","");
+            band2->SetFillColor(kYellow);
+            band2up->SetFillColor(kYellow);
+            band2down->SetFillColor(kYellow);
+            band2up->SetFillStyle(3005);band2down->SetFillStyle(3005);
+            for(int i=0;i<exp_pcls[2].GetN();i++) {
+                band2->AddPoint(exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) - exp_pcls[2].GetErrorYlow(i));
+                band2up->AddPoint(exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) + exp_pcls[2].GetErrorYhigh(i));
+            }
+            for(int i=exp_pcls[2].GetN()-1;i>=0;i--) {
+                band2up->AddPoint(exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) - exp_pcls[2].GetErrorYlow(i));
+            }
+            for(int i=0;i<exp_pcls[-2].GetN();i++) {
+                band2down->AddPoint(exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) + exp_pcls[-2].GetErrorYhigh(i));
+            }
+            for(int i=exp_pcls[-2].GetN()-1;i>=0;i--) {
+                band2->AddPoint(exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) + exp_pcls[-2].GetErrorYhigh(i));
+                band2down->AddPoint(exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) - exp_pcls[-2].GetErrorYlow(i));
+            }
+            band2->SetBit(kCanDelete); band2up->SetBit(kCanDelete); band2down->SetBit(kCanDelete);
+            band2->Draw("AF");
+            band2up->Draw("F");
+            band2down->Draw("F");
+        }
+
+        if (exp_pcls[1].GetN()>1) {
+            TGraph* band2 = new TGraph; band2->SetNameTitle(".pCLs_1sigma","1 sigma band");
+            TGraph* band2up = new TGraph; band2up->SetNameTitle(".pCLs_1sigma_upUncert","");
+            TGraph* band2down = new TGraph; band2down->SetNameTitle(".pCLs_1sigma_downUncert","");
+            band2->SetFillColor(kGreen);
+            band2up->SetFillColor(kGreen);
+            band2down->SetFillColor(kGreen);
+            band2up->SetFillStyle(3005);band2down->SetFillStyle(3005);
+            for(int i=0;i<exp_pcls[1].GetN();i++) {
+                band2->AddPoint(exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) - exp_pcls[1].GetErrorYlow(i));
+                band2up->AddPoint(exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) + exp_pcls[1].GetErrorYhigh(i));
+            }
+            for(int i=exp_pcls[1].GetN()-1;i>=0;i--) {
+                band2up->AddPoint(exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) - exp_pcls[1].GetErrorYlow(i));
+            }
+            for(int i=0;i<exp_pcls[-1].GetN();i++) {
+                band2down->AddPoint(exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) + exp_pcls[-1].GetErrorYhigh(i));
+            }
+            for(int i=exp_pcls[-1].GetN()-1;i>=0;i--) {
+                band2->AddPoint(exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) + exp_pcls[-1].GetErrorYhigh(i));
+                band2down->AddPoint(exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) - exp_pcls[-1].GetErrorYlow(i));
+            }
+            band2->SetBit(kCanDelete); band2up->SetBit(kCanDelete); band2down->SetBit(kCanDelete);
+            band2->Draw("F");
+            band2up->Draw("F");
+            band2down->Draw("F");
+        }
+
+        exp_pcls[0].SetLineStyle(2);
+        exp_pcls[0].DrawClone("L");
+
+        obs_pcls->SetBit(kCanDelete);
+        obs_pcls->Draw("LP");
+
+        obs_ts->SetLineColor(kRed);obs_ts->SetMarkerColor(kRed);
+        obs_ts->SetBit(kCanDelete);
+        obs_ts->Draw("LP");
+
+        obs_cls->SetMarkerStyle(29);obs_cls->SetEditable(false);
+        obs_cls->Draw("LP");
+        for(auto s : expSig) {
+            exp_cls[s].SetMarkerStyle(29);exp_cls[s].SetEditable(false);
+            exp_cls[s].DrawClone("LP");
+        }
+
+    }
+
+    if(out) out->RedrawAxis();
+
+    return out;
 }

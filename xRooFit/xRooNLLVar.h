@@ -53,6 +53,7 @@ public:
 
     class xRooHypoPoint {
     public:
+        void Print();
         std::pair<double,double> pll(); // observed test statistic value
         std::pair<double,double> sigma_mu(); // estimate of sigma_mu parameter
         std::shared_ptr<const RooFitResult> ufit();
@@ -66,13 +67,14 @@ public:
         double pNull_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
         double pAlt_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
         double pCLs_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()) { return (pNull_asymp(nSigma)==0) ? 0 : (pNull_asymp(nSigma)/pAlt_asymp(nSigma)); }
+        double ts_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
 
         double pNull_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
         double pAlt_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
         double pCLs_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) { return (pNull_toys(nSigma)==0) ? 0 : (pNull_toys(nSigma)/pAlt_toys(nSigma)); }
 
-        xRooHypoPoint generateNull();
-        xRooHypoPoint generateAlt();
+        xRooHypoPoint generateNull(int seed=0);
+        xRooHypoPoint generateAlt(int seed=0);
 
         RooRealVar& mu_hat(); // throws exception if ufit not available
 
@@ -109,24 +111,24 @@ public:
 
 
 
-    class xRooHypoSpace {
-        void ReadFile(const char* fitsFile);
-        void SaveAs(const char* output); // saves fit results of the hypospace to given file
-
-        void runLimit(const char* parName, double alt_value);
-
-        void runMinos(const char* parName) {
-            // assumes is pll is approximately quadratic: pll =  ( (mu - mu_hat)/sigma_mu )^2
-            // so to find where pll = X,
-            //   could simply rearrange to give: mu = mu_hat +/- sqrt(X)*sigma_mu
-            //   but sigma_mu can have mild dependence on mu, i.e.:
-            //    sigma_mu(mu) = (mu - mu_hat)/sqrt( pll(mu) )
-            // use an iterative algorithm:
-            //   start with some guess for result: mu_guess
-            //   update mu_guess = mu_guess - d*( mu_guess - (mu_hat +/- X*sigma_mu(mu_guess)) )
-            //  iterate until change in mu_guess is small enough for desired precision
-        }
-    };
+//    class xRooHypoSpace {
+//        void ReadFile(const char* fitsFile);
+//        void SaveAs(const char* output); // saves fit results of the hypospace to given file
+//
+//        void runLimit(const char* parName, double alt_value);
+//
+//        void runMinos(const char* parName) {
+//            // assumes is pll is approximately quadratic: pll =  ( (mu - mu_hat)/sigma_mu )^2
+//            // so to find where pll = X,
+//            //   could simply rearrange to give: mu = mu_hat +/- sqrt(X)*sigma_mu
+//            //   but sigma_mu can have mild dependence on mu, i.e.:
+//            //    sigma_mu(mu) = (mu - mu_hat)/sqrt( pll(mu) )
+//            // use an iterative algorithm:
+//            //   start with some guess for result: mu_guess
+//            //   update mu_guess = mu_guess - d*( mu_guess - (mu_hat +/- X*sigma_mu(mu_guess)) )
+//            //  iterate until change in mu_guess is small enough for desired precision
+//        }
+//    };
 
     std::shared_ptr<RooArgSet> pars(bool stripGlobalObs=true);
 

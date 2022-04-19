@@ -19,6 +19,8 @@ class xRooNLLVar;
 
 #include "RooCmdArg.h"
 
+class TCanvas;
+
 #include <memory>
 
 class xRooFit {
@@ -36,7 +38,6 @@ public:
     static std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generateFrom(RooAbsPdf& pdf, const std::shared_ptr<const RooFitResult>& fr, bool expected=false, int seed=0);
     static std::shared_ptr<const RooFitResult> fitTo(RooAbsPdf& pdf, const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& data, const RooLinkedList& nllOpts, const ROOT::Fit::FitConfig& fitConf);
     static std::shared_ptr<const RooFitResult> fitTo(RooAbsPdf& pdf, const std::pair<RooAbsData*,const RooAbsCollection*>& data, const RooLinkedList& nllOpts, const ROOT::Fit::FitConfig& fitConf);
-
 
     static xRooNLLVar createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts);
     static xRooNLLVar createNLL(RooAbsPdf& pdf, RooAbsData* data, const RooLinkedList& nllOpts);
@@ -100,14 +101,14 @@ public:
         // inverse of PValue function
         static Double_t k(const IncompatFunc &compatRegions, double pValue, double poiVal, double poiPrimeVal,
                           double sigma_mu = 0,
-                          double low = -std::numeric_limits<double>::infinity(),
-                          double high = std::numeric_limits<double>::infinity());
+                          double mu_low = -std::numeric_limits<double>::infinity(),
+                          double mu_high = std::numeric_limits<double>::infinity());
 
         static Double_t k(const PLLType &pllType, double pValue, double mu, double mu_prime,
                           double sigma_mu = 0,
-                          double low = -std::numeric_limits<double>::infinity(),
-                          double high = std::numeric_limits<double>::infinity()) {
-            return k(IncompatibilityFunction(pllType,mu),pValue, mu, mu_prime, sigma_mu, low, high);
+                          double mu_low = -std::numeric_limits<double>::infinity(),
+                          double mu_high = std::numeric_limits<double>::infinity()) {
+            return k(IncompatibilityFunction(pllType,mu),pValue, mu, mu_prime, sigma_mu, mu_low, mu_high);
         }
 
         // Recommend sigma_mu = |mu - mu_prime|/sqrt(pll_mu(asimov_mu_prime))
@@ -143,6 +144,13 @@ public:
         //static RooRealVar FindLimit(TGraph *pVals, double target_pVal = 0.05);
 
     };
+
+    // Run hypothesis test(s) on the given pdf
+    // Uses hypoPoint binning on model parameters to determine points to scan
+    // if hypoPoint binning has nBins==0 then will auto-scan (assumes CL=95%, can override with setStringAttribute)
+    // TODO: specifying number of null and alt toys per point
+    static TCanvas* hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
+
 
 };
 

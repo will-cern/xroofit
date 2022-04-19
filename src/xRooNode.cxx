@@ -2167,7 +2167,7 @@ bool xRooNode::SetBinError(int bin, double value) {
             }
             if (sumw2 && sumw2 != std::numeric_limits<double>::infinity() ) {
                 double tau = pow(sumw, 2) / sumw2;
-                rrv->setError(rrv->getVal() / sqrt(tau));
+                rrv->setError((tau<1e-15) ? 1e15 : ( rrv->getVal() / sqrt(tau)));
                 rrv->setConstant(false);
                 // parameter must be constrained
                 auto _constr = v.constraints();
@@ -2477,6 +2477,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject>& arg, 
                     }
                 }
                 if (!done && _ws->import(*a, RooFit::RecycleConflictNodes())) {
+                    if (a->_myws != _ws) { Info("acquire","A copy of %s has been added to workspace %s",a->GetName(),_ws->GetName()); }
                     RooMsgService::instance().setGlobalKillBelow(msglevel);
                     return nullptr;
                 }

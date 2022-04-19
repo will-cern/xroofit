@@ -38,8 +38,8 @@ target_link_libraries(xRooFit ${ROOT_LIBRARIES})
 
 target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)
-target_include_directories(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning)
-target_include_directories(xRooFit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(xRooFit BEFORE PRIVATE ${CMAKE_BINARY_DIR}/versioning)
+target_include_directories(xRooFit BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_dependencies(xRooFit xRooFit_version)
 
 
@@ -51,8 +51,10 @@ endif()
 set(SETUP ${CMAKE_CURRENT_BINARY_DIR}/setup.sh)
 file(WRITE ${SETUP} "#!/bin/bash\n")
 file(APPEND ${SETUP} "# this is an auto-generated setup script\n" )
-file(APPEND ${SETUP} "export PYTHONPATH=\${PYTHONPATH}:${CMAKE_CURRENT_BINARY_DIR}\n")
-file(APPEND ${SETUP} "export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}:${ROOT_LIBRARY_DIR}:${CMAKE_CURRENT_BINARY_DIR}\n")
+file(APPEND ${SETUP} "export PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}:\${PYTHONPATH}\n")
+file(APPEND ${SETUP} "export ROOT_INCLUDE_PATH=${CMAKE_CURRENT_SOURCE_DIR}:\${ROOT_INCLUDE_PATH}\n")
+file(APPEND ${SETUP} "export LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:${ROOT_LIBRARY_DIR}:\${LD_LIBRARY_PATH}\n")
+file(APPEND ${SETUP} "export DYLD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:\${DYLD_LIBRARY_PATH}\n")
 ## file(APPEND ${SETUP} "export PATH=\${PATH}:${CMAKE_CURRENT_SOURCE_DIR}/scripts\n")
 string(ASCII 27 Esc)
 message(STATUS "${Esc}[1;35mIMPORTANT: In future sessions you just have to remember to run:
