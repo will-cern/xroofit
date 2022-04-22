@@ -1406,7 +1406,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
         if (auto _pdf = std::dynamic_pointer_cast<RooAbsPdf>(out); _pdf) {
             p->_pdfList.add(*_pdf);
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6,26,00)
-            p->_pdfNSetList.emplace_back(std::make_unique<RooArgSet("nset"));
+            p->_pdfNSetList.emplace_back(std::make_unique<RooArgSet>("nset"));
 #else
             p->_pdfNSetList.Add(new RooArgSet("nset"));
 #endif
