@@ -43,6 +43,9 @@ xRooBrowser::xRooBrowser(xRooNode* o) : TBrowser("RooBrowser", o, "RooFit Browse
 
 xRooBrowser::xRooBrowser() :xRooBrowser([]() {
     gEnv->SetValue("X11.UseXft","no"); // for faster x11
+    gEnv->SetValue("X11.Sync","no");
+    gEnv->SetValue("X11.FindBestVisual","no");
+    gEnv->SetValue("Browser.Name","TRootBrowser"); // forces classic root browser (in 6.26 onwards)
     return new xRooNode("!Workspaces"); }()) {
 /*
     fNode = std::shared_ptr<xRooNode>(dynamic_cast<xRooNode*>(GetSelected()),[](xRooNode*){});
