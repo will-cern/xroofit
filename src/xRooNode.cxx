@@ -214,6 +214,9 @@ void xRooNode::Browse(TBrowser* b) {
         if (!b || !b->GetBrowserImp()) { // no browser imp if browser was closed
             blockBrowse=true;
             gEnv->SetValue("X11.UseXft","no"); // for faster x11
+            gEnv->SetValue("X11.Sync","no");
+            gEnv->SetValue("X11.FindBestVisual","no");
+            gEnv->SetValue("Browser.Name","TRootBrowser"); // forces classic root browser (in 6.26 onwards)
             b = new TBrowser("nodeBrowser",this,"RooFit Browser");
             blockBrowse=false;
         } else if(strcmp(b->GetName(),"nodeBrowser")==0) {
