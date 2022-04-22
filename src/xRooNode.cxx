@@ -621,9 +621,14 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
             auto i = p->_pdfList.index(*pdf);
             if (i>=0) {
                 p->_pdfList.remove(*pdf);
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,26,00)
+                p->_pdfNSetList.erase(p->_pdfNSetList.begin()+i);
+#else
                 auto nset = p->_pdfNSetList.At(i);
                 p->_pdfNSetList.Remove(nset);
                 delete nset; // I don't think the RooLinkedList owned it so must delete ourself
+#endif
+
                 p->_cacheMgr.reset();
                 p->setValueDirty();
                 p->setNormRange(0);
@@ -1400,7 +1405,11 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
 
         if (auto _pdf = std::dynamic_pointer_cast<RooAbsPdf>(out); _pdf) {
             p->_pdfList.add(*_pdf);
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,26,00)
+            p->_pdfNSetList.emplace_back(std::make_unique<RooArgSet("nset"));
+#else
             p->_pdfNSetList.Add(new RooArgSet("nset"));
+#endif
             if (!p->canBeExtended() && _pdf->canBeExtended()) { p->_extendedIndex = p->_pdfList.size() - 1; }
             // TODO: any more cleanup?
             sterilize();
