@@ -23,6 +23,8 @@
 
 #include "coutCapture.h"
 
+#include <chrono>
+
 xRooNLLVar::~xRooNLLVar() {
 
 }

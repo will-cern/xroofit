@@ -98,6 +98,10 @@ xRooNode buildModel(double data, double bkg, double bkg_uncert, double sig, doub
     // set the data
     w["simPdf/channel1"]->SetBinData(1,data);
 
+    // adjust the ranges of the parameter of interest - relevant in hypothesis testing
+    w.pars()["mu"]->get<RooRealVar>()->setRange(-0.1,100); // allow slightly less than 0 as possible fit, so 0 is not on the boundary of fit range
+    w.pars()["mu"]->get<RooRealVar>()->setRange("physical",0,100); // but specify a physical range: used for asymptotic formulae etc
+
     return w;
 }
 
