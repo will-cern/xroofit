@@ -372,6 +372,7 @@ void xRooNLLVar::Draw(Option_t* opt) {
         double step = (v->getMax() - v->getMin())/100;
         double init = v->getVal(); double initVal = func()->getVal();
         double xscale = (normRange) ? (2.*(v->getMax() - v->getMin())) : 1.;
+        auto currTime = std::chrono::steady_clock::now();
         while( out->GetN() < 100 && (low > v->getMin() || high < v->getMax()) ) {
             if(out->GetN()==0) {
                 out->SetPoint(out->GetN(),low,0);
@@ -403,9 +404,17 @@ void xRooNLLVar::Draw(Option_t* opt) {
                 high += step;
             }
             out->Sort();
-            gPad->Modified();gPad->Update();gSystem->ProcessEvents();
+            // should only do processEvents once every second in case using x11 (which is slow)
+            gPad->Modified();
+            if(std::chrono::steady_clock::now() - currTime > std::chrono::seconds(1)) {
+                currTime = std::chrono::steady_clock::now();
+                gPad->Update();gSystem->ProcessEvents();
+            }
         }
+        gPad->Update();gSystem->ProcessEvents();
         v->setVal(init);
+    } else {
+        Error("Draw","Name a parameter to scan over: Draw(<name>)");
     }
 
 
@@ -421,7 +430,7 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
 
     if (fData == _data.first && fGlobs == _data.second) return true;
 
-    if (fGlobs) {
+    if (fGlobs && !(fGlobs->empty() && !_data.second)) { // second condition allows for no globs being a nullptr
         if (!_data.second) throw std::runtime_error("Missing globs");
         // ignore 'extra' globs
         RooArgSet s;s.add(*fGlobs);
@@ -567,7 +576,7 @@ void xRooNLLVar::xRooHypoPoint::Print() {
             std::cout << sigma_mu().first << " +/- " << sigma_mu().second << std::endl;
         }
     }
-    std::cout << "genFit: "; if(fGenFit) std::cout << fGenFit->GetName() << std::endl; else std::cout << " Not generated data" << std::endl;
+    if(fGenFit) std::cout << "genFit: " << fGenFit->GetName() << std::endl;
     std::cout << "nllVar: " << nllVar << std::endl;
 }
 

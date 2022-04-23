@@ -33,6 +33,7 @@
 
 #include "TCanvas.h"
 #include "TGraphErrors.h"
+#include "TLegend.h"
 
 xRooNLLVar xRooFit::createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts) {
     return xRooNLLVar(pdf,data,nllOpts);
@@ -392,7 +393,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         result->setCovQual(-1);
         result->setMinNLL( _nll->getVal() );
         result->setEDM(0);
-        result->setStatus(fitConfig.MinimizerOptions().MaxIterations()==0);
+        result->setStatus(floatPars->getSize()==0 ? 0 : 1);
         if(printLevel < 0) RooMsgService::instance().setGlobalKillBelow(msglevel);
         return result;
     }
@@ -706,7 +707,7 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
         Info("hypoTest","Using Arguments: %s",args.contentsString().c_str());
     }
     if (poi.empty()) {
-        Error("hypoTest","No POI detected: add the hypoPoints binning to at least one non-const model parameter e.g.:\n w->var(\"mu\")->setBinning(RooUniformBinning(0,10,10),\"hypoPoints\"))");
+        Error("hypoTest","No POI detected: add the hypoPoints binning to at least one non-const model parameter e.g.:\n w->var(\"mu\")->setBinning(RooUniformBinning(0.5,10.5,10),\"hypoPoints\"))");
         return nullptr;
     }
 
@@ -724,18 +725,34 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
     if(poi.size()==1) {
         auto mu = dynamic_cast<RooRealVar*>(poi.first());
 
+        double altVal = (mu->getStringAttribute("altHypo")) ? TString(mu->getStringAttribute("altHypo")).Atof() : std::numeric_limits<double>::quiet_NaN();
+
+        if (std::isnan(altVal) && mu->hasRange("physical")) {
+            // use the smallest absolute value for the altValue
+            altVal = mu->getMin("physical");
+            Info("hypoTest","No altHypo specified - using min of given physical range = %g",altVal);
+        } else {
+            if (!std::isnan(altVal)) Info("hypoTest", "alt hypo: %g - CLs activated", altVal);
+            else Info("hypoTest", "No altHypo found - to specify setStringAttribute(\"altHypo\",\"<value>\") on POI or set the physical range");
+        }
+        bool doCLs = !std::isnan(altVal) && abs(mu->getMin("hypoPoints")) > altVal && abs(mu->getMax("hypoPoints")) > altVal;
+
+        const char* sCL = (doCLs) ? "CLs" : "null";
+        Info("hypoTest","%s testing active",sCL);
+
         auto obs_ts = new TGraphErrors;obs_ts->SetNameTitle("obs_ts",TString::Format("Observed TestStat;%s",mu->GetTitle()));
-        auto obs_pcls = new TGraphErrors;obs_pcls->SetNameTitle("obs_pCLs",TString::Format("Observed p_{CLs};%s",mu->GetTitle()));
-        auto obs_cls = new TGraphErrors;obs_cls->SetNameTitle("obs_CLs",TString::Format("Observed CLs;%s",mu->GetTitle()));
+        auto obs_pcls = new TGraphErrors;obs_pcls->SetNameTitle(TString::Format("obs_p%s",sCL),TString::Format("Observed p_{%s};%s",sCL,mu->GetTitle()));
+        auto obs_cls = new TGraphErrors;obs_cls->SetNameTitle(TString::Format("obs_%s",sCL),TString::Format("Observed %s;%s",sCL,mu->GetTitle()));
 
         std::vector<int> expSig = {-2,-1,0,1,2};
+        if (std::isnan(altVal)) expSig.clear();
         std::map<int,TGraphErrors> exp_pcls,exp_cls;
         for(auto& s : expSig) {
-            exp_pcls[s].SetNameTitle(TString::Format("exp%d_pCLs",s),TString::Format("Expected (%d#sigma) CLs;%s",s,mu->GetTitle()));
-            exp_cls[s].SetNameTitle(TString::Format("exp%d_CLs",s),TString::Format("Expected (%d#sigma) CLs;%s",s,mu->GetTitle()));
+            exp_pcls[s].SetNameTitle(TString::Format("exp%d_p%s",s,sCL),TString::Format("Expected (%d#sigma) p_{%s};%s",s,sCL,mu->GetTitle()));
+            exp_cls[s].SetNameTitle(TString::Format("exp%d_%s",s,sCL),TString::Format("Expected (%d#sigma) %s;%s",s,sCL,mu->GetTitle()));
         }
 
-        double altVal = 0.;
+
 
         auto getLimit = [CL](TGraphErrors& pValues) {
             double out = std::numeric_limits<double>::quiet_NaN();
@@ -753,13 +770,14 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
         };
 
         auto testPoint = [&](double testVal) {
-            Info("hypoTest","Testing %s=%g",mu->GetName(),testVal);
             auto hp = nll.hypoPoint(mu->GetName(), testVal, altVal, pllType);
             obs_ts->AddPoint(testVal,hp.pll().first);obs_ts->SetPointError(obs_ts->GetN()-1,0,hp.pll().second);
-            obs_pcls->AddPoint(testVal,hp.pCLs_asymp());
+            obs_pcls->AddPoint(testVal,(doCLs) ? hp.pCLs_asymp() : hp.pNull_asymp());
             for(auto& s : expSig) {
-                exp_pcls[s].AddPoint(testVal,hp.pCLs_asymp(s));
+                exp_pcls[s].AddPoint(testVal,(doCLs) ? hp.pCLs_asymp(s) : hp.pNull_asymp(s));
             }
+            if (doCLs) Info("hypoTest","%s=%g: %s=%g sigma_mu=%g %s=%g",mu->GetName(),testVal,obs_ts->GetName(),obs_ts->GetPointY(obs_ts->GetN()-1),hp.sigma_mu().first,obs_pcls->GetName(),obs_pcls->GetPointY(obs_pcls->GetN()-1));
+            else Info("hypoTest","%s=%g: %s=%g %s=%g",mu->GetName(),testVal,obs_ts->GetName(),obs_ts->GetPointY(obs_ts->GetN()-1),obs_pcls->GetName(),obs_pcls->GetPointY(obs_pcls->GetN()-1));
         };
 
         if (mu->getBins("hypoPoints")<=0) {
@@ -825,7 +843,9 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
                 band2down->AddPoint(exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) - exp_pcls[-2].GetErrorYlow(i));
             }
             band2->SetBit(kCanDelete); band2up->SetBit(kCanDelete); band2down->SetBit(kCanDelete);
-            band2->Draw("AF");
+            auto ax = (TNamed*)band2->Clone(".axis");ax->SetTitle(TString::Format("Hypothesis Test;%s",mu->GetTitle()));
+            ax->Draw("AF");
+            band2->Draw("F");
             band2up->Draw("F");
             band2down->Draw("F");
         }
@@ -858,15 +878,26 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
             band2down->Draw("F");
         }
 
-        exp_pcls[0].SetLineStyle(2);
-        exp_pcls[0].DrawClone("L");
-
+        TObject* expPlot = nullptr;
+        if(exp_cls[0].GetN()>0) {
+            exp_pcls[0].SetLineStyle(2);
+            exp_pcls[0].SetFillColor(kGreen);
+            exp_pcls[0].SetMarkerStyle(0);
+            expPlot = exp_pcls[0].DrawClone("L");
+        }
         obs_pcls->SetBit(kCanDelete);
-        obs_pcls->Draw("LP");
+        obs_pcls->Draw(gPad->GetListOfPrimitives()->IsEmpty() ? "ALP" : "LP");
 
         obs_ts->SetLineColor(kRed);obs_ts->SetMarkerColor(kRed);
         obs_ts->SetBit(kCanDelete);
         obs_ts->Draw("LP");
+
+        auto l = new TLegend(0.5,0.6,1.-gPad->GetRightMargin(),1.-gPad->GetTopMargin()); l->SetName("legend");
+        l->AddEntry(obs_ts,obs_ts->GetTitle(),"LPE");
+        l->AddEntry(obs_pcls,obs_pcls->GetTitle(),"LPE");
+        if(expPlot) l->AddEntry(expPlot,"Expected","LFE");
+        l->SetBit(kCanDelete);
+        l->Draw();
 
         obs_cls->SetMarkerStyle(29);obs_cls->SetEditable(false);
         obs_cls->Draw("LP");

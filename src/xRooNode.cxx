@@ -889,7 +889,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
             if (_pdf) {
                 return xRooNode(*_pdf,*this).Add(child);
             } else if(!tooMany) {
-                Warning("Add","Adding a non-pdf inside a SumPDF called 'samples'");
+                Info("Add","Creating RooRealSumPdf to contain %s",child.GetName());
                 return this->operator[]("samples")->Add(child);
             }
         }

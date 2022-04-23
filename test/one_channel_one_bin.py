@@ -32,7 +32,6 @@ d = c.datasets()["obsData"].SetBinContent(1,n_data) # add the data
 mu.setRange(-0.1,100)
 mu.setRange("physical",0,10)
 mu.setBinning(ROOT.RooUniformBinning(0.1,10,20),"hypoPoints") # defines points to test: 21 points between 0 and 10 (uses bin boundaries) - use 0 bins for autoscan
-
 ht = ROOT.xRooFit.hypoTest(w.get())
 # can extract results from the ht canvas like this:
 print("Observed CLs Limit:",ht.GetPrimitive("obs_CLs").GetPointX(0))
