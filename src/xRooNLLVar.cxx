@@ -428,6 +428,13 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
     return std::make_pair(fData,fGlobs);
 }
 
+Bool_t xRooNLLVar::setData(const xRooNode& data) {
+    if (!data.get<RooAbsData>()) {
+        return false;
+    }
+    return setData(std::dynamic_pointer_cast<RooAbsData>(data.fComp),std::shared_ptr<const RooAbsCollection>(data.globs().argList().snapshot()));
+}
+
 Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& _data) {
 
     if (fData == _data.first && fGlobs == _data.second) return true;

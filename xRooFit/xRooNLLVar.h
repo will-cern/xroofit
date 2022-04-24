@@ -155,6 +155,7 @@ public:
     Bool_t setData(const std::shared_ptr<RooAbsData>& data,const std::shared_ptr<const RooAbsCollection>& globs) {
         return setData(std::make_pair(data,globs));
     }
+    Bool_t setData(const xRooNode& data);
 
     // using shared ptrs everywhere, even for RooLinkedList which needs custom deleter to clear itself
     // but still work ok for assignment operations
