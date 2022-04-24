@@ -48,6 +48,8 @@ public:
     xRooNode(const std::shared_ptr<TObject>& comp, const std::shared_ptr<xRooNode>& parent = nullptr);
     template<typename T> xRooNode(const std::shared_ptr<T>& comp, const std::shared_ptr<xRooNode>& parent = nullptr) : xRooNode(std::dynamic_pointer_cast<TObject>(comp),parent) {}
     template<typename T> xRooNode(const std::shared_ptr<T>& comp, const xRooNode& parent) : xRooNode(std::dynamic_pointer_cast<TObject>(comp),std::make_shared<xRooNode>(parent)) {}
+    template<typename T> xRooNode(const std::shared_ptr<const T>& comp, const std::shared_ptr<xRooNode>& parent = nullptr) : xRooNode(std::dynamic_pointer_cast<TObject>(std::const_pointer_cast<T>(comp)),parent) {}
+    template<typename T> xRooNode(const std::shared_ptr<const T>& comp, const xRooNode& parent) : xRooNode(std::dynamic_pointer_cast<TObject>(std::const_pointer_cast<T>(comp)),std::make_shared<xRooNode>(parent)) {}
     xRooNode(double value);
 
     virtual ~xRooNode();

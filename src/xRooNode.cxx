@@ -2179,7 +2179,7 @@ bool xRooNode::SetBinError(int bin, double value) {
             }
             if (sumw2 && sumw2 != std::numeric_limits<double>::infinity() ) {
                 double tau = pow(sumw, 2) / sumw2;
-                rrv->setError((tau<1e-15) ? 1e15 : ( rrv->getVal() / sqrt(tau)));
+                rrv->setError((tau<1e-15) ? 1e15 : ( /*rrv->getVal()*/ 1. / sqrt(tau))); // not sure why was rrv->getVal()?
                 rrv->setConstant(false);
                 // parameter must be constrained
                 auto _constr = v.constraints();
@@ -2784,7 +2784,7 @@ xRooNode& xRooNode::browse() {
 
         // go through components factors and variations, adding all as children if required
         addedChildren += appendChildren(components());
-        addedChildren += appendChildren(factors());
+        if (!get<RooWorkspace>()) addedChildren += appendChildren(factors());
         addedChildren += appendChildren(variations());
     }
 
@@ -3217,6 +3217,20 @@ xRooNode xRooNode::factors() const {
             } else {
                 out.emplace_back(std::make_shared<xRooNode>(*o, *this));
             }
+        }
+    } else if(auto w = get<RooWorkspace>(); w) {
+        // if workspace, return all functions (not pdfs) that have a RooProduct as one of their clients
+        // or not clients
+        // exclude obs and globs
+        auto _obs = obs().argList();
+        for(auto a : w->allFunctions()) {
+            if(_obs.contains(*a)) continue;
+            bool show(true);
+            for(auto c : a->clients()) {
+                show=false;
+                if (c->InheritsFrom("RooProduct")) show=true;
+            }
+            if(show) out.emplace_back(std::make_shared<xRooNode>(*a, *this));
         }
     }
 
