@@ -1531,7 +1531,7 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
         if (child.get<RooAbsPdf>()) out = acquire(child.fComp); // may create a channel from a histogram
         else if(!child.fComp) {
             out = acquireNew<RooProdPdf>(TString::Format("%s_%s",s->GetName(),label.c_str()),(strlen(child.GetTitle())) ? child.GetTitle() : label.c_str(),RooArgList());
-            Info("Vary","Created %s in model %s",out->GetName(),s->GetName());
+            Info("Vary","Created channel RooProdPdf::%s in model %s",out->GetName(),s->GetName());
         }
 
         if (auto _pdf = std::dynamic_pointer_cast<RooAbsPdf>(out); _pdf) {
@@ -3555,6 +3555,7 @@ void xRooNode::SetFitResult(const RooFitResult* fr) {
 xRooNode xRooNode::fitResult(const char* opt) const {
 
     if (get<RooFitResult>()) return *this;
+    if (get<RooAbsData>()) return xRooNode();
 
     TString sOpt(opt);
     if(sOpt=="prefit") {
@@ -3697,7 +3698,7 @@ xRooNLLVar xRooNode::createNLL(const char* datasetName) const {
 
 xRooNLLVar xRooNode::createNLL(const xRooNode& _data) const {
 
-    auto _pdf = get<RooAbsPdf>();
+    if(!get<RooAbsPdf>()) throw std::runtime_error(TString::Format("%s is not a pdf",GetName()));
 
     auto _globs = _data.globs(); // keep alive because may own the globs
 
@@ -3982,11 +3983,11 @@ public:
 
             // Make Plus variation
             ((RooRealVar*)paramList.at(ivar))->setVal(cenVal+errVal) ;
-            plusVar.push_back(cloneFunc->getVal(nset) * (clonePdf ? clonePdf->expectedEvents(nset) : 1.)) ;
+            plusVar.push_back((fExpectedEventsMode ? 1. : cloneFunc->getVal(nset))  * (clonePdf ? clonePdf->expectedEvents(nset) : 1.)) ;
 
             // Make Minus variation
             ((RooRealVar*)paramList.at(ivar))->setVal(cenVal-errVal) ;
-            minusVar.push_back(cloneFunc->getVal(nset) * (clonePdf ? clonePdf->expectedEvents(nset) : 1.)) ;
+            minusVar.push_back((fExpectedEventsMode ? 1. : cloneFunc->getVal(nset)) * (clonePdf ? clonePdf->expectedEvents(nset) : 1.)) ;
 
             ((RooRealVar*)paramList.at(ivar))->setVal(cenVal) ;
         }
