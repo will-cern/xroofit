@@ -99,8 +99,8 @@ xRooNode buildModel(double data, double bkg, double bkg_uncert, double sig, doub
     w["simPdf/channel1"]->SetBinData(1,data);
 
     // adjust the ranges of the parameter of interest - relevant in hypothesis testing
-    w.pars()["mu"]->get<RooRealVar>()->setRange(-0.1,100); // allow slightly less than 0 as possible fit, so 0 is not on the boundary of fit range
-    w.pars()["mu"]->get<RooRealVar>()->setRange("physical",0,100); // but specify a physical range: used for asymptotic formulae etc
+    w.pars()["mu_Sig"]->get<RooRealVar>()->setRange(-0.1,100); // allow slightly less than 0 as possible fit, so 0 is not on the boundary of fit range
+    w.pars()["mu_Sig"]->get<RooRealVar>()->setRange("physical",0,100); // but specify a physical range: used for asymptotic formulae etc
 
     return w;
 }
@@ -220,7 +220,10 @@ TEST(test1,test1) {
     auto res = testPoint(buildModel(0,0.43,0.16,5.611,1.19266,0.807337,0.017),
                          1,0,0);
 
-    ASSERT_LT(abs(res - 0.0019764892592501124),1e-7);
+    //old res: 0.0019764892592501124 - got without change to ranges on POI
+
+
+    ASSERT_LT(abs(res - 0.00150729),1e-7);
 
 }
 
