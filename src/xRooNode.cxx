@@ -788,10 +788,11 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
 
     if (auto p = get<RooRealSumPdf>(); p) {
         std::shared_ptr<TObject> out;
-        child.convertForAcquisition(*this);
+        auto cc = child.fComp;
+        bool isConverted = (cc != child.convertForAcquisition(*this));
         if(child.get<RooAbsReal>()) out = acquire(child.fComp);
         if(!child.fComp && getObject<RooAbsReal>(child.GetName())) {
-            Info("Add","Adding existing function %s to %s",child.GetName(),GetName());
+            Info("Add","Adding existing function %s to %s",child.GetName(),p->GetName());
             out = getObject<RooAbsReal>(child.GetName());
         }
 
@@ -823,6 +824,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                     h->GetXaxis()->SetName(TString::Format("%s;%s",dynamic_cast<TObject*>(_x)->GetName(),binningName.Data()));
                     // technically convertForAcquisition has already acquired so no need to re-acquire but should be harmless
                     _func = std::dynamic_pointer_cast<RooAbsArg>(acquire( xRooNode(*h).convertForAcquisition(*this) ));
+                    Info("Add","Created densityhisto factor %s for %s",_func->GetName(),p->GetName());
                 } else {
                     throw std::runtime_error("Unsupported creation of new component in SumPdf for this many obs");
                 }
@@ -852,6 +854,8 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
             for(auto& x : xRooNode("tmp",_f).deps()) {
                 x->get<RooAbsArg>()->setAttribute("obs");
             }
+            if(isConverted) Info("Add","Created %s factor RooHistFunc::%s for %s",_f->getAttribute("density") ? "densityhisto" : "histo",_f->GetName(),p->GetName());
+
         }
 
 
@@ -889,8 +893,8 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
             if (_pdf) {
                 return xRooNode(*_pdf,*this).Add(child);
             } else if(!tooMany) {
-                Info("Add","Creating RooRealSumPdf to contain %s",child.GetName());
-                return this->operator[]("samples")->Add(child);
+                auto out = this->operator[]("samples")->Add(child);
+                return out;
             }
         }
     } else if(auto s = get<RooSimultaneous>(); s) {
@@ -921,6 +925,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
             auto _cat = acquire<RooCategory>(catName.c_str(),catName.c_str());
             _cat->setAttribute("obs");
             auto out = acquireNew<RooSimultaneous>(child.GetName(),child.GetTitle(),*_cat);
+            Info("Add","Created model RooSimultaneous::%s in workspace %s",out->GetName(),p->GetName());
             return xRooNode(out,*this);
         }
 
@@ -942,6 +947,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
             if (child.get<RooAbsPdf>()) out = acquire(child.fComp);
             else if(!child.fComp) {
                 out = acquireNew<RooProdPdf>(child.GetName(),(strlen(child.GetTitle())) ? child.GetTitle() : child.GetName(),RooArgList());
+                Info("Add","Created channel RooProdPdf::%s in workspace %s",out->GetName(),get()->GetName());
             }
             return xRooNode(out,*this);
         }
@@ -1179,6 +1185,7 @@ xRooNode xRooNode::Constrain(const xRooNode& child) {
 
                 auto out = Constrain(xRooNode(Form("pois_%s",GetName()),constr));
                 if (!v->hasError()) v->setError(mean/sqrt(tau_val)); // if v doesnt have an uncert, will put one on it now
+                Info("Constrain","Added poisson constraint pdf RooPoisson::%s (tau=%g) for %s",out->GetName(),tau_val,GetName());
                 return out;
             } else if(constrType=="normal") {
 
@@ -1190,6 +1197,7 @@ xRooNode xRooNode::Constrain(const xRooNode& child) {
                 auto constr = acquireNew<RooGaussian>(Form("gaus_%s",v->GetName()),TString::Format("Gaussian Constraint of %s",v->GetTitle()),*globs,*v,*acquireNew<RooConstVar>(TString::Format("sigma_%s",v->GetName()),"",sigma));
                 auto out = Constrain(xRooNode(Form("gaus_%s",GetName()),constr));
                 if (!v->hasError()) v->setError(sigma); // if v doesnt have an uncert, will put one on it now
+                Info("Constrain","Added gaussian constraint pdf RooGaussian::%s (mean=%g,sigma=%g) for %s",out->GetName(),mean,sigma,GetName());
                 return out;
             }
         }
@@ -1247,11 +1255,11 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
 
                 auto binFactors = fParent->factors().find("binFactors");
                 if (!binFactors) {
-                    fParent->Multiply("binFactors",
-                                      "statshape"); // creates ParamHistFunc with all pars = 1 (shared const)
+                    fParent->Multiply(TString::Format("%s_binFactors",(fParent->mainChild().get()) ? fParent->mainChild()->GetName() : fParent->GetName()).Data(),
+                                      "blankshape").SetName("binFactors"); // creates ParamHistFunc with all pars = 1 (shared const)
                     binFactors = fParent->factors().find("binFactors");
                     if (!binFactors) {
-                        throw std::runtime_error("Could not create binFactors in parent");
+                        throw std::runtime_error(TString::Format("Could not create binFactors in parent %s",fParent->GetName()));
                     }
                 }
                 // then scale the relevant bin ... if the relevent bin is a "1" then just drop in our factor
@@ -1290,16 +1298,19 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
     }
 
     if (!child.get()) {
-        TString sOpt(opt);
+        TString sOpt(opt);sOpt.ToLower();
         if (auto o = getObject<RooAbsReal>(child.GetName())) {
-            if(sOpt!="") Warning("Multiply","Using existing scale factor %s",o->GetName());
-            return Multiply(xRooNode(o,child.fParent));
+            auto out =  Multiply(xRooNode(o,child.fParent));
+            Info("Multiply","Scaled %s by existing factor %s::%s",get()->GetName(),o->ClassName(),o->GetName());
+            return out;
         } else if (sOpt=="norm") {
-            return Multiply(RooRealVar(child.GetName(),child.GetTitle(),1,0,100));
-        } else if (sOpt=="shape" || sOpt=="histo" || sOpt=="statshape") {
+            auto out =  Multiply(RooRealVar(child.GetName(),child.GetTitle(),1,0,100));
+            Info("Multiply","Scaled %s by new norm factor %s",get()->GetName(),out->GetName());
+            return out;
+        } else if (sOpt=="shape" || sOpt=="histo" || sOpt=="blankshape") {
             // needs axis defined
             if (auto ax = GetXaxis(); ax) {
-                auto h = BuildHistogram(dynamic_cast<RooAbsLValue*>(ax->GetParent()),true);
+                auto h = std::shared_ptr<TH1>( BuildHistogram(dynamic_cast<RooAbsLValue*>(ax->GetParent()),true) );
                 h->Reset();
                 for(int i=1;i<=h->GetNbinsX();i++) {
                     h->SetBinContent(i,1);
@@ -1309,11 +1320,13 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                 h->SetTitle(child.GetTitle());
                 if(sOpt.Contains("shape")) h->SetOption(sOpt);
                 auto out = Multiply(*h);
-                delete h;
+                Info("Multiply","Scaled %s by new %s factor %s",get()->GetName(),sOpt.Data(),out->GetName());
                 return out;
             }
         } else if (sOpt=="overall") {
-            return Multiply(acquire<RooStats::HistFactory::FlexibleInterpVar>(child.GetName(),child.GetTitle(),RooArgList(),1,std::vector<double>(),std::vector<double>()));
+            auto out = Multiply(acquireNew<RooStats::HistFactory::FlexibleInterpVar>(child.GetName(),child.GetTitle(),RooArgList(),1,std::vector<double>(),std::vector<double>()));
+            Info("Multiply","Scaled %s by new overall factor %s",get()->GetName(),out->GetName());
+            return out;
         }
     }
     if(auto h = child.get<TH1>(); h && strlen(h->GetOption())==0 && strlen(opt)>0) {
@@ -1329,7 +1342,8 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
     }
     if(auto p = get<RooProduct>();p) {
         std::shared_ptr<TObject> out;
-        child.convertForAcquisition(*this);
+        auto cc = child.fComp;
+        bool isConverted = ( child.convertForAcquisition(*this) != cc);
         if (child.get<RooAbsReal>()) out = acquire(child.fComp);
 
         // child may be a histfunc or a rooproduct of a histfunc and a paramhist if has stat errors
@@ -1343,19 +1357,27 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             if (_f->getAttribute("density")) {
 
                 // need to divide by bin widths first
-                for(int i=0; i < _f->dataHist().numEntries();i++) {
+                for (int i = 0; i < _f->dataHist().numEntries(); i++) {
                     auto bin_pars = _f->dataHist().get(i);
-                    _f->dataHist().set(*bin_pars, _f->dataHist().weight() /_f->dataHist().binVolume(*bin_pars));
+                    _f->dataHist().set(*bin_pars, _f->dataHist().weight() / _f->dataHist().binVolume(*bin_pars));
                 }
                 _f->setValueDirty();
 
 
                 // promote the axis vars to observables
-                for(auto& x : xRooNode("tmp",_f).deps()) {
+                for (auto &x: xRooNode("tmp", _f).deps()) {
                     x->get<RooAbsArg>()->setAttribute("obs");
                 }
             }
             _f->setAttribute("autodensity",false);
+        }
+
+        if (isConverted && child.get<RooHistFunc>()) {
+            Info("Multiply", "Created %s factor %s in %s",
+                 child.get<RooAbsArg>()->getAttribute("density") ? "densityhisto" : "hist", child->GetName(),
+                 p->GetName());
+        } else if (isConverted && child.get<ParamHistFunc>()) {
+            Info("Multiply", "Created shape factor %s in %s", child->GetName(),p->GetName());
         }
 
         if(auto _f = std::dynamic_pointer_cast<RooAbsReal>(out); _f) {
@@ -1403,6 +1425,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             _pdf->setStringAttribute("xvar",p->getStringAttribute("xvar"));
             _pdf->setStringAttribute("binning",p->getStringAttribute("binning"));
             out = _pdf;
+            Info("Multiply","Created pdf RooRealSumPdf::%s in channel %s",_pdf->GetName(),p->GetName());
             if(child.get<RooAbsReal>()) xRooNode(*out,*this).Add(child);
         }
 
@@ -1435,6 +1458,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             if (s!="") s += ";";
             s += out->GetName();
             p->setStringAttribute("global_factors",s);
+            Info("Multiply","Flagged %s as a global factor in channel %s (is applied to all current and future samples in the channel)",out->GetName(),p->GetName());
             return xRooNode(out,*this);
         }
 
@@ -1507,6 +1531,7 @@ xRooNode xRooNode::Vary(const xRooNode& child) {
         if (child.get<RooAbsPdf>()) out = acquire(child.fComp); // may create a channel from a histogram
         else if(!child.fComp) {
             out = acquireNew<RooProdPdf>(TString::Format("%s_%s",s->GetName(),label.c_str()),(strlen(child.GetTitle())) ? child.GetTitle() : label.c_str(),RooArgList());
+            Info("Vary","Created %s in model %s",out->GetName(),s->GetName());
         }
 
         if (auto _pdf = std::dynamic_pointer_cast<RooAbsPdf>(out); _pdf) {
@@ -2113,18 +2138,17 @@ bool xRooNode::SetBinError(int bin, double value) {
                 if (parNames!="") parNames += ",";
                 parNames += p->get()->GetName();
             }
-            auto h = f->dataHist().createHistogram(parNames);
+            auto h = std::shared_ptr<TH1>( f->dataHist().createHistogram(parNames) );
             h->Reset();
             h->SetName("statFactor");
             h->SetTitle(TString::Format("StatFactor of %s",f->GetTitle()));
-            h->SetOption("statshape");
+            h->SetOption("blankshape");
 
             // multiply parent if is nominal
             auto toMultiply = this;
             if(strcmp(GetName(),"nominal")==0 && fParent && fParent->get<PiecewiseInterpolation>()) toMultiply=fParent.get();
 
             f_stat = dynamic_cast<ParamHistFunc*>(toMultiply->Multiply(*h).get());
-            delete h;
             if (!f_stat) {
                 throw std::runtime_error("Failed creating stat shapeFactor");
             }
@@ -2336,7 +2360,7 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
         TString newObjName = GetName();
         TString origName = GetName(); if (origName.BeginsWith(';')) origName = origName(1,origName.Length());
         if (newObjName.BeginsWith(';')) newObjName=newObjName(1,newObjName.Length()); // special case if starts with ';' then don't create a fancy name
-        else if (acquirer.get() && !acquirer.get<RooWorkspace>()) newObjName = TString::Format("%s_%s",acquirer.get()->GetName(),newObjName.Data());
+        else if (acquirer.get() && !acquirer.get<RooWorkspace>()) newObjName = TString::Format("%s_%s",(acquirer.mainChild().get()) ? acquirer.mainChild()->GetName() : acquirer->GetName(),newObjName.Data());
         // can convert to a RooHistFunc, or RooParamHist if option contains 'shape'
         TString varName = h->GetXaxis()->GetName();
         std::string binningName = newObjName.Data();
@@ -2388,7 +2412,7 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
             RooArgList list;
             for(int i = 0; i < x->getBinning(binningName.c_str()).numBins(); i++) {
                 std::shared_ptr<RooRealVar> arg;
-                if(sOpt.Contains("statshape")) {
+                if(sOpt.Contains("blankshape")) {
                     arg = acquirer.acquire<RooRealVar>("1", "1", 1);
                 } else {
                     if (!h) {
