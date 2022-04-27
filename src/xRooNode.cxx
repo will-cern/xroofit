@@ -616,9 +616,9 @@ void xRooNode::Vary_(const char* what) {
 xRooNode xRooNode::Remove(const xRooNode& child) {
 
     if (strcmp(GetName(),".factors")==0) {
-
+        auto toRemove = (child.get<RooAbsArg>()) ? child : xRooNode(find(child.GetName())->fComp);
         if (auto p = fParent->get<RooProdPdf>(); p) {
-            auto pdf = child.get<RooAbsArg>();
+            auto pdf = toRemove.get<RooAbsArg>();
             if (!pdf) pdf = p->_pdfList.find(child.GetName());
             if (!pdf) throw std::runtime_error(TString::Format("Cannot find %s in %s",child.GetName(),fParent->GetName()));
             auto i = p->_pdfList.index(*pdf);
@@ -639,8 +639,31 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
             } else {
                 throw std::runtime_error(TString::Format("Cannot find %s in %s",child.GetName(),fParent->GetName()));
             }
+        } else if(auto p = fParent->get<RooProduct>(); p) {
+            auto arg = toRemove.get<RooAbsArg>();
+            if (!arg) arg = p->components().find(child.GetName());
+            if (!arg) throw std::runtime_error(TString::Format("Cannot find %s in %s",child.GetName(),fParent->GetName()));
+            // remove server ... doesn't seem to trigger removal from proxy
+            p->_compRSet.remove(*arg);
+            p->removeServer(*arg,true);
+            return xRooNode(arg->GetName());
         }
+    }
 
+    if(auto w = get<RooWorkspace>(); w) {
+        xRooNode out(child.GetName());
+        auto arg = w->_allOwnedNodes.find(child.GetName());
+        if(!arg) arg = operator[](child.GetName())->get<RooAbsArg>();
+        if (!arg) {
+            throw std::runtime_error(TString::Format("Cannot find %s in workspace %s",child.GetName(),GetName()));
+        }
+        // check has no clients ... if so, cannot delete
+        if (arg->hasClients()) {
+            throw std::runtime_error(TString::Format("Cannot remove %s from workspace %s, because it has dependencies - first remove from those",child.GetName(),GetName()));
+        }
+        w->_allOwnedNodes.remove(*arg); // deletes arg
+        Info("Remove","Deleted %s from workspace %s",out.GetName(),GetName());
+        return out;
     }
 
 
@@ -1374,7 +1397,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
 
         if (isConverted && child.get<RooHistFunc>()) {
             Info("Multiply", "Created %s factor %s in %s",
-                 child.get<RooAbsArg>()->getAttribute("density") ? "densityhisto" : "hist", child->GetName(),
+                 child.get<RooAbsArg>()->getAttribute("density") ? "densityhisto" : "histo", child->GetName(),
                  p->GetName());
         } else if (isConverted && child.get<ParamHistFunc>()) {
             Info("Multiply", "Created shape factor %s in %s", child->GetName(),p->GetName());
@@ -5110,7 +5133,7 @@ void xRooNode::Draw(Option_t* opt) {
 
     auto h = BuildHistogram(v,false,hasErrorOpt);
     if (!h) return;
-
+    h->SetBit(kCanDelete);
     if (!v) v = getObject<RooAbsLValue>(h->GetXaxis()->GetName()).get();
     RooAbsArg* vv = (v) ? dynamic_cast<RooAbsArg*>(v) : rar;
     if (h->GetXaxis()->IsAlphanumeric()) {
@@ -5198,6 +5221,7 @@ void xRooNode::Draw(Option_t* opt) {
             stack->Add(hh,thisOpt);
             allTitles.insert(hh->GetTitle());
         }
+        stack->SetBit(kCanDelete); // should delete its sub histograms
         stack->Draw("noclear same");
         h->Draw("axissame"); // overlay axis again
 
