@@ -1324,11 +1324,12 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
         TString sOpt(opt);sOpt.ToLower();
         if (auto o = getObject<RooAbsReal>(child.GetName())) {
             auto out =  Multiply(xRooNode(o,child.fParent));
-            Info("Multiply","Scaled %s by existing factor %s::%s",get()->GetName(),o->ClassName(),o->GetName());
+            // have to protect bin case where get() is null (could change but then must change logic above too)
+            if(!fBinNumber) Info("Multiply","Scaled %s by existing factor %s::%s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),o->ClassName(),o->GetName());
             return out;
         } else if (sOpt=="norm") {
             auto out =  Multiply(RooRealVar(child.GetName(),child.GetTitle(),1,0,100));
-            Info("Multiply","Scaled %s by new norm factor %s",get()->GetName(),out->GetName());
+            if(!fBinNumber) Info("Multiply","Scaled %s by new norm factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
             return out;
         } else if (sOpt=="shape" || sOpt=="histo" || sOpt=="blankshape") {
             // needs axis defined
@@ -1343,13 +1344,19 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                 h->SetTitle(child.GetTitle());
                 if(sOpt.Contains("shape")) h->SetOption(sOpt);
                 auto out = Multiply(*h);
-                Info("Multiply","Scaled %s by new %s factor %s",get()->GetName(),sOpt.Data(),out->GetName());
+                if(!fBinNumber) Info("Multiply","Scaled %s by new %s factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),sOpt.Data(),out->GetName());
                 return out;
             }
         } else if (sOpt=="overall") {
             auto out = Multiply(acquireNew<RooStats::HistFactory::FlexibleInterpVar>(child.GetName(),child.GetTitle(),RooArgList(),1,std::vector<double>(),std::vector<double>()));
-            Info("Multiply","Scaled %s by new overall factor %s",get()->GetName(),out->GetName());
+            if(!fBinNumber) Info("Multiply","Scaled %s by new overall factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
             return out;
+        } else if (sOpt=="expr" && ws()) {
+            // need to get way to get dependencies .. can't pass all as causes circular dependencies issues.
+            //auto out = Multiply( acquireNew<RooFormulaVar>("exprFactor",child.GetName(),child.GetName(),ws()->_allOwnedNodes,false /* don't check dependents all feature */) );
+            //Info("Multiply","Scaled %s by new expr factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
+            //return out;
+            //acquire(std::make_shared<TNamed>("expr::%s_%s"))
         }
     }
     if(auto h = child.get<TH1>(); h && strlen(h->GetOption())==0 && strlen(opt)>0) {
