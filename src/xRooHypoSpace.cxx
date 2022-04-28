@@ -296,11 +296,14 @@ void xRooHypoPoint::Draw(Option_t* opt) {
         }
     }
 
-    if(l) {
-        l->AddEntry(h,htitle,"l");
+    if (hasSame) {
+        if(h->GetEntries()>0) h->Draw( "histesame" );
+        else h->Draw("axissame");// for unknown reason if second histogram empty it still draws with two weird bars???
     }
 
-    if (hasSame) h->Draw( "histesame" );
+    if(l) { l->AddEntry(h,htitle,"l"); }
+
+
 
     if (!std::isnan(asi) && asi>0 && fPOI->size()==1 && fPllType != xRooFit::Asymptotics::Unknown && fAltPoint) {
         auto _my_mu = dynamic_cast<RooRealVar*>(fCoords->find(*fPOI->first()))->getVal();
