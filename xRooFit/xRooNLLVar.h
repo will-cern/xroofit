@@ -69,12 +69,20 @@ public:
         double pCLs_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()) { return (pNull_asymp(nSigma)==0) ? 0 : (pNull_asymp(nSigma)/pAlt_asymp(nSigma)); }
         double ts_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
 
-        double pNull_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
-        double pAlt_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
-        double pCLs_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) { return (pNull_toys(nSigma)==0) ? 0 : (pNull_toys(nSigma)/pAlt_toys(nSigma)); }
+        std::pair<double,double> pNull_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
+        std::pair<double,double> pAlt_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
+        std::pair<double,double> pCLs_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) {
+            auto null = pNull_toys(nSigma);
+            auto alt = pAlt_toys(nSigma);
+            return std::make_pair(null.first/alt.first, sqrt(pow(null.second/null.first,2) + pow(alt.second/alt.first,2)));
+        }
+        std::pair<double,double> ts_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
 
         xRooHypoPoint generateNull(int seed=0);
         xRooHypoPoint generateAlt(int seed=0);
+
+        void addNullToys(int nToys=1);
+        void addAltToys(int nToys=1);
 
         RooRealVar& mu_hat(); // throws exception if ufit not available
 
@@ -89,10 +97,14 @@ public:
 
         std::shared_ptr<xRooHypoPoint> fAsimov; // same as this point but pllType is twosided and data is expected post alt-fit
 
-        std::vector<double> nullToys; // would have to save these vectors for specific: null_cfit (genPoint), ufit, poiName, pllType, nullVal
-        std::vector<double> altToys;
+        // first is seed, second is ts value
+        std::vector<std::pair<int,double>> nullToys; // would have to save these vectors for specific: null_cfit (genPoint), ufit, poiName, pllType, nullVal
+        std::vector<std::pair<int,double>> altToys;
 
-        xRooNLLVar* nllVar = nullptr;
+        std::shared_ptr<xRooNLLVar> nllVar = nullptr; // hypopoints get a copy
+
+      private:
+        std::pair<double,double> pX_toys(bool alt, double nSigma=std::numeric_limits<double>::quiet_NaN());
 
     };
 

@@ -149,7 +149,10 @@ public:
     // Uses hypoPoint binning on model parameters to determine points to scan
     // if hypoPoint binning has nBins==0 then will auto-scan (assumes CL=95%, can override with setStringAttribute)
     // TODO: specifying number of null and alt toys per point
-    static TCanvas* hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
+    static TCanvas* hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown) {
+        return hypoTest(w,0,0,pllType);
+    }
+    static TCanvas* hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
 
 
 };

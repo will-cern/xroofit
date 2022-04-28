@@ -109,7 +109,9 @@ xRooNode buildModel(double data, double bkg, double bkg_uncert, double sig, doub
 double testPoint(xRooNode w, double testValue = 1, double altValue = 0, int nToys=1500) {
 
     // create NLL function using simPdf model with obsData
-    auto nll = w["simPdf"]->createNLL("obsData");
+    auto nll = w["simPdf"]->nll("obsData");
+
+
 
     // Perform a hypothesis test of mu=testValue hypothesis using mu=altValue as alt hypothesis
     auto hypoTest = nll.hypoPoint("mu_Sig",testValue,altValue);

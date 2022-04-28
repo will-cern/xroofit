@@ -634,7 +634,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
 
 }
 
-TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType& pllType) {
+TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const xRooFit::Asymptotics::PLLType& pllType) {
     TCanvas* out = nullptr;
 
     //1. Determine pdf: use top-level, if more than 1 then exit and tell user they need to flag
@@ -772,6 +772,11 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, const xRooFit::Asymptotics::PLLType&
         auto testPoint = [&](double testVal) {
             auto hp = nll.hypoPoint(mu->GetName(), testVal, altVal, pllType);
             obs_ts->AddPoint(testVal,hp.pll().first);obs_ts->SetPointError(obs_ts->GetN()-1,0,hp.pll().second);
+
+            if(nToysNull>0) {
+
+            }
+
             obs_pcls->AddPoint(testVal,(doCLs) ? hp.pCLs_asymp() : hp.pNull_asymp());
             for(auto& s : expSig) {
                 exp_pcls[s].AddPoint(testVal,(doCLs) ? hp.pCLs_asymp(s) : hp.pNull_asymp(s));

@@ -14,9 +14,11 @@
 #include "RooSimultaneous.h"
 #include "RooAbsCategoryLValue.h"
 #include "TPRegexp.h"
+#include "TEfficiency.h"
 
 #include "RooRealVar.h"
 #include "Math/ProbFunc.h"
+#include "RooRandom.h"
 
 #include "TPad.h"
 #include "TSystem.h"
@@ -313,6 +315,7 @@ std::shared_ptr<RooArgSet> xRooNLLVar::pars(bool stripGlobalObs) {
 
 #include "TMultiGraph.h"
 #include "TCanvas.h"
+#include "TArrow.h"
 
 void xRooNLLVar::Draw(Option_t* opt) {
     TString sOpt(opt);
@@ -354,6 +357,7 @@ void xRooNLLVar::Draw(Option_t* opt) {
         if(auto a = _pars->find(s); a) vars.add(*a);
     }
 
+
     if (vars.size()==1) {
         TGraph *out = new TGraph;out->SetBit(kCanDelete);
         TGraph *bad = new TGraph; bad->SetBit(kCanDelete); bad->SetMarkerColor(kRed); bad->SetMarkerStyle(5);
@@ -379,8 +383,10 @@ void xRooNLLVar::Draw(Option_t* opt) {
             if(out->GetN()==0) {
                 out->SetPoint(out->GetN(),low,0);
                 low -= step; high += step;
-                gr->Draw("A");
-                gPad->SetGrid();
+                if(!normRange) {
+                    gr->Draw("A");
+                    gPad->SetGrid();
+                }
                 continue;
             }
             if (low > v->getMin()) {
@@ -413,10 +419,12 @@ void xRooNLLVar::Draw(Option_t* opt) {
                 gPad->Update();gSystem->ProcessEvents();
             }
         }
+        // add arrow to show current par value
+        TArrow a; a.DrawArrow(init,0,init,-0.1);
         gPad->Update();gSystem->ProcessEvents();
         v->setVal(init);
     } else {
-        Error("Draw","Name a parameter to scan over: Draw(<name>)");
+        Error("Draw","Name a parameter to scan over: Draw(<name>) , choose from: %s",_pars->empty() ? "" : _pars->contentsString().c_str());
     }
 
 
@@ -557,8 +565,7 @@ RooConstraintSum* xRooNLLVar::constraintTerm() const {
 }*/
 
 void xRooNLLVar::xRooHypoPoint::Print() {
-    std::cout << "mu: " << fPOIName << std::endl;
-    std::cout << "null: " << fNullVal << " , alt: " << fAltVal << std::endl;
+    std::cout << "POI: " << fPOIName << " , null: " << fNullVal << " , alt: " << fAltVal << std::endl;
     std::cout << "ufit: ";
     if(fUfit) {
         std::cout << fUfit->minNll() << " (status=" << fUfit->status() << ") (mu_hat: " << mu_hat().getVal() << " +/- " << mu_hat().getError() << ")" << std::endl;
@@ -567,12 +574,12 @@ void xRooNLLVar::xRooHypoPoint::Print() {
     }
     std::cout << "null cfit: ";
     if(fNull_cfit) {
-        std::cout << fNull_cfit->minNll() << " (status=" << fNull_cfit->status() << ")" << std::endl;
+        std::cout << fNull_cfit->minNll() << " (status=" << fNull_cfit->status() << ")";
     } else {
-        std::cout << " Not calculated" << std::endl;
+        std::cout << " Not calculated";
     }
     if (!std::isnan(fAltVal)) {
-        std::cout << "alt cfit: ";
+        std::cout << " , alt cfit: ";
         if (fAlt_cfit) {
             std::cout << fAlt_cfit->minNll() << " (status=" << fAlt_cfit->status() << ")" << std::endl;
         } else {
@@ -584,8 +591,19 @@ void xRooNLLVar::xRooHypoPoint::Print() {
         } else {
             std::cout << sigma_mu().first << " +/- " << sigma_mu().second << std::endl;
         }
+    } else {
+        std::cout << std::endl;
     }
     if(fGenFit) std::cout << "genFit: " << fGenFit->GetName() << std::endl;
+    if (!nullToys.empty() || !altToys.empty()) {
+        std::cout << "null toys: " << nullToys.size();
+        size_t firstToy = 0; while(firstToy < nullToys.size() && std::isnan(nullToys[firstToy].second)) firstToy++;
+        if (firstToy>0) std::cout << " [ of which " << firstToy << " are bad]";
+        std::cout << " , alt toys: " << altToys.size();
+        firstToy = 0; while(firstToy < altToys.size() && std::isnan(altToys[firstToy].second)) firstToy++;
+        if (firstToy>0) std::cout << " [ of which " << firstToy << " are bad]";
+        std::cout << std::endl;
+    }
     std::cout << "nllVar: " << nllVar << std::endl;
 }
 
@@ -610,6 +628,15 @@ double xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma) {
     return (std::isnan(nSigma)) ? pll().first : xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal,fAltVal,sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
 }
 
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma) {
+    if(std::isnan(nSigma)) return pll();
+    //nans should appear in the alt toys first ... so loop until past nans
+    size_t firstToy = 0; while(firstToy < altToys.size() && std::isnan(altToys[firstToy].second)) firstToy++;
+    if (firstToy>=altToys.size()) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::quiet_NaN());
+    int targetIdx = (altToys.size()-firstToy)*ROOT::Math::gaussian_cdf(nSigma) + firstToy;
+    return std::make_pair(altToys[targetIdx].second,(altToys[std::min(int(altToys.size()),targetIdx)].second - altToys[std::max(0,targetIdx)].second)/2.);
+}
+
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::pll() {
     if (!ufit() || ufit()->status() != 0)  return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
@@ -624,7 +651,8 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::pll() {
 std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
     if (fUfit) return fUfit;
     if (!nllVar) return nullptr;
-    AutoRestorer snap(*nllVar->fFuncVars, nllVar);
+    if(!nllVar->fFuncVars) nllVar->reinitialize();
+    AutoRestorer snap(*nllVar->fFuncVars, nllVar.get());
     nllVar->setData(data);
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
@@ -640,7 +668,8 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
 std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::null_cfit() {
     if (fNull_cfit) return fNull_cfit;
     if (!nllVar) return nullptr;
-    AutoRestorer snap(*nllVar->fFuncVars, nllVar);
+    if(!nllVar->fFuncVars) nllVar->reinitialize();
+    AutoRestorer snap(*nllVar->fFuncVars, nllVar.get());
     nllVar->setData(data);
     if (fUfit) {
         // move to ufit coords before evaluating
@@ -655,7 +684,8 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::alt_cfit() {
     if (std::isnan(fAltVal)) return nullptr;
     if (fAlt_cfit) return fAlt_cfit;
     if (!nllVar) return nullptr;
-    AutoRestorer snap(*nllVar->fFuncVars, nllVar);
+    if(!nllVar->fFuncVars) nllVar->reinitialize();
+    AutoRestorer snap(*nllVar->fFuncVars, nllVar.get());
     nllVar->setData(data);
     if (fUfit) {
         // move to ufit coords before evaluating
@@ -671,6 +701,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
 
     if (!fAsimov) {
         if (!alt_cfit() || !nllVar) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+        if(!nllVar->fFuncVars) nllVar->reinitialize();
         AutoRestorer snap(*nllVar->fFuncVars);
         *nllVar->fFuncVars = alt_cfit()->floatParsFinal();
         *nllVar->fFuncVars = alt_cfit()->constPars();
@@ -684,11 +715,57 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
     return std::make_pair(std::abs(fNullVal - fAltVal)/sqrt(out.first), out.second*0.5*std::abs(fNullVal - fAltVal)/(out.first*sqrt(out.first)));
 }
 
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::pX_toys(bool alt, double nSigma) {
+    auto _ts = ts_toys(nSigma);
+    if (std::isnan(_ts.first)) return _ts;
+
+    TEfficiency eff("","",1,0,1);
+
+    auto& _theToys = (alt) ? altToys : nullToys;
+
+    // loop over toys, count how many are > ts value
+    // nans (mean bad ts evaluations) will count towards uncertainty
+    int nans = 0;
+    double result = 0; double result_err_up = 0;  double result_err_down = 0;
+    for(auto& toy : _theToys) {
+        if (std::isnan(toy.second)) nans++;
+        else {
+            bool res = toy.second > _ts.first;
+            eff.Fill(res,0.5);
+            if(res) result++;
+            if(toy.second > _ts.first-_ts.second) result_err_up++;
+            if(toy.second > _ts.first-_ts.second) result_err_down++;
+        }
+    }
+    // symmetrize the error
+    result_err_up -= result; result_err_down -= result;
+    double result_err = std::max(std::abs(result_err_up),std::abs(result_err_down));
+    // assume the nans would "add" to the p-value, conservative scenario
+    result_err += nans;
+    result_err /= _theToys.size();
+
+    // don't include the nans for the central value though
+    result /= (_theToys.size() - nans);
+
+    // add to the result_err (in quadrature) the uncert due to limited stats
+    result_err = sqrt(result_err*result_err + eff.GetEfficiencyErrorUp(1)*eff.GetEfficiencyErrorUp(1));
+    return std::make_pair(result,result_err);
+}
+
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::pNull_toys(double nSigma) {
+    return pX_toys(false,nSigma);
+}
+
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::pAlt_toys(double nSigma) {
+    return pX_toys(true,nSigma);
+}
+
 xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateNull(int seed) {
     xRooHypoPoint out;
     out.fPOIName = fPOIName; out.coords = coords; out.fPllType = fPllType; out.fNullVal=fNullVal; out.fAltVal = fAltVal;
     out.nllVar = nllVar;
     if (!nllVar) return out;
+    if(!nllVar->fFuncVars) nllVar->reinitialize();
     *nllVar->fFuncVars = null_cfit()->floatParsFinal();
     *nllVar->fFuncVars = null_cfit()->constPars();
     out.data = nllVar->generate(false,seed);
@@ -702,6 +779,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
     out.nllVar = nllVar;
     if (!nllVar) return out;
     if (!alt_cfit()) return out;
+    if(!nllVar->fFuncVars) nllVar->reinitialize();
     *nllVar->fFuncVars = alt_cfit()->floatParsFinal();
     *nllVar->fFuncVars = alt_cfit()->constPars();
     out.data = nllVar->generate(false,seed);
@@ -709,11 +787,48 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
     return out;
 }
 
+void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys) {
+    TStopwatch s; s.Start();
+    for(auto i = 0;i<nToys;i++) {
+        int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
+        nullToys.push_back( std::make_pair(seed, generateNull(seed).pll().first ) );
+        if (s.RealTime() > 30) {
+            s.Reset();s.Start();
+            std::cout << "Generated " << i << "/" << nToys << " null hypothesis toys..." << std::endl;
+        }
+    }
+    // sort the toys ... put nans first
+    std::sort(nullToys.begin(),nullToys.end(),[](const std::pair<int,double> & a, const std::pair<int,double> & b) -> bool
+    {
+        if(std::isnan(a.second)) return true;
+        if(std::isnan(b.second)) return false;
+        return a.second < b.second;
+    });
+}
+void xRooNLLVar::xRooHypoPoint::addAltToys(int nToys) {
+    TStopwatch s; s.Start();
+    for(auto i = 0;i<nToys;i++) {
+        int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
+        altToys.push_back( std::make_pair(seed, generateAlt(seed).pll().first ) );
+        if (s.RealTime() > 30) {
+            s.Reset();s.Start();
+            std::cout << "Generated " << i << "/" << nToys << " alt hypothesis toys..." << std::endl;
+        }
+    }
+    // sort the toys ... put nans first
+    std::sort(altToys.begin(),altToys.end(),[](const std::pair<int,double> & a, const std::pair<int,double> & b) -> bool
+    {
+        if(std::isnan(a.second)) return true;
+        if(std::isnan(b.second)) return false;
+        return a.second < b.second;
+    });
+}
+
 xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double value, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
     xRooHypoPoint out;
     out.fPOIName = parName;
     out.fNullVal = value; out.fAltVal = alt_value;
-    out.nllVar = this;
+    out.nllVar = std::make_shared<xRooNLLVar>(*this);
     out.data = getData();
 
     if (!fFuncVars) { reinitialize(); }
@@ -740,3 +855,218 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double valu
     return out;
 
 }
+
+#include "TStyle.h"
+#include "TH1D.h"
+
+//void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
+//
+//    TString sOpt(opt);
+//    sOpt.ToLower();
+//    bool hasSame = sOpt.Contains("same"); sOpt.ReplaceAll("same","");
+//    bool isAlt = sOpt.Contains("isalt"); sOpt.ReplaceAll("isalt","");
+//    isAlt = (fAltPoint==this);
+//
+//    TVirtualPad *pad = gPad;
+//
+//    TH1* hAxis = nullptr;
+//
+//    auto clearPad = []() {
+//        gPad->Clear();
+//        if (gPad->GetNumber()==0) {
+//            gPad->SetBottomMargin(gStyle->GetPadBottomMargin());
+//            gPad->SetTopMargin(gStyle->GetPadTopMargin());
+//            gPad->SetLeftMargin(gStyle->GetPadLeftMargin());
+//            gPad->SetRightMargin(gStyle->GetPadRightMargin());
+//        }
+//    };
+//
+//    if (!hasSame || !pad) {
+//        if (!pad) {
+//            TCanvas::MakeDefCanvas();
+//            pad = gPad;
+//        }
+//        clearPad();
+//    } else {
+//        // get the histogram representing the axes
+//        hAxis = dynamic_cast<TH1*>(pad->GetPrimitive("axis"));
+//        if (!hAxis) {
+//            for(auto o : *pad->GetListOfPrimitives()) {
+//                if (hAxis = dynamic_cast<TH1*>(o); hAxis) break;
+//            }
+//        }
+//    }
+//
+//
+//    // get min and max values
+//    double _min = std::numeric_limits<double>::quiet_NaN();
+//    double _max = -std::numeric_limits<double>::quiet_NaN();
+//
+//    for(auto& p : nullToys) {
+//        if (std::isnan(p.second)) continue;
+//        _min = std::min(p.second,_min);
+//        _max = std::max(p.second,_max);
+//    }
+//    for(auto& p : altToys) {
+//        if (std::isnan(p.second)) continue;
+//        _min = std::min(p.second,_min);
+//        _max = std::max(p.second,_max);
+//    }
+//
+//    auto obs = pll();
+//    if (!std::isnan(obs.first)) {
+//        _min = std::min(obs.first-abs(obs.first)*0.1,_min);
+//        _max = std::max(obs.first+abs(obs.first)*0.1,_max);
+//    }
+//
+//    auto asi = (fAsimov) ? fAsimov->pll().first : std::numeric_limits<double>::quiet_NaN();
+//    if (!std::isnan(asi) && asi>0 && fPllType != xRooFit::Asymptotics::Unknown) {
+//        // can calculate asymptotic distributions,
+//        _min = std::min(asi-abs(asi),_min);
+//        _max = std::max(asi+abs(asi),_max);
+//    }
+//
+//    auto h = new TH1D((isAlt) ? "alt" : "null","",100,_min,_max + (_max-_min)*0.01);
+//    h->SetDirectory(0);
+//    size_t nBadOrZero=0;
+//    for(auto& p : nullToys) {
+//        double w = std::isnan(p.second) ? 0 : p.second;
+//        if (w==0) nBadOrZero++;
+//        h->Fill(p.second,w);
+//    }
+//    if(h->GetEntries()>0) h->Scale( 1./h->Integral(0,h->GetNbinsX()+1));
+//    TString title;
+//    if (fAltPoint) {
+//        // add POI values to identify hypos
+//        for(auto p : *fPOI) {
+//            if (auto v = dynamic_cast<RooRealVar*>(p)) {
+//                if (auto v2 = dynamic_cast<RooRealVar*>(fAltPoint->fCoords->find(*v)); v2 && v2->getVal()!=v->getVal()) {
+//                    // found point that differs in poi and altpoint value, so print my coords value for this
+//                    title += TString::Format("%s' = %g, ",v->GetTitle(),dynamic_cast<RooRealVar*>(fCoords->find(*v))->getVal());
+//                }
+//            }
+//        }
+//    }
+//    title += TString::Format("N_{toys}=%lu",fNull.size());
+//    if (nBadOrZero > 0) title += TString::Format(" (N_{bad/0}=%lu)",nBadOrZero);
+//
+//    if(fPllType == xRooFit::Asymptotics::OneSidedPositive) {
+//        auto v = dynamic_cast<RooRealVar*>(fPOI->first());
+//        if (v && v->getMin()==0) title += TString::Format(";#tilde{q}_{%s=%g}",v->GetTitle(),v->getVal());
+//        else if(v) title += TString::Format(";q_{%s=%g}",v->GetTitle(),v->getVal());
+//        else title += ";q";
+//    } else if(fPllType == xRooFit::Asymptotics::TwoSided) {
+//        auto v = dynamic_cast<RooRealVar*>(fPOI->first());
+//        if (v && v->getMin()==0) title += TString::Format(";#tilde{t}_{%s=%g}",v->GetTitle(),v->getVal());
+//        else if(v) title += TString::Format(";t_{%s=%g}",v->GetTitle(),v->getVal());
+//        else title += ";t";
+//    } else if(fPllType == xRooFit::Asymptotics::OneSidedNegative) {
+//        auto v = dynamic_cast<RooRealVar*>(fPOI->first());
+//        if (v && v->getMin()==0) title += TString::Format(";#tilde{r}_{%s=%g}",v->GetTitle(),v->getVal());
+//        else if(v) title += TString::Format(";r_{%s=%g}",v->GetTitle(),v->getVal());
+//        else title += ";r";
+//    } else if(fPllType == xRooFit::Asymptotics::Uncapped) {
+//        auto v = dynamic_cast<RooRealVar*>(fPOI->first());
+//        if (v && v->getMin()==0) title += TString::Format(";#tilde{s}_{%s=%g}",v->GetTitle(),v->getVal());
+//        else if(v) title += TString::Format(";s_{%s=%g}",v->GetTitle(),v->getVal());
+//        else title += ";s";
+//    } else {
+//        title += ";Test Statistic";
+//    }
+//    title += TString::Format(";Probability Density");
+//    h->SetTitle(title);
+//    h->SetLineColor(isAlt ? kRed : kBlue); h->SetLineWidth(2);
+//    h->SetMarkerSize(0);
+//    h->SetBit(kCanDelete);
+//
+//
+//
+//    TLegend* l = nullptr;
+//    TString htitle = h->GetTitle();
+//    if (!hasSame) {
+//        gPad->SetLogy();
+//        h->SetMinimum(1e-3);
+//        h->SetTitle(GetTitle());
+//        h->Draw("histe");//h->Draw("axis"); cant use axis option if want title drawn
+//        hAxis=h;
+//        l = new TLegend(0.4,0.7,1.-gPad->GetRightMargin(),1.-gPad->GetTopMargin());
+//        l->SetName("legend");
+//        l->SetFillStyle(0);l->SetBorderSize(0);
+//        l->SetBit(kCanDelete);
+//        l->Draw();
+//    } else {
+//        for(auto o : *gPad->GetListOfPrimitives()) {
+//            l = dynamic_cast<TLegend*>(o);
+//            if (l) break;
+//        }
+//    }
+//
+//    if (hasSame) {
+//        if(h->GetEntries()>0) h->Draw( "histesame" );
+//        else h->Draw("axissame");// for unknown reason if second histogram empty it still draws with two weird bars???
+//    }
+//
+//    if(l) { l->AddEntry(h,htitle,"l"); }
+//
+//
+//
+//    if (!std::isnan(asi) && asi>0 && fPOI->size()==1 && fPllType != xRooFit::Asymptotics::Unknown && fAltPoint) {
+//        auto _my_mu = dynamic_cast<RooRealVar*>(fCoords->find(*fPOI->first()))->getVal();
+//        auto _test_mu = dynamic_cast<RooRealVar*>(fPOI->first());
+//        double sigma_mu = _test_mu->getVal() - dynamic_cast<RooRealVar*>(fAltPoint->fCoords->find(*fPOI->first()))->getVal();
+//        sigma_mu = abs(sigma_mu)/sqrt(asi);
+//
+//        auto hh = (TH1*)h->Clone("null_asymptotic");
+//        hh->SetLineStyle(2);
+//        hh->Reset();
+//        for(int i=1;i<=hh->GetNbinsX();i++) {
+//            hh->SetBinContent(i, xRooFit::Asymptotics::PValue(fPllType,hh->GetBinLowEdge(i),_test_mu->getVal(),_my_mu,sigma_mu,_test_mu->getMin(),_test_mu->getMax()) -
+//                                 xRooFit::Asymptotics::PValue(fPllType,hh->GetBinLowEdge(i+1),_test_mu->getVal(),_my_mu,sigma_mu,_test_mu->getMin(),_test_mu->getMax()));
+//        }
+//        hh->Draw("lsame");
+//
+//    }
+//
+//    if (fAltPoint && fAltPoint!=this) fAltPoint->Draw("same");
+//
+//    // draw observed points
+//    if (fAltPoint != this) {
+//        TLine ll; ll.SetLineStyle(2);
+//        for(auto p : fObs) {
+//            auto tl = ll.DrawLine(p.second.first,hAxis->GetMinimum(),p.second.first,0.1);
+//            auto label = TString::Format("%s = %.4f",p.first.c_str(),p.second.first);
+//            if (p.second.second) label += TString::Format(" +/- %.4f",p.second.second);
+//            double pNull = GetPNull(p.second.first);
+//            double pAlt = GetPAlt(p.second.first);
+//
+//            double pNullA = GetPNull(p.second.first,true);
+//            double pAltA = GetPAlt(p.second.first,true);
+//
+//            l->AddEntry(tl,label,"l");
+//            label="";
+//            if (!std::isnan(pNull) || !std::isnan(pAlt)) {
+//                double pCLs = GetPCLs(p.second.first);
+//                label += " p_{toy}=(";
+//                label += (std::isnan(pNull)) ? "-" : TString::Format("%g",pNull);
+//                label += (std::isnan(pAlt)) ? ",-" : TString::Format(",%g",pAlt);
+//                label += (std::isnan(pCLs)) ? ",-)" : TString::Format(",%g)",pCLs);
+//            }
+//            if (label.Length()>0) l->AddEntry("",label,"");
+//            label="";
+//            if (!std::isnan(pNullA) || !std::isnan(pAltA)) {
+//                double pCLs = GetPCLs(p.second.first,true);
+//                label += " p_{asymp}=(";
+//                label += (std::isnan(pNullA)) ? "-" : TString::Format("%g",pNullA);
+//                label += (std::isnan(pAltA)) ? ",-" : TString::Format(",%g",pAltA);
+//                label += (std::isnan(pCLs)) ? ",-)" : TString::Format(",%g)",pCLs);
+//            }
+//            if (label.Length()>0) l->AddEntry("",label,"");
+//
+//        }
+//    }
+//
+//
+//
+//
+//
+//}
