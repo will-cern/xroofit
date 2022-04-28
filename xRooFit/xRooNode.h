@@ -170,6 +170,8 @@ public:
     bool SetXaxis(const char* name, const char* title, int nbins, double* bins);
     bool SetXaxis(const char* title, int nbins, double low, double high) { return SetXaxis("xaxis",title,nbins,low,high); }
     bool SetXaxis(const char* title, int nbins, double* bins) { return SetXaxis("xaxis",title,nbins,bins); }
+    bool SetXaxis(int nbins, double low, double high) { return SetXaxis("xaxis","",nbins,low,high); }
+    bool SetXaxis(int nbins, double* bins) { return SetXaxis("xaxis","",nbins,bins); }
 
     void SetFillColor(Color_t fcolor);
 
@@ -182,8 +184,7 @@ public:
     std::vector<double> GetBinErrors(int binStart=1, int binEnd=0, const RooFitResult* fr = nullptr) const;
     std::pair<double,double> IntegralAndError(const RooFitResult* fr = nullptr) const;
 
-    xRooNLLVar createNLL(const char* datasetName) const;
-    xRooNLLVar createNLL(const xRooNode& _data) const;
+    xRooNLLVar nll(const xRooNode& _data = "") const;
     xRooNode fitResult(const char* opt="") const; // todo: make this 'fitResults'
     void SetFitResult(const RooFitResult* fr = nullptr); // null means will load prefit
 

@@ -105,7 +105,7 @@ public:
 
       private:
         std::pair<double,double> pX_toys(bool alt, double nSigma=std::numeric_limits<double>::quiet_NaN());
-
+        void addToys(bool alt,int nToys);
     };
 
 //    class xRooHypoTester {

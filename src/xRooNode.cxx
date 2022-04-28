@@ -3713,18 +3713,19 @@ const char* xRooNode::GetRange() const {
 
 #include "TRegexp.h"
 
-xRooNLLVar xRooNode::createNLL(const char* datasetName) const {
-    auto _data = strlen(datasetName) ? datasets().find(datasetName) : nullptr;
-    if (!_data) {
-        // create a dummy dataset with the observables
-        RooArgSet _obs; _obs.add(obs().argList());
-        _obs.remove(*std::unique_ptr<RooAbsCollection>(_obs.selectByAttrib("global",true)));
-        _data = std::make_shared<xRooNode>(std::make_shared<RooDataSet>("dummy","dummy",_obs),*this);
-    }
-    return createNLL(*_data);
-}
+xRooNLLVar xRooNode::nll(const xRooNode& _data) const {
 
-xRooNLLVar xRooNode::createNLL(const xRooNode& _data) const {
+    if (!_data.get<RooAbsData>()) {
+        // use node name to find dataset and recall
+        auto _d = (datasets().empty()) ? nullptr : datasets().find(strlen(_data.GetName()) ? _data.GetName() : datasets().at(0)->GetName());
+        if(!_d) {
+            // create a dummy dataset with the observables
+            RooArgSet _obs; _obs.add(obs().argList());
+            _obs.remove(*std::unique_ptr<RooAbsCollection>(_obs.selectByAttrib("global",true)));
+            _d = std::make_shared<xRooNode>(std::make_shared<RooDataSet>("dummy","dummy",_obs),*this);
+        }
+        return nll(*_d);
+    }
 
     if(!get<RooAbsPdf>()) throw std::runtime_error(TString::Format("%s is not a pdf",GetName()));
 

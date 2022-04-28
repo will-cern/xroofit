@@ -566,7 +566,7 @@ RooConstraintSum* xRooNLLVar::constraintTerm() const {
 
 void xRooNLLVar::xRooHypoPoint::Print() {
     std::cout << "POI: " << fPOIName << " , null: " << fNullVal << " , alt: " << fAltVal << std::endl;
-    std::cout << "ufit: ";
+    std::cout << "pllType: " << fPllType << " , ufit: ";
     if(fUfit) {
         std::cout << fUfit->minNll() << " (status=" << fUfit->status() << ") (mu_hat: " << mu_hat().getVal() << " +/- " << mu_hat().getError() << ")" << std::endl;
     } else {
@@ -787,41 +787,37 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
     return out;
 }
 
-void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys) {
+void xRooNLLVar::xRooHypoPoint::addToys(bool alt,int nToys) {
     TStopwatch s; s.Start();
+    auto& toys = (alt) ? altToys : nullToys;
+    int nans=0;
     for(auto i = 0;i<nToys;i++) {
         int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
-        nullToys.push_back( std::make_pair(seed, generateNull(seed).pll().first ) );
+        toys.push_back( std::make_pair(seed, ((alt) ? generateAlt(seed) : generateNull(seed)).pll().first ) );
+        if(std::isnan(toys.back().second)) nans++;
         if (s.RealTime() > 30) {
             s.Reset();s.Start();
-            std::cout << "Generated " << i << "/" << nToys << " null hypothesis toys..." << std::endl;
+            std::cout << "Generated " << i << "/" << nToys << (alt ? " alt " : " null ") << " hypothesis toys..." << std::endl;
         }
+        s.Continue();
     }
-    // sort the toys ... put nans first
-    std::sort(nullToys.begin(),nullToys.end(),[](const std::pair<int,double> & a, const std::pair<int,double> & b) -> bool
+    // sort the toys ... put nans first - do by setting all as negative inf
+    for(auto& t : toys) { if(std::isnan(t.second)) t.second=-std::numeric_limits<double>::infinity(); }
+    std::sort(toys.begin(),toys.end(),[](const std::pair<int,double> & a, const std::pair<int,double> & b) -> bool
     {
         if(std::isnan(a.second)) return true;
         if(std::isnan(b.second)) return false;
         return a.second < b.second;
     });
+    for(auto& t : toys) { if(std::isinf(t.second)) t.second=std::numeric_limits<double>::quiet_NaN(); }
+    if (nans>0) std::cout << "Warning: " << nans << " toys were bad" << std::endl;
+}
+
+void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys) {
+   addToys(false,nToys);
 }
 void xRooNLLVar::xRooHypoPoint::addAltToys(int nToys) {
-    TStopwatch s; s.Start();
-    for(auto i = 0;i<nToys;i++) {
-        int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
-        altToys.push_back( std::make_pair(seed, generateAlt(seed).pll().first ) );
-        if (s.RealTime() > 30) {
-            s.Reset();s.Start();
-            std::cout << "Generated " << i << "/" << nToys << " alt hypothesis toys..." << std::endl;
-        }
-    }
-    // sort the toys ... put nans first
-    std::sort(altToys.begin(),altToys.end(),[](const std::pair<int,double> & a, const std::pair<int,double> & b) -> bool
-    {
-        if(std::isnan(a.second)) return true;
-        if(std::isnan(b.second)) return false;
-        return a.second < b.second;
-    });
+    addToys(true,nToys);
 }
 
 xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double value, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
