@@ -22,7 +22,8 @@ find_package( ROOT 6.22 COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit
 message(STATUS "Using ROOT From: ${ROOT_INCLUDE_DIRS}")
 include(${ROOT_USE_FILE})
 
-include_directories(${ROOT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${ROOT_INCLUDE_DIRS})
+include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR})
 add_definitions(${ROOT_CXX_FLAGS})
 
 
@@ -39,8 +40,8 @@ target_link_libraries(xRooFit ${ROOT_LIBRARIES})
 target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)
 target_include_directories(xRooFit BEFORE PRIVATE ${CMAKE_BINARY_DIR}/versioning)
-target_include_directories(xRooFit BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_dependencies(xRooFit xRooFit_version)
+
 
 
 if (ENABLE_TESTS)

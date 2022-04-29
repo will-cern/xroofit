@@ -245,4 +245,14 @@ TEST(test1,limiTest1) {
 
 }
 
+TEST(test1,toyHypoTest) {
+
+    auto model = buildModel(20,16,0,1,0,0,0);
+
+    auto hp = model["simPdf"]->nll().hypoPoint("mu_Sig",1,0);
+
+    hp.addNullToys(30);
+
+}
+
 #endif
