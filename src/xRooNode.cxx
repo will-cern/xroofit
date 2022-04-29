@@ -1139,7 +1139,7 @@ void xRooNode::Print(Option_t *opt) const {
     if (sOpt!="") _more = true;
     if (get() && get()!=this) {
         std::cout << ": ";
-        if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental()||get<RooConstVar>()))) get()->Print(sOpt);
+        if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental()||get<RooConstVar>())) || get<RooProduct>()) get()->Print(sOpt);
         else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
     } else if(!get()) {
         std::cout << std::endl;
@@ -1149,7 +1149,7 @@ void xRooNode::Print(Option_t *opt) const {
     for (auto &k : *this) {
         std::cout << i++ << ") " << k->GetName() << " : ";
         if(k->get()){
-            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>()))) k->get()->Print(opt);
+            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) || k->get<RooProduct>()) k->get()->Print(opt);
             else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
         }
         else std::cout << " NULL " << std::endl;
@@ -1276,7 +1276,10 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             // if it doesn't then create one
             auto o = std::dynamic_pointer_cast<RooAbsReal>(acquire(child.fComp));
 
-            auto binFactors = fParent->factors().find("binFactors");
+            // get binFactor unless parent is a ParamHistFunc already ...
+
+
+            auto binFactors = (fParent->get<ParamHistFunc>()) ? fParent : fParent->factors().find("binFactors");
             if (!binFactors) {
                 fParent->Multiply(TString::Format("%s_binFactors",(fParent->mainChild().get()) ? fParent->mainChild()->GetName() : fParent->GetName()).Data(),
                                   "blankshape").SetName("binFactors"); // creates ParamHistFunc with all pars = 1 (shared const)
@@ -1284,8 +1287,18 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                 if (!binFactors) {
                     throw std::runtime_error(TString::Format("Could not create binFactors in parent %s",fParent->GetName()));
                 }
+                //auto phf = binFactors->get<ParamHistFunc>();
+
+                // create RooProducts for all the bins ... so that added factors don't affect selves
+                int i=1;
+                for(auto& b : binFactors->bins()) {
+                    auto p = acquireNew<RooProduct>(TString::Format("%s_bin%d",binFactors->get()->GetName(),i),TString::Format("binFactors of bin %d",i),RooArgList());
+                    p->setStringAttribute("alias",TString::Format("bin%d",i));
+                    b->Multiply(*p);
+                    i++;
+                }
             }
-            // then scale the relevant bin ... if the relevent bin is a "1" then just drop in our factor
+            // then scale the relevant bin ... if the relevent bin is a "1" then just drop in our factor (inside a RooProduct though, to avoid it getting modified by subsequent multiplies)
             auto _bin = binFactors->bins().at(fBinNumber - 1);
             if (auto phf = binFactors->get<ParamHistFunc>(); phf && _bin) {
                 if (strcmp(_bin->GetName(), "1") == 0) {
@@ -1297,11 +1310,27 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                     phf->_paramSet.removeAll();
                     phf->_paramSet.add(all);
                 } else {
-                    // multiply the element
-                    // note: if this factor is the factor of multiple bins then the replaceServer will replace it in
-                    // all those bins ... this isn't desired behaviour so should be revisited as some point.
+                    _bin->fBinNumber = -1; // to avoid infinite loop
                     return _bin->Multiply(child,opt);
                 }
+//                } else {else if(_bin->get<RooProduct>()) {
+//                    // multiply the element which will just add it as a factor in the rooproduct
+//                    return _bin->Multiply(child,opt);
+//                } else {
+//                    // not a rooproduct in this bin yet ... so need to replace with a rooproduct and multiply that
+//                    // this avoids the undesired behaviour of shared binFactors getting all impacted by mulitplies
+//                    RooArgList all;
+//                    auto new_p = acquireNew<RooProduct>(TString::Format("%s_bin%d",binFactors->get()->GetName(),fBinNumber),TString::Format("binFactors of bin %d",fBinNumber),RooArgList(*_bin->get<RooAbsArg>()));
+//                    new_p->setStringAttribute("alias","")
+//                    for (int i = 0; i < phf->_paramSet.getSize(); i++) {
+//                        if (i != fBinNumber - 1) all.add(*phf->_paramSet.at(i));
+//                        else all.add(*new_p);
+//                    }
+//                    phf->_paramSet.removeAll();
+//                    phf->_paramSet.add(all);
+//                    // now multiply that bin having converted it to RooProduct
+//                    return binFactors->bins().at(fBinNumber - 1)->Multiply(child,opt);
+//                }
             }
             return xRooNode(*o,binFactors);
         }
@@ -1323,11 +1352,11 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
         if (auto o = getObject<RooAbsReal>(child.GetName())) {
             auto out =  Multiply(xRooNode(o,child.fParent));
             // have to protect bin case where get() is null (could change but then must change logic above too)
-            if(!fBinNumber) Info("Multiply","Scaled %s by existing factor %s::%s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),o->ClassName(),o->GetName());
+            if(get()) Info("Multiply","Scaled %s by existing factor %s::%s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),o->ClassName(),o->GetName());
             return out;
         } else if (sOpt=="norm") {
             auto out =  Multiply(RooRealVar(child.GetName(),child.GetTitle(),1,0,100));
-            if(!fBinNumber) Info("Multiply","Scaled %s by new norm factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
+            if(get()) Info("Multiply","Scaled %s by new norm factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
             return out;
         } else if (sOpt=="shape" || sOpt=="histo" || sOpt=="blankshape") {
             // needs axis defined
@@ -1342,12 +1371,12 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                 h->SetTitle(child.GetTitle());
                 if(sOpt.Contains("shape")) h->SetOption(sOpt);
                 auto out = Multiply(*h);
-                if(!fBinNumber) Info("Multiply","Scaled %s by new %s factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),sOpt.Data(),out->GetName());
+                if(get()) Info("Multiply","Scaled %s by new %s factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),sOpt.Data(),out->GetName());
                 return out;
             }
         } else if (sOpt=="overall") {
             auto out = Multiply(acquireNew<RooStats::HistFactory::FlexibleInterpVar>(child.GetName(),child.GetTitle(),RooArgList(),1,std::vector<double>(),std::vector<double>()));
-            if(!fBinNumber) Info("Multiply","Scaled %s by new overall factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
+            if(get() /* can happen this is null if on a bin node with no shapeFactors*/) Info("Multiply","Scaled %s by new overall factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
             return out;
         } else if (sOpt=="expr" && ws()) {
             // need to get way to get dependencies .. can't pass all as causes circular dependencies issues.
@@ -2838,6 +2867,7 @@ xRooNode& xRooNode::browse() {
         addedChildren += appendChildren(components());
         if (!get<RooWorkspace>()) addedChildren += appendChildren(factors());
         addedChildren += appendChildren(variations());
+        if(get<ParamHistFunc>()) addedChildren += appendChildren(bins());
     }
 
     // if has no children and is a RooAbsArg, add all the proxies
@@ -3203,12 +3233,25 @@ xRooNode xRooNode::bins() const {
     xRooNode out(".bins",nullptr,*this);
 
     if(auto phf = get<ParamHistFunc>(); phf) {
+        int i=1;
         for(auto par : phf->_paramSet) {
-            out.emplace_back(std::make_shared<xRooNode>(par->GetName(),*par,*this));
+            out.emplace_back(std::make_shared<xRooNode>(*par,*this));
+            out.back()->fBinNumber = i;i++;
         }
     } else if (auto ax = GetXaxis(); ax) {
         for(int i=1;i<=ax->GetNbins();i++) {
-            out.emplace_back(std::make_shared<xRooNode>(TString::Format("%d", i), nullptr, *this));
+            // create a RooProduct of all bin-specific factors of all shapeFactors
+            std::vector<RooAbsArg*> _factors;
+            for(auto f : factors()) {
+                if(f->get<ParamHistFunc>()) {
+                    if(f->bins()[i-1]->get<RooProduct>()) for(auto& ss : f->bins()[i-1]->factors()) _factors.push_back(ss->get<RooAbsArg>());
+                    else _factors.push_back(f->bins()[i-1]->get<RooAbsArg>());
+                }
+            }
+            out.emplace_back(std::make_shared<xRooNode>(TString::Format("%d", i),
+                                                        _factors.empty() ? nullptr : std::make_shared<RooProduct>(TString::Format("%s.bin%d",GetName(),i), "binFactors",
+                                                                                                                  RooArgList()), *this));
+            for(auto f : _factors) out.back()->get<RooProduct>()->_compRSet.add(*f);
             out.back()->fBinNumber = i;
         }
     }
@@ -3259,7 +3302,7 @@ xRooNode xRooNode::factors() const {
             if (_npdfs > 5 && o != _main.get()) out.back()->fFolder = "!constraints";
         }
     } else if(auto p = get<RooProduct>(); p) {
-        for(auto& o : p->servers()) {
+        for(auto& o : p->components()) {
             if (o->InheritsFrom("RooProduct")) {
                 // get factors of this term
                 auto x = xRooNode("tmp",*o,*this).factors();
@@ -3367,7 +3410,7 @@ xRooNode xRooNode::variations() const {
             //if(auto _v = dynamic_cast<RooRealVar*>(p->_dataSet.get(i)->first()); _v) {
             //    _name = TString::Format("%s=%g",_v->GetName(),_v->getVal());
             //}
-            out.emplace_back(std::make_shared<xRooNode>(_name,*par,*this));
+            //out.emplace_back(std::make_shared<xRooNode>(_name,*par,*this)); -- -removed cos now have bin() method
             i++;
         }
     }
@@ -4363,8 +4406,8 @@ xRooNode xRooNode::mainChild() const {
                 return xRooNode(*l, *this);
             }
         }
-        // the main child of a RooProduct is one that has the same name (/alias) as the product
-        if (a->IsA() == RooProduct::Class()) {
+        // the main child of a RooProduct is one that has the same name (/alias) as the product (except if is a bin factor)
+        if (a->IsA() == RooProduct::Class() && fBinNumber==-1) {
             for (auto &l : factors()) {
                 if (strcmp(l->GetName(),GetName())==0) { return *l; }
             }
