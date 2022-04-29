@@ -5,4 +5,10 @@ execute_process(
         OUTPUT_VARIABLE GIT_COMMIT_HASH
         OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+execute_process(
+        COMMAND git log -1 --format=%cd --date=format:"%d/%m/%Y %T"
+        WORKING_DIRECTORY ${SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_COMMIT_DATE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+)
 configure_file(${SOURCE_DIR}/version.h.in ${OUTPUT_FILE})

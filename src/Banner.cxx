@@ -22,7 +22,8 @@ Int_t doxroofitBanner()
 {
 #ifndef __xROOFIT_NOBANNER
     cout << "\033[1mxRooFit -- Create/Explore/Modify Workspaces -- Development ongoing\033[0m " << endl
-         << "                xRooFit : http://gitlab.cern.ch/will/xroofit" << endl << "                Version: " << GIT_COMMIT_HASH <<
+         << "                xRooFit : http://gitlab.cern.ch/will/xroofit" << endl << "                Version: " << GIT_COMMIT_HASH
+         << " [" << GIT_COMMIT_DATE << "]" <<
          endl;
 #endif
     (void) dummyFMB;
