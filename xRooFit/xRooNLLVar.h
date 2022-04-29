@@ -54,6 +54,7 @@ public:
     class xRooHypoPoint {
     public:
         void Print();
+        void Draw(Option_t* opt="");
         std::pair<double,double> pll(); // observed test statistic value
         std::pair<double,double> sigma_mu(); // estimate of sigma_mu parameter
         std::shared_ptr<const RooFitResult> ufit();
@@ -97,9 +98,9 @@ public:
 
         std::shared_ptr<xRooHypoPoint> fAsimov; // same as this point but pllType is twosided and data is expected post alt-fit
 
-        // first is seed, second is ts value
-        std::vector<std::pair<int,double>> nullToys; // would have to save these vectors for specific: null_cfit (genPoint), ufit, poiName, pllType, nullVal
-        std::vector<std::pair<int,double>> altToys;
+        // first is seed, second is ts value, third is weight
+        std::vector<std::tuple<int,double,double>> nullToys; // would have to save these vectors for specific: null_cfit (genPoint), ufit, poiName, pllType, nullVal
+        std::vector<std::tuple<int,double,double>> altToys;
 
         std::shared_ptr<xRooNLLVar> nllVar = nullptr; // hypopoints get a copy
 
