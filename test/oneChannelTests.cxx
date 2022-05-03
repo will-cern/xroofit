@@ -99,7 +99,7 @@ xRooNode buildModel(double data, double bkg, double bkg_uncert, double sig, doub
     w["simPdf/channel1"]->SetBinData(1,data);
 
     // adjust the ranges of the parameter of interest - relevant in hypothesis testing
-    w.pars()["mu_Sig"]->get<RooRealVar>()->setRange(-0.1,100); // allow slightly less than 0 as possible fit, so 0 is not on the boundary of fit range
+    w.pars()["mu_Sig"]->get<RooRealVar>()->setRange(-0.01,100); // allow slightly less than 0 as possible fit, so 0 is not on the boundary of fit range
     w.pars()["mu_Sig"]->get<RooRealVar>()->setRange("physical",0,100); // but specify a physical range: used for asymptotic formulae etc
 
     return w;
@@ -109,7 +109,7 @@ xRooNode buildModel(double data, double bkg, double bkg_uncert, double sig, doub
 double testPoint(xRooNode w, double testValue = 1, double altValue = 0, int nToys=1500) {
 
     // create NLL function using simPdf model with obsData
-    auto nll = w["simPdf"]->nll("obsData");
+    auto nll = w["simPdf"]->nll("obsData",{RooFit::Binned()});
 
 
 
@@ -225,7 +225,8 @@ TEST(test1,test1) {
     //old res: 0.0019764892592501124 - got without change to ranges on POI
 
 
-    ASSERT_LT(abs(res - 0.00150729),1e-7);
+    ASSERT_LT(res, 0.00190043 + 1e-7);
+    ASSERT_GT(res, 0.00190043 - 1e-7);
 
 }
 

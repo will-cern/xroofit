@@ -193,8 +193,7 @@ void xRooNLLVar::reinitialize() {
                         std::unique_ptr<std::list<Double_t>> boundaries{
                                 dynamic_cast<RooAbsReal *>(a)->binBoundaries(*var, var->getMin(), var->getMax())};
                         if (boundaries) {
-                            Info("xRooNLLVar", "%s will be evaluated as a Binned PDF (%d bins)", a->GetName(),
-                                 int(boundaries->size()));
+                            if (!std::shared_ptr<RooAbsReal>::get()) Info("xRooNLLVar", "%s will be evaluated as a Binned PDF (%d bins)", a->GetName(), int(boundaries->size()));
                             setBinned=true;
                         }
                     }
@@ -852,10 +851,13 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double valu
     xRooHypoPoint out;
     out.fPOIName = parName;
     out.fNullVal = value; out.fAltVal = alt_value;
+
+    if (!fFuncVars) { reinitialize(); }
+
     out.nllVar = std::make_shared<xRooNLLVar>(*this);
     out.data = getData();
 
-    if (!fFuncVars) { reinitialize(); }
+
 
     auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
     if (!poi) return out;
