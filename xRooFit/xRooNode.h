@@ -21,10 +21,11 @@ class TGraph;
 class RooFitResult;
 class TGListTreeItem;
 class TVirtualPad;
-class RooCmdArg;
+
 
 #include "xRooFit/xRooFit.h"
 #include "RooLinkedList.h"
+#include "RooCmdArg.h"
 
 class xRooNLLVar;
 
