@@ -21,8 +21,10 @@ class TGraph;
 class RooFitResult;
 class TGListTreeItem;
 class TVirtualPad;
+class RooCmdArg;
 
 #include "xRooFit/xRooFit.h"
+#include "RooLinkedList.h"
 
 class xRooNLLVar;
 
@@ -184,7 +186,8 @@ public:
     std::vector<double> GetBinErrors(int binStart=1, int binEnd=0, const RooFitResult* fr = nullptr) const;
     std::pair<double,double> IntegralAndError(const RooFitResult* fr = nullptr) const;
 
-    xRooNLLVar nll(const xRooNode& _data = "") const;
+    xRooNLLVar nll(const xRooNode& _data = "", std::initializer_list<RooCmdArg> nllOpts = {}) const;
+    xRooNLLVar nll(const xRooNode& _data, const RooLinkedList& nllOpts) const;
     xRooNode fitResult(const char* opt="") const; // todo: make this 'fitResults'
     void SetFitResult(const RooFitResult* fr = nullptr); // null means will load prefit
 

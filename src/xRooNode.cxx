@@ -3756,7 +3756,12 @@ const char* xRooNode::GetRange() const {
 
 #include "TRegexp.h"
 
-xRooNLLVar xRooNode::nll(const xRooNode& _data) const {
+xRooNLLVar xRooNode::nll(const xRooNode& _data,std::initializer_list<RooCmdArg> nllOpts) const {
+    RooLinkedList l; for(auto& i : nllOpts) l.Add(const_cast<RooCmdArg*>(&i));
+    return nll(_data,l);
+}
+
+xRooNLLVar xRooNode::nll(const xRooNode& _data, const RooLinkedList& opts) const {
 
     if (!_data.get<RooAbsData>()) {
         // use node name to find dataset and recall
@@ -3767,28 +3772,35 @@ xRooNLLVar xRooNode::nll(const xRooNode& _data) const {
             _obs.remove(*std::unique_ptr<RooAbsCollection>(_obs.selectByAttrib("global",true)));
             _d = std::make_shared<xRooNode>(std::make_shared<RooDataSet>("dummy","dummy",_obs),*this);
         }
-        return nll(*_d);
+        return nll(*_d,opts);
     }
 
     if(!get<RooAbsPdf>()) throw std::runtime_error(TString::Format("%s is not a pdf",GetName()));
 
     auto _globs = _data.globs(); // keep alive because may own the globs
 
-    RooLinkedList l;
+
+    auto _opts = std::shared_ptr<RooLinkedList>(new RooLinkedList,[](RooLinkedList* l) { if(l) l->Delete(); delete l; } );
     RooArgSet _globsSet(_globs.argList());
-    l.Add(RooFit::GlobalObservables(_globsSet).Clone());
-    if (GetRange()) {
-        l.Add(RooFit::Range(GetRange()).Clone());
+    _opts->Add(RooFit::GlobalObservables(_globsSet).Clone());
+    if (GetRange()) _opts->Add(RooFit::Range(GetRange()).Clone());
+
+    // copy over opts ... need to clone each so can safely delete when _opts destroyed
+    for(int i=0; i< opts.GetSize(); i++) {
+        if (strlen(opts.At(i)->GetName())==0) continue; // skipping "none" cmds
+        if (strcmp(opts.At(i)->GetName(),"GlobalObservables")==0) {
+            // maybe warn here?
+        } else {
+            _opts->Add(opts.At(i)->Clone(nullptr)); //nullptr needed because accessing Clone via TObject base class puts "" instead, so doesnt copy names
+        }
     }
-    l.Add(RooFit::Offset(true).Clone());
 
     // use shared_ptr method so NLLVar will take ownership of datasets etc if created above
-    auto out = xRooFit::createNLL(std::dynamic_pointer_cast<RooAbsPdf>(fComp),std::dynamic_pointer_cast<RooAbsData>(_data.fComp),l);
-    l.Delete();
+    // snapshots the globs out of the nllOpts (see specific constructor of xRooNLLVar)
+    auto out = xRooFit::createNLL(std::dynamic_pointer_cast<RooAbsPdf>(fComp),std::dynamic_pointer_cast<RooAbsData>(_data.fComp),*_opts);
     return out;
 
 }
-
 
 //xRooNode xRooNode::fitTo(const xRooNode& _data) const {
 //

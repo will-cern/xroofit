@@ -183,7 +183,24 @@ void xRooNLLVar::reinitialize() {
         bool isBinned=false;
         if (auto a = dynamic_cast<RooCmdArg*>(fOpts->find("Binned"));a && a->getInt(0)) isBinned=true;
         for(auto a : s) {
-            if (a->InheritsFrom("RooRealSumPdf")) a->setAttribute("BinnedLikelihood",isBinned);
+            if (a->InheritsFrom("RooRealSumPdf")) {
+                // since RooNLLVar will assume binBoundaries available (not null), we should check bin boundaries available
+                bool setBinned = false;
+                if (isBinned) {
+                    RooArgSet obs;a->getObservables(fData->get(), obs);
+                    if (obs.size() == 1) { // RooNLLVar requires exactly 1 obs
+                        auto *var = static_cast<RooRealVar *>(obs.first());
+                        std::unique_ptr<std::list<Double_t>> boundaries{
+                                dynamic_cast<RooAbsReal *>(a)->binBoundaries(*var, var->getMin(), var->getMax())};
+                        if (boundaries) {
+                            Info("xRooNLLVar", "%s will be evaluated as a Binned PDF (%d bins)", a->GetName(),
+                                 int(boundaries->size()));
+                            setBinned=true;
+                        }
+                    }
+                }
+                a->setAttribute("BinnedLikelihood",setBinned);
+            }
         }
         this->reset( fPdf->createNLL(*fData,*fOpts) );
     }
