@@ -13,7 +13,7 @@ n_data = 110
 w = ROOT.xRooNode("RooWorkspace","combined","my workspace")
 m = w.Add("simPdf","model") # add a model
 c = m.Add("sr","channel") # add "signal region" (sr) channel
-c.SetXaxis("dummy obs",1,0,1) # single bin channel
+c.SetXaxis(1,0,1) # single bin channel
 bkg_sr = c.Add("bkg","sample") # add a sample (component) to the channel called "bkg"
 bkg_sr.SetBinContent(1,n_bkg)
 if n_bkg_uncert>0:
@@ -26,7 +26,7 @@ if n_sig_uncert>0:
     m.pars()["alpha_sig"].Constrain("normal") # ensure alpha is constrained (use a normal gaussian constraint)
 mu = sig_sr.Multiply("mu","norm") # multiply sig by a floating norm factor
 
-d = c.datasets()["obsData"].SetBinContent(1,n_data) # add the data
+c.SetBinData(1,n_data) # add the data
 
 # set the physically allowed range of mu and expand slightly the fittable range
 mu.setRange(-0.1,100)
