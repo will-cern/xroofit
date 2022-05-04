@@ -1289,7 +1289,18 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             // get binFactor unless parent is a ParamHistFunc already ...
 
             auto binFactors = (fParent->get<ParamHistFunc>()) ? fParent : fParent->factors().find("binFactors");
-            fParent->Print();
+
+            // it can happen in a loop over bins() that another node has moved fParent inside a product
+            // so check for fParent having a client with the ORIGNAME:<name> attribute
+            if(!binFactors && fParent->get<RooAbsArg>()) {
+                for(auto c : fParent->get<RooAbsArg>()->clients()) {
+                    if (c->IsA() == RooProduct::Class() && c->getAttribute(TString::Format("ORIGNAME:%s",fParent->get()->GetName()))) {
+                        // try getting binFactors out of this
+                        binFactors = xRooNode(*c).factors().find("binFactors"); break;
+                    }
+                }
+            }
+
             if (!binFactors) {
                 fParent->Multiply(TString::Format("%s_binFactors",(fParent->mainChild().get()) ? fParent->mainChild()->GetName() : (fParent->get() ? fParent->get()->GetName() : fParent->GetName())).Data(),
                                   "blankshape").SetName("binFactors"); // creates ParamHistFunc with all pars = 1 (shared const)
@@ -1302,9 +1313,8 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                 // create RooProducts for all the bins ... so that added factors don't affect selves
                 int i=1;
                 for(auto& b : binFactors->bins()) {
-                    std::cout << i << std::endl;
                     auto p = acquireNew<RooProduct>(TString::Format("%s_bin%d",binFactors->get()->GetName(),i),TString::Format("binFactors of bin %d",i),RooArgList());
-                    p->setStringAttribute("alias",TString::Format("bin%d",i));
+                    p->setStringAttribute("alias",TString::Format("%s=%g",binFactors->GetXaxis()->GetParent()->GetName(),binFactors->GetXaxis()->GetBinCenter(i)));
                     b->Multiply(*p);
                     i++;
                 }

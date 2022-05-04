@@ -274,7 +274,7 @@ TEST(test1, binnedFormulaVarTest) {
 
     w.get<RooWorkspace>()->factory("expr::myFactor('@0*@1',v,xaxis)");
 
-    for(int i=0;i<3;i++) w["simPdf/chan1/samp1"]->bins()[i]->Multiply("myFactor");
+    for(auto b : w["simPdf/chan1/samp1"]->bins()) b->Multiply("myFactor");
     w.SaveAs("binnedFormularVarTest.root");
 
 }
