@@ -260,7 +260,7 @@ public:
 };
 
 std::shared_ptr<ROOT::Fit::FitConfig> xRooNLLVar::fitConfig() {
-    if (!fFitConfig) fFitConfig = xRooFit::defaultFitConfig();
+    if (!fFitConfig) fFitConfig = xRooFit::createFitConfig();
     return fFitConfig;
 }
 

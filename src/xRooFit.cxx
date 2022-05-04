@@ -301,13 +301,13 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
 
 }
 
-std::shared_ptr<RooLinkedList> xRooFit::defaultNLLOptions() {
+std::shared_ptr<RooLinkedList> xRooFit::createNLLOptions() {
     auto out = std::shared_ptr<RooLinkedList>(new RooLinkedList, [](RooLinkedList* l) { l->Delete(); delete l; });
     out->Add(RooFit::Offset().Clone());
     return out;
 }
 
-std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig() {
+std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     auto fFitConfig = std::make_shared<ROOT::Fit::FitConfig>();
     auto &fitConfig = *fFitConfig;
     fitConfig.SetParabErrors(true); // will use to run hesse after fit
@@ -336,7 +336,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig() {
 std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std::shared_ptr<ROOT::Fit::FitConfig>& _fitConfig) {
 
 
-    auto myFitConfig = _fitConfig ? _fitConfig : defaultFitConfig();
+    auto myFitConfig = _fitConfig ? _fitConfig : createFitConfig();
     auto& fitConfig = *myFitConfig;
 
     bool save=true;
@@ -716,8 +716,8 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
     out = TCanvas::MakeDefCanvas();
 
     // should check if exist in workspace
-    auto nllOpts = defaultNLLOptions();
-    auto fitConfig = defaultFitConfig();
+    auto nllOpts = createNLLOptions();
+    auto fitConfig = createFitConfig();
 
     xRooNLLVar nll(*model,std::make_pair(obsData,obsGlobs.get()),*nllOpts);
     nll.SetFitConfig(fitConfig);
