@@ -256,4 +256,27 @@ TEST(test1,toyHypoTest) {
 
 }
 
+#include "RooWorkspace.h"
+
+TEST(test1, binnedFormulaVarTest) {
+
+    // tests use of a RooFormulaVar inside a ParamHistFunc
+    // so that the model remains 'binned'
+
+    xRooNode w("RooWorkspace","w","w");
+    w["simPdf/chan1"]->SetXaxis(3,0,3);
+    for(int i=1;i<=w["simPdf/chan1"]->GetXaxis()->GetNbins();i++) w["simPdf/chan1/samp1"]->SetBinContent(i,1);
+
+    // goal is to scale by factor: v*xaxis;
+    w.Add(RooRealVar("v","v",-5,10));
+    //TH1D bc("chan1_binCenters","",3,0,3);for(int i=1;i<=bc.GetNbinsX();i++) bc.SetBinContent(i,bc.GetXaxis()->GetBinCenter(i));
+    //w.Add(bc); // creates a histoFactor
+
+    w.get<RooWorkspace>()->factory("expr::myFactor('@0*@1',v,xaxis)");
+
+    for(int i=0;i<3;i++) w["simPdf/chan1/samp1"]->bins()[i]->Multiply("myFactor");
+    w.SaveAs("binnedFormularVarTest.root");
+
+}
+
 #endif

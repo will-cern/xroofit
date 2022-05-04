@@ -120,12 +120,16 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
         }
 
         // use the datasets if any to 'mark' observables
+        int checkCount=0;
         for(auto& d : _ws->allData()) {
             for(auto& a : *d->get()) {
                 if(auto v = _ws->var(a->GetName());v) v->setAttribute("obs");
                 else if(auto c =_ws->cat(a->GetName());c) c->setAttribute("obs");
             }
+            // count how many ds are checked ... if none are checked will check the first
+            checkCount += d->TestBit(1<<20);
         }
+        if(checkCount==0 && !_ws->allData().empty()) _ws->allData().front()->SetBit(1<<20,true);
 
         if (auto _set = dynamic_cast<RooArgSet*>(_ws->_snapshots.find("NominalParamValues")); _set) {
             for(auto s : *_set) {
@@ -1139,7 +1143,10 @@ void xRooNode::Print(Option_t *opt) const {
     if (sOpt!="") _more = true;
     if (get() && get()!=this) {
         std::cout << ": ";
-        if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental()||get<RooConstVar>())) || get<RooProduct>()) get()->Print(sOpt);
+        if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental()||get<RooConstVar>())) || get<RooProduct>()) {
+            coords(); // move to coords before printing (in case this matters)
+            get()->Print(sOpt);
+        }
         else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
     } else if(!get()) {
         std::cout << std::endl;
@@ -1149,7 +1156,10 @@ void xRooNode::Print(Option_t *opt) const {
     for (auto &k : *this) {
         std::cout << i++ << ") " << k->GetName() << " : ";
         if(k->get()){
-            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) || k->get<RooProduct>()) k->get()->Print(opt);
+            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) || k->get<RooProduct>()) {
+                k->coords(); // move to coords before printing (in case this matters)
+                k->get()->Print(opt);
+            }
             else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
         }
         else std::cout << " NULL " << std::endl;
@@ -1278,10 +1288,10 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
 
             // get binFactor unless parent is a ParamHistFunc already ...
 
-
             auto binFactors = (fParent->get<ParamHistFunc>()) ? fParent : fParent->factors().find("binFactors");
+            fParent->Print();
             if (!binFactors) {
-                fParent->Multiply(TString::Format("%s_binFactors",(fParent->mainChild().get()) ? fParent->mainChild()->GetName() : fParent->GetName()).Data(),
+                fParent->Multiply(TString::Format("%s_binFactors",(fParent->mainChild().get()) ? fParent->mainChild()->GetName() : (fParent->get() ? fParent->get()->GetName() : fParent->GetName())).Data(),
                                   "blankshape").SetName("binFactors"); // creates ParamHistFunc with all pars = 1 (shared const)
                 binFactors = fParent->factors().find("binFactors");
                 if (!binFactors) {
@@ -1292,6 +1302,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
                 // create RooProducts for all the bins ... so that added factors don't affect selves
                 int i=1;
                 for(auto& b : binFactors->bins()) {
+                    std::cout << i << std::endl;
                     auto p = acquireNew<RooProduct>(TString::Format("%s_bin%d",binFactors->get()->GetName(),i),TString::Format("binFactors of bin %d",i),RooArgList());
                     p->setStringAttribute("alias",TString::Format("bin%d",i));
                     b->Multiply(*p);
@@ -3248,8 +3259,8 @@ xRooNode xRooNode::bins() const {
                     else _factors.push_back(f->bins()[i-1]->get<RooAbsArg>());
                 }
             }
-            out.emplace_back(std::make_shared<xRooNode>(TString::Format("%d", i),
-                                                        _factors.empty() ? nullptr : std::make_shared<RooProduct>(TString::Format("%s.bin%d",GetName(),i), "binFactors",
+            out.emplace_back(std::make_shared<xRooNode>(TString::Format("%s=%g", ax->GetParent()->GetName(), ax->GetBinCenter(i)),
+                                                        _factors.empty() ? nullptr : std::make_shared<RooProduct>(TString::Format("%s.binFactors.bin%d",GetName(),i), "binFactors",
                                                                                                                   RooArgList()), *this));
             for(auto f : _factors) out.back()->get<RooProduct>()->_compRSet.add(*f);
             out.back()->fBinNumber = i;
@@ -5202,7 +5213,7 @@ void xRooNode::Draw(Option_t* opt) {
         h->GetXaxis()->SetName("xaxis"); // WARNING -- this messes up anywhere we GetXaxis()->GetName()
     }
 
-    TString dOpt = (rar->isBinnedDistribution(*vv)) ? "" : "LF2";
+    TString dOpt = (rar->isBinnedDistribution(*vv) || rar->getAttribute("BinnedLikelihood")) ? "" : "LF2";
     if (rar==vv) dOpt="TEXT";
 
     if (hasSame) dOpt += " same";

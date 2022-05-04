@@ -181,27 +181,43 @@ void xRooNLLVar::reinitialize() {
         // need to find all RooRealSumPdf nodes and mark them binned or unbinned as required
         RooArgSet s; fPdf->treeNodeServerList(&s,nullptr,true,false);
         bool isBinned=false;
-        if (auto a = dynamic_cast<RooCmdArg*>(fOpts->find("Binned"));a && a->getInt(0)) isBinned=true;
-        for(auto a : s) {
-            if (a->InheritsFrom("RooRealSumPdf")) {
-                // since RooNLLVar will assume binBoundaries available (not null), we should check bin boundaries available
-                bool setBinned = false;
-                if (isBinned) {
-                    RooArgSet obs;a->getObservables(fData->get(), obs);
-                    if (obs.size() == 1) { // RooNLLVar requires exactly 1 obs
-                        auto *var = static_cast<RooRealVar *>(obs.first());
-                        std::unique_ptr<std::list<Double_t>> boundaries{
-                                dynamic_cast<RooAbsReal *>(a)->binBoundaries(*var, var->getMin(), var->getMax())};
-                        if (boundaries) {
-                            if (!std::shared_ptr<RooAbsReal>::get()) Info("xRooNLLVar", "%s will be evaluated as a Binned PDF (%d bins)", a->GetName(), int(boundaries->size()));
-                            setBinned=true;
+        bool hasBinned=false; // if no binned option then 'auto bin' ...
+        if (auto a = dynamic_cast<RooCmdArg*>(fOpts->find("Binned"));a) {
+            hasBinned = true; isBinned = a->getInt(0);
+        }
+        std::map<RooAbsArg*,bool> origValues;
+        if (hasBinned) {
+            for (auto a: s) {
+                if (a->InheritsFrom("RooRealSumPdf")) {
+                    // since RooNLLVar will assume binBoundaries available (not null), we should check bin boundaries available
+                    bool setBinned = false;
+                    if (isBinned) {
+                        RooArgSet obs;
+                        a->getObservables(fData->get(), obs);
+                        if (obs.size() == 1) { // RooNLLVar requires exactly 1 obs
+                            auto *var = static_cast<RooRealVar *>(obs.first());
+                            std::unique_ptr<std::list<Double_t>> boundaries{
+                                    dynamic_cast<RooAbsReal *>(a)->binBoundaries(*var, var->getMin(), var->getMax())};
+                            if (boundaries) {
+                                if (!std::shared_ptr<RooAbsReal>::get())
+                                    Info("xRooNLLVar", "%s will be evaluated as a Binned PDF (%d bins)", a->GetName(),
+                                         int(boundaries->size()));
+                                setBinned = true;
+                            }
                         }
                     }
+                    origValues[a] = a->getAttribute("BinnedLikelihood");
+                    a->setAttribute("BinnedLikelihood", setBinned);
                 }
-                a->setAttribute("BinnedLikelihood",setBinned);
             }
         }
         this->reset( fPdf->createNLL(*fData,*fOpts) );
+        if(!origValues.empty()) {
+            // need to evaluate NOW so that slaves are created while the BinnedLikelihood settings are in place
+            std::shared_ptr<RooAbsReal>::get()->getVal();
+            for(auto& [o,v] : origValues) o->setAttribute("BinnedLikelihood",v);
+        }
+
     }
 
     fFuncVars.reset( std::shared_ptr<RooAbsReal>::get()->getVariables() );
