@@ -6,7 +6,7 @@ execute_process(
         OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 execute_process(
-        COMMAND git log -1 --format=%cd --date=format:"%d/%m/%Y %T"
+        COMMAND git log -1 --format=%cd --date=iso
         WORKING_DIRECTORY ${SOURCE_DIR}
         OUTPUT_VARIABLE GIT_COMMIT_DATE
         OUTPUT_STRIP_TRAILING_WHITESPACE
