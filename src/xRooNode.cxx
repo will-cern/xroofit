@@ -4704,9 +4704,11 @@ void xRooNode::Draw(Option_t* opt) {
         pad->cd(1);
         Draw(optNoFR);
         pad->cd(2);
-        gPad->SetFillColor(kGray);
         auto _fr = fitResult();
         _fr.Draw();
+        // switch into subpad
+        gPad->cd(1);
+        gPad->SetFillColor(kGray);
         gPad->GetFrame()->SetFillColor(kWhite);gPad->GetFrame()->SetFillStyle(1001);
         gPad->SetTopMargin(0);gPad->SetBottomMargin(0);gPad->SetName("pull");
         // split the pull graph into individual points -- for benefit of GUI status bar
@@ -5002,6 +5004,10 @@ void xRooNode::Draw(Option_t* opt) {
         hist->GetYaxis()->SetTitle("(#hat{#theta}-#theta_{i})/#sigma_{i}");
         hAxis = hist;
         clearPad();
+        // create a new pad because adjust the margins ...
+        gPad->Divide(1,1);
+        auto oldPad = gPad;
+        gPad->cd(1);
         gPad->SetBottomMargin(0.4);
 
         auto pNamesHist = dynamic_cast<TH1F*>(hist->Clone("pnames"));pNamesHist->Sumw2();
@@ -5050,6 +5056,7 @@ void xRooNode::Draw(Option_t* opt) {
         graph->Draw("z0p");
         hist->Draw("axissame"); // overlay axis again -- important is last so can remove if don't pad->Update before reclear
         gPad->Modified();
+        oldPad->cd();
         //gPad->Update();
         return;
 
