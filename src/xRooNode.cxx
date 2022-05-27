@@ -316,7 +316,7 @@ void xRooNode::Browse(TBrowser* b) {
         //v.fBrowsers.insert(b);
     }
     // for pdfs, check for datasets too and add to list
-    if (get<RooAbsPdf>()) {
+    /*if (get<RooAbsPdf>()) {
         auto dsets = datasets();
         if (!dsets.empty()) {
             // check if already have .datasets() in browsables
@@ -331,7 +331,7 @@ void xRooNode::Browse(TBrowser* b) {
                 fBrowsables.push_back(std::make_shared<xRooNode>(dsets));
             }
         }
-    }
+    }*/
     // browse the browsables too
     for(auto& v : fBrowsables) {
         TString _name = v->GetName();
@@ -619,7 +619,7 @@ void xRooNode::Vary_(const char* what) {
 
 xRooNode xRooNode::Remove(const xRooNode& child) {
 
-    if (strcmp(GetName(),".factors")==0) {
+    if (strcmp(GetName(),".factors")==0 || strcmp(GetName(),".constraints")==0) {
         auto toRemove = (child.get<RooAbsArg>()) ? child : xRooNode(find(child.GetName())->fComp);
         if (auto p = fParent->get<RooProdPdf>(); p) {
             auto pdf = toRemove.get<RooAbsArg>();
@@ -642,7 +642,7 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
                 if(p->_extendedIndex == i) p->_extendedIndex = -1;
                 else if(p->_extendedIndex > i) p->_extendedIndex--;
 
-                return xRooNode(pdf->GetName());
+                return xRooNode(*pdf);
             } else {
                 throw std::runtime_error(TString::Format("Cannot find %s in %s",child.GetName(),fParent->GetName()));
             }
@@ -653,7 +653,15 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
             // remove server ... doesn't seem to trigger removal from proxy
             p->_compRSet.remove(*arg);
             p->removeServer(*arg,true);
-            return xRooNode(arg->GetName());
+            return xRooNode(*arg);
+        } else if(auto p = fParent->get<RooSimultaneous>(); p) {
+            // remove from all channels
+            bool removed=false;
+            for(auto& c : fParent->variations()) {
+               try { c->constraints().Remove(toRemove); removed=true; } catch(std::runtime_error&) { /* wasn't a constraint in channel */ }
+            }
+            if (!removed) throw std::runtime_error(TString::Format("Cannot find %s in %s",child.GetName(),fParent->GetName()));
+            return toRemove;
         }
     }
 
@@ -671,6 +679,8 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
         w->_allOwnedNodes.remove(*arg); // deletes arg
         Info("Remove","Deleted %s from workspace %s",out.GetName(),GetName());
         return out;
+    } else if(get<RooProduct>() || get<RooProdPdf>()) {
+        return factors().Remove(child);
     }
 
 
@@ -1139,31 +1149,48 @@ xRooNode xRooNode::shallowCopy(const std::string& name, std::shared_ptr<xRooNode
 
 
 void xRooNode::Print(Option_t *opt) const {
-    std::cout << GetPath();
     TString sOpt(opt);
+    int depth=0;
+    if(sOpt.Contains("depth")) {
+        depth = TString(sOpt(sOpt.Index("depth")+5,sOpt.Length())).Atoi();
+        sOpt.ReplaceAll(TString::Format("depth%d",depth),"");
+    }
+    int indent=0;
+    if(sOpt.Contains("indent")) {
+        indent = TString(sOpt(sOpt.Index("indent")+6,sOpt.Length())).Atoi();
+        sOpt.ReplaceAll(TString::Format("indent%d",indent),"");
+    }
     bool _more = sOpt.Contains("m");
     if (_more) sOpt.Replace(sOpt.Index("m"),1,"");
     if (sOpt!="") _more = true;
-    if (get() && get()!=this) {
-        std::cout << ": ";
-        if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental()||get<RooConstVar>())) || get<RooProduct>()) {
-            coords(); // move to coords before printing (in case this matters)
-            get()->Print(sOpt);
+    if (indent==0) { // only print self if not indenting (will already be printed above if tree traverse)
+        std::cout << GetPath();
+        if (get() && get() != this) {
+            std::cout << ": ";
+            if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental() || get<RooConstVar>())) ||
+                get<RooProduct>()) {
+                coords(); // move to coords before printing (in case this matters)
+                get()->Print(sOpt);
+            } else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
+        } else if (!get()) {
+            std::cout << std::endl;
         }
-        else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
-    } else if(!get()) {
-        std::cout << std::endl;
     }
     const_cast<xRooNode*>(this)->browse();
     int i=0;
     for (auto &k : *this) {
+        for(int i=0;i<indent;i++) std::cout << " ";
         std::cout << i++ << ") " << k->GetName() << " : ";
         if(k->get()){
-            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) || k->get<RooProduct>()) {
+            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) /*|| k->get<RooProduct>()*/) {
                 k->coords(); // move to coords before printing (in case this matters)
                 k->get()->Print(opt);
             }
-            else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
+            else std::cout << k->get()->ClassName() << "::" << k->get()->GetName();
+            std::cout << std::endl;
+            if(depth>0) {
+                k->Print(sOpt + TString::Format("depth%dindent%d",depth-1,indent+1));
+            }
         }
         else std::cout << " NULL " << std::endl;
     }
@@ -2350,8 +2377,8 @@ xRooNode xRooNode::constraints() const {
             if (n.get<RooSimultaneous>() || (n.get<RooAbsPdf>() && n.fParent && n.fParent->get<RooWorkspace>())) {
                 // if at top-level or is a simultaneous, check all channels for a constraint
                 for(auto& c : n.variations()) {
-                    if(auto out = getConstraint(*c.get(),par,nullptr); out) {
-                        return out;
+                    if(auto oo = getConstraint(*c.get(),par,nullptr); oo) {
+                        return oo;
                     }
                 }
                 return (RooAbsPdf*)nullptr;
@@ -5232,7 +5259,13 @@ void xRooNode::Draw(Option_t* opt) {
         // do this to get bin labels
         h->GetXaxis()->SetName("xaxis"); // WARNING -- this messes up anywhere we GetXaxis()->GetName()
     }
-
+    if(!hasSame) {
+        if (obs().find(vv->GetName())) {
+            gPad->SetGrid(0, 0);
+        } else {
+            gPad->SetGrid(1, 1);
+        }
+    }
     TString dOpt = (rar->isBinnedDistribution(*vv) || rar->getAttribute("BinnedLikelihood")) ? "" : "LF2";
     if (rar==vv) dOpt="TEXT";
 
