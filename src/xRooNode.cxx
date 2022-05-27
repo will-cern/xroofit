@@ -78,10 +78,10 @@ xRooNode::xRooNode(const char* classname, const char* name, const char* title) :
 xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const std::shared_ptr<xRooNode>& parent) :
     TNamed(name,""), fComp(comp), fParent(parent) {
 
-    if (!fComp && !fParent && !gSystem->AccessPathName(name) ) {
+    if (!fComp && !fParent && !gSystem->AccessPathName(gSystem->ExpandPathName(name)) ) {
         // using acquire in the constructor seems to cause a mem leak according to valgrind ... possibly because
         // (*this) gets called on it before the node is fully constructed
-        auto _file = std::make_shared<TFile>(name); //acquire<TFile>(name); // acquire file to ensure stays open while we have the workspace
+        auto _file = std::make_shared<TFile>(gSystem->ExpandPathName(name)); //acquire<TFile>(name); // acquire file to ensure stays open while we have the workspace
         // actually it appears we don't need to keep the file open once we've loaded the workspace, but should be
         // no harm doing so
         // otherwise the workspace doesn't saveas
@@ -639,6 +639,9 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
                 p->_cacheMgr.reset();
                 p->setValueDirty();
                 p->setNormRange(0);
+                if(p->_extendedIndex == i) p->_extendedIndex = -1;
+                else if(p->_extendedIndex > i) p->_extendedIndex--;
+
                 return xRooNode(pdf->GetName());
             } else {
                 throw std::runtime_error(TString::Format("Cannot find %s in %s",child.GetName(),fParent->GetName()));

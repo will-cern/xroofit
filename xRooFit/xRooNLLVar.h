@@ -18,6 +18,10 @@ class RooRealVar;
 
 #include "xRooFit.h"
 #include <map>
+#include "TAttFill.h"
+#include "TAttLine.h"
+#include "TAttMarker.h"
+
 
 class xRooNLLVar : public std::shared_ptr<RooAbsReal> {
 
@@ -43,13 +47,24 @@ public:
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generate(bool expected=false,int seed=0);
     //std::shared_ptr<const RooFitResult> snapshot();
 
-    std::shared_ptr<const RooFitResult> minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& = nullptr);
+   class xRooFitResult {
+      public:
+       xRooFitResult(const std::shared_ptr<xRooNode>& in) : fNode(in) { }
+        const RooFitResult* operator->() const;
+        operator std::shared_ptr<const RooFitResult>() const;
+        void Draw(Option_t* opt="");
+        std::shared_ptr<xRooNode> fNode;
+    };
+
+    xRooFitResult minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& = nullptr);
 
     void SetFitConfig(const std::shared_ptr<ROOT::Fit::FitConfig>& in) { fFitConfig = in; }
     std::shared_ptr<ROOT::Fit::FitConfig> fitConfig(); // returns fit config, or creates a default one if not existing
 
     std::pair<double,double> pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::TwoSided);
     std::pair<double,double> sigma_mu(const char* parName, double value, double prime_value);
+
+
 
     class xRooHypoPoint {
     public:
@@ -122,6 +137,23 @@ public:
     // use alt_value = nan to skip the asimov calculations
     xRooHypoPoint hypoPoint(const char* parName, double value, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
 
+    class xRooHypoSpace : public TNamed, public TAttFill, public TAttMarker, public TAttLine {
+      public:
+        friend class xRooNLLVar;
+        xRooHypoSpace(const char* name="", const char* title="") : TNamed(name,title) { }
+
+        void Draw(Option_t* opt="") override;
+
+        RooArgList poi();
+
+        xRooHypoPoint& point(size_t i) { return fPoints.at(i); }
+
+      private:
+
+        std::vector<xRooHypoPoint> fPoints;
+    };
+
+    xRooHypoSpace hypoSpace(const char* parName, int nPoints, double low, double high, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
 
 
 //    class xRooHypoSpace {

@@ -34,6 +34,7 @@
 #include "TCanvas.h"
 #include "TGraphErrors.h"
 #include "TLegend.h"
+#include "TKey.h"
 
 xRooNLLVar xRooFit::createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts) {
     return xRooNLLVar(pdf,data,nllOpts);
@@ -398,6 +399,33 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         return result;
     }
 
+    // if fit caching enabled, try to locate a valid fitResult
+    // must have matching constPars
+    TDirectory* cacheDir = gDirectory;
+
+    if(cacheDir) {
+        if(auto nllDir = cacheDir->GetDirectory(nll.GetName()); nllDir) {
+            if (auto keys = nllDir->GetListOfKeys(); keys) {
+                for (auto &&k: *keys) {
+                    auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
+                    if (cl->InheritsFrom("RooFitResult")) {
+                        if(auto cachedFit = nllDir->Get<RooFitResult>(k->GetName());cachedFit && cachedFit->floatParsFinal().equals(*floatPars)) {
+                            bool match=true;
+                            for(auto& p : *constPars) {
+                                auto v = dynamic_cast<RooAbsReal*>(p); if (!v) { match=false;break; };
+                                if(auto _p = dynamic_cast<RooAbsReal*>(cachedFit->constPars().find(p->GetName())); _p) {
+                                    if(abs(_p->getVal() - v->getVal()) > 1e-12) { match=false; break; }
+                                }
+                            }
+                            if(match) {
+                                return std::make_shared<RooFitResult>(*cachedFit); // return a copy;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
 
 
@@ -628,6 +656,12 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
     if (out && !logs.empty()) {
         // save logs to StringVar in constPars list
         out->_constPars->addClone(RooStringVar("log","log",logs.c_str()));
+    }
+
+    if(cacheDir && cacheDir->IsWritable()) {
+        // save a copy of fit result to relevant dir
+        if(!cacheDir->GetDirectory(nll.GetName())) cacheDir->mkdir(nll.GetName());
+        if(auto dir = cacheDir->GetDirectory(nll.GetName()); dir) dir->WriteObject(out,out->GetName());
     }
 
     return std::shared_ptr<const RooFitResult>(out);

@@ -175,6 +175,10 @@ void xRooNLLVar::Print(Option_t*) {
     }
 }
 
+#define private public
+#include "RooWorkspace.h"
+#undef private
+
 void xRooNLLVar::reinitialize() {
     {
         cout_redirect c(fFuncCreationLog);
@@ -201,7 +205,7 @@ void xRooNLLVar::reinitialize() {
                             if (boundaries) {
                                 if (!std::shared_ptr<RooAbsReal>::get())
                                     Info("xRooNLLVar", "%s will be evaluated as a Binned PDF (%d bins)", a->GetName(),
-                                         int(boundaries->size()));
+                                         int(boundaries->size()-1));
                                 setBinned = true;
                             }
                         }
@@ -210,6 +214,14 @@ void xRooNLLVar::reinitialize() {
                     a->setAttribute("BinnedLikelihood", setBinned);
                 }
             }
+        }
+        // before creating, clear away caches if any if pdf is in ws
+        if (fPdf->_myws) {
+            std::set<std::string> setNames;
+            for(auto& a : fPdf->_myws->_namedSets) {
+                if (TString(a.first.c_str()).BeginsWith("CACHE_")) { setNames.insert(a.first); }
+            }
+            for(auto& a : setNames) fPdf->_myws->removeSet(a.c_str());
         }
         this->reset( fPdf->createNLL(*fData,*fOpts) );
         if(!origValues.empty()) {
@@ -235,7 +247,11 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
     return xRooFit::generateFrom(*fPdf, fr,expected,seed);
 }
 
-std::shared_ptr<const RooFitResult> xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& _config) {
+const RooFitResult* xRooNLLVar::xRooFitResult::operator->() const { return fNode->get<RooFitResult>(); }
+xRooNLLVar::xRooFitResult::operator std::shared_ptr<const RooFitResult>() const { return std::dynamic_pointer_cast<const RooFitResult>(fNode->fComp); }
+void xRooNLLVar::xRooFitResult::Draw(Option_t* opt) { fNode->Draw(opt); }
+
+xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& _config) {
     auto out = xRooFit::minimize(*get(),(_config) ? _config : fitConfig());
     // add any pars that are const here that aren't in constPars list because they may have been
     // const-optimized and their values cached with the dataset, so if subsequently floated the
@@ -243,20 +259,21 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::minimize(const std::shared_ptr<R
     //fConstVars.reset( fFuncVars->selectByAttrib("Constant",true) );
     out->_constPars->setAttribAll("global",false);
     if(fGlobs) std::unique_ptr<RooAbsCollection>(out->_constPars->selectCommon(*fGlobs))->setAttribAll("global",true);
-    return out;
+    return xRooFitResult(std::make_shared<xRooNode>(out,fPdf));
 }
 
 class AutoRestorer {
 public:
     AutoRestorer(const RooAbsCollection& s, xRooNLLVar* nll=nullptr) : fSnap(s.snapshot()), fNll(nll) {
         fPars.add(s);
-        if(fNll) fOldData = fNll->getData();
+        if(fNll) {fOldData = fNll->getData(); fOldName = fNll->get()->GetName(); }
     }
-    ~AutoRestorer() { ((RooAbsCollection&)fPars) = *fSnap; if(fNll) fNll->setData(fOldData); }
+    ~AutoRestorer() { ((RooAbsCollection&)fPars) = *fSnap; if(fNll) {fNll->setData(fOldData); fNll->get()->SetName(fOldName); } }
     RooArgSet fPars;
     std::unique_ptr<RooAbsCollection> fSnap;
     xRooNLLVar* fNll = nullptr;
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> fOldData;
+    TString fOldName;
 };
 
 std::shared_ptr<ROOT::Fit::FitConfig> xRooNLLVar::fitConfig() {
@@ -321,6 +338,7 @@ std::pair<double,double> xRooNLLVar::sigma_mu(const char* parName, double value,
     auto oldData = std::make_pair(fData,(fGlobs) ? std::shared_ptr<RooAbsCollection>(fGlobs->snapshot()) : nullptr);
 
     setData(generate(true));
+    get()->SetName(TString::Format("%s/%s_toys",get()->GetName(),cfit_prime->GetName()));
     auto out = pll(parName,value);
     setData(oldData);
     return std::make_pair(std::abs(value - prime_value)/sqrt(out.first), out.second*0.5*std::abs(value - prime_value)/(out.first*sqrt(out.first)));
@@ -693,6 +711,8 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
         // make initial guess same as pars we generated with
         nllVar->fFuncVars->assignValueOnly(fGenFit->constPars());
         nllVar->fFuncVars->assignValueOnly(fGenFit->floatParsFinal());
+        // rename nll so if caching fit results will cache into subdir
+        nllVar->get()->SetName(TString::Format("%s/%s_toys",nllVar->get()->GetName(),fGenFit->GetName()));
     }
     return (fUfit = nllVar->minimize());
 }
@@ -709,6 +729,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::null_cfit() {
     }
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
+    if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_toys",nllVar->get()->GetName(),fGenFit->GetName()));
     return (fNull_cfit = nllVar->minimize());
 }
 
@@ -726,6 +747,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::alt_cfit() {
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
     dynamic_cast<RooRealVar*>(nllVar->fFuncVars->find(fPOIName.c_str()))->setVal(fAltVal);
+    if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_toys",nllVar->get()->GetName(),fGenFit->GetName()));
     return (fAlt_cfit = nllVar->minimize());
 }
 
@@ -877,6 +899,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double valu
 
     auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
     if (!poi) return out;
+    AutoRestorer snap((RooArgSet(*poi)));
     poi->setVal(value);
     poi->setConstant();
     auto _snap = std::unique_ptr<RooAbsCollection>(fFuncVars->selectByAttrib("Constant",true))->snapshot();
@@ -1122,3 +1145,53 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
 
     //}
 }
+
+xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName, int nPoints, double low, double high, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
+    xRooNLLVar::xRooHypoSpace s(parName,parName);
+    if (nPoints==1) {
+        return s;
+    }
+    for(double i = low; i<=high; i+= (high-low)/(nPoints-1)) {
+        s.fPoints.emplace_back(hypoPoint(parName,i,alt_value,pllType));
+    }
+    // make all hypoPoints use the same NLLVar instance
+    for(auto& p : s.fPoints) p.nllVar = s.fPoints.front().nllVar;
+    return s;
+}
+
+RooArgList xRooNLLVar::xRooHypoSpace::poi() {
+    RooArgList out;
+    if(!fPoints.empty()) {
+        out.add(*std::unique_ptr<RooAbsCollection>(fPoints.front().nllVar->pars()->selectByName(fPoints.front().fPOIName.c_str())));
+    }
+    return out;
+}
+
+#include "TGraphErrors.h"
+
+void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
+
+    TString sOpt(opt);
+
+    if (poi().empty()) return;
+
+    TGraphErrors* out = new TGraphErrors;
+    out->SetName(GetName());
+    out->SetTitle(TString::Format(";%s;Test Statistic", poi().first()->GetTitle()));
+
+    for(auto& p : fPoints) {
+        out->SetPoint(out->GetN(), p.fNullVal, p.pll().first );
+        out->SetPointError(out->GetN()-1,0,p.pll().second);
+    }
+
+    *dynamic_cast<TAttFill*>(out) = *this;
+    *dynamic_cast<TAttLine*>(out) = *this;
+    *dynamic_cast<TAttMarker*>(out) = *this;
+
+    out->SetBit(kCanDelete);
+    out->Draw(sOpt);
+
+    return;
+
+}
+
