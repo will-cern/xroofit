@@ -247,8 +247,10 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
     return xRooFit::generateFrom(*fPdf, fr,expected,seed);
 }
 
-const RooFitResult* xRooNLLVar::xRooFitResult::operator->() const { return fNode->get<RooFitResult>(); }
-xRooNLLVar::xRooFitResult::operator std::shared_ptr<const RooFitResult>() const { return std::dynamic_pointer_cast<const RooFitResult>(fNode->fComp); }
+xRooNLLVar::xRooFitResult::xRooFitResult(const std::shared_ptr<xRooNode>& in): std::shared_ptr<const RooFitResult>(std::dynamic_pointer_cast<const RooFitResult>(in->fComp)), fNode(in) { }
+//const RooFitResult* xRooNLLVar::xRooFitResult::operator->() const { return fNode->get<RooFitResult>(); }
+//xRooNLLVar::xRooFitResult::operator std::shared_ptr<const RooFitResult>() const { return std::dynamic_pointer_cast<const RooFitResult>(fNode->fComp); }
+xRooNLLVar::xRooFitResult::operator const RooFitResult*() const { return fNode->get<const RooFitResult>(); }
 void xRooNLLVar::xRooFitResult::Draw(Option_t* opt) { fNode->Draw(opt); }
 
 xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& _config) {
@@ -1177,19 +1179,63 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
     TGraphErrors* out = new TGraphErrors;
     out->SetName(GetName());
-    out->SetTitle(TString::Format(";%s;Test Statistic", poi().first()->GetTitle()));
+    TString title = TString::Format(";%s", poi().first()->GetTitle());
 
-    for(auto& p : fPoints) {
-        out->SetPoint(out->GetN(), p.fNullVal, p.pll().first );
-        out->SetPointError(out->GetN()-1,0,p.pll().second);
+    if (!fPoints.empty() && poi().size()==1) {
+        auto v = dynamic_cast<RooRealVar*>(poi().first());
+        if(fPoints.front().fPllType == xRooFit::Asymptotics::OneSidedPositive) {
+            if (v && v->hasRange("physical")) title += TString::Format(";Lower-Bound One-Sided Limit PLR");
+            else if(v) title += TString::Format(";One-Sided Limit PLR");
+            else title += ";q";
+        } else if(fPoints.front().fPllType == xRooFit::Asymptotics::TwoSided) {
+            if (v && v->hasRange("physical")) title += TString::Format(";Lower-Bound PLR");
+            else if(v) title += TString::Format(";PLR");
+            else title += ";t";
+        } else if(fPoints.front().fPllType == xRooFit::Asymptotics::OneSidedNegative) {
+            if (v && v->hasRange("physical")) title += TString::Format(";Lower-Bound One-Sided Discovery PLR");
+            else if(v) title += TString::Format(";One-Sided Discovery PLR");
+            else title += ";r";
+        } else if(fPoints.front().fPllType == xRooFit::Asymptotics::Uncapped) {
+            if (v && v->hasRange("physical")) title += TString::Format(";Lower-Bound Uncapped PLR");
+            else if(v) title += TString::Format(";Uncapped PLR");
+            else title += ";s";
+        } else {
+            title += ";Test Statistic";
+        }
     }
 
+    out->SetTitle(title);
     *dynamic_cast<TAttFill*>(out) = *this;
     *dynamic_cast<TAttLine*>(out) = *this;
     *dynamic_cast<TAttMarker*>(out) = *this;
-
     out->SetBit(kCanDelete);
     out->Draw(sOpt);
+
+    TGraph* badPoints = nullptr;
+
+    TStopwatch s; s.Start();
+    for(auto& p : fPoints) {
+        auto val = p.pll().first;
+        if (std::isnan(val)) {
+            if (!badPoints) {
+                badPoints = new TGraph;
+                badPoints->SetBit(kCanDelete); badPoints->SetName("badPoints"); badPoints->Draw("P");
+                badPoints->SetMarkerStyle(5); badPoints->SetMarkerColor(kRed); badPoints->SetMarkerSize(1);
+            }
+            badPoints->SetPoint(badPoints->GetN(),p.fNullVal,0);
+            continue;
+        } else if (badPoints && out->GetN()) {
+            // can now position the marker on the line ...
+            badPoints->SetPointY(badPoints->GetN()-1,(out->GetPointY(out->GetN()-1)+val)/2.);
+        }
+        out->SetPoint(out->GetN(), p.fNullVal, p.pll().first );
+        out->SetPointError(out->GetN()-1,0,p.pll().second);
+        if (s.RealTime() > 3) { // stops the clock
+            gPad->Update();gSystem->ProcessEvents();
+            s.Reset();s.Start();
+        }
+        s.Continue();
+    }
 
     return;
 

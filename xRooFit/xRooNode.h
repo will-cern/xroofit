@@ -191,6 +191,7 @@ public:
     xRooNLLVar nll(const xRooNode& _data, const RooLinkedList& nllOpts) const;
     xRooNode fitResult(const char* opt="") const; // todo: make this 'fitResults'
     void SetFitResult(const RooFitResult* fr = nullptr); // null means will load prefit
+    void SetFitResult(const std::shared_ptr<const RooFitResult>& fr) { SetFitResult(fr.get()); }
 
 //    xRooNode fitTo_(const char* datasetName) const; // *MENU*
 //    xRooNode fitTo(const char* datasetName) const;

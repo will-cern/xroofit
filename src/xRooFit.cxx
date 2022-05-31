@@ -326,7 +326,8 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     // have to const cast to set extra options
     auto extraOpts = const_cast<ROOT::Math::IOptions *>(fitConfig.MinimizerOptions().ExtraOptions());
     extraOpts->SetValue("StrategySequence", "012");
-    //extraOpts->SetValue("BoundaryCheck",0.01); // warn if within 1% of a boundary
+    extraOpts->SetValue("LogSize",0); // length of log to capture and save
+    extraOpts->SetValue("BoundaryCheck",0.); // if non-zero, warn if any post-fit value is close to boundary (e.g. 0.01 = within 1%)
     return fFitConfig;
 }
 
@@ -658,10 +659,27 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         out->_constPars->addClone(RooStringVar("log","log",logs.c_str()));
     }
 
-    if(cacheDir && cacheDir->IsWritable()) {
+    if(out && cacheDir && cacheDir->IsWritable()) {
         // save a copy of fit result to relevant dir
         if(!cacheDir->GetDirectory(nll.GetName())) cacheDir->mkdir(nll.GetName());
-        if(auto dir = cacheDir->GetDirectory(nll.GetName()); dir) dir->WriteObject(out,out->GetName());
+        if(auto dir = cacheDir->GetDirectory(nll.GetName()); dir) {
+
+            // also save the fitConfig ... unless one with same name already present
+            std::string configName;
+            if( !fitConfig.MinimizerOptions().ExtraOptions()->GetValue("Name",configName) ) {
+                auto extraOpts = const_cast<ROOT::Math::IOptions *>(fitConfig.MinimizerOptions().ExtraOptions());
+                configName = TUUID().AsString();
+                extraOpts->SetValue("Name",configName.data());
+            }
+            if(!dir->GetKey(configName.data())) {
+                dir->WriteObject(&fitConfig,configName.data());
+            }
+            // add the fitConfig name into the fit result before writing, so can retrieve in future
+            out->_constPars->addClone(RooStringVar("fitConfigName","fitConfigName",configName.c_str()));
+
+            dir->WriteObject(out,out->GetName());
+
+        }
     }
 
     return std::shared_ptr<const RooFitResult>(out);

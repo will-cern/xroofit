@@ -129,7 +129,7 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
             // count how many ds are checked ... if none are checked will check the first
             checkCount += d->TestBit(1<<20);
         }
-        if(checkCount==0 && !_ws->allData().empty()) _ws->allData().front()->SetBit(1<<20,true);
+        if(checkCount==0 && !_ws->allData().empty()) _ws->allData().back()->SetBit(1<<20,true);
 
         if (auto _set = dynamic_cast<RooArgSet*>(_ws->_snapshots.find("NominalParamValues")); _set) {
             for(auto s : *_set) {
@@ -152,6 +152,38 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
         if (!_allGlobs.empty() && _ws->_namedSets.count("globalObservables") == 0) {
             _ws->defineSet("globalObservables",_allGlobs);
         }
+
+        // now check if any pars don't have errors defined (not same as error=0) ... if so, use the first pdf (if there is one) to try setting values from
+        if (!_ws->allPdfs().empty()) {
+            std::vector<RooRealVar*> noErrorPars;
+            for(auto& p : pars()) {
+                auto v = p->get<RooRealVar>();
+                if (!v) continue;
+                if (!v->hasError()) noErrorPars.push_back(v);
+            }
+            if (!noErrorPars.empty()) {
+                // get the first top-level pdf
+                browse();
+                for(auto& a : *this) {
+                    if(a->fFolder == "!models") {
+                        try {
+                            auto fr = a->fitResult("prefit");
+                            if (auto _fr = fr.get<RooFitResult>(); _fr) {
+                                for(auto& v : noErrorPars) {
+                                    if(auto arg = dynamic_cast<RooRealVar*>(_fr->floatParsFinal().find(v->GetName())); arg && arg->hasError()) {
+                                        v->setError(arg->getError());
+                                    }
+                                }
+                            }
+                        } catch(...) {
+
+                        }
+                    }
+                }
+            }
+        }
+
+
     }
 
     if (strlen(GetTitle())==0) {
@@ -1184,10 +1216,9 @@ void xRooNode::Print(Option_t *opt) const {
         if(k->get()){
             if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) /*|| k->get<RooProduct>()*/) {
                 k->coords(); // move to coords before printing (in case this matters)
-                k->get()->Print(opt);
+                k->get()->Print(opt); // assumes finishes with an endl
             }
-            else std::cout << k->get()->ClassName() << "::" << k->get()->GetName();
-            std::cout << std::endl;
+            else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
             if(depth>0) {
                 k->Print(sOpt + TString::Format("depth%dindent%d",depth-1,indent+1));
             }
@@ -3552,6 +3583,7 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros, TVirtualPad* fr
         nHist->Reset();
 
         auto dataGraph = new TGraphAsymmErrors;
+        dataGraph->SetEditable(false);
         dataGraph->SetName(GetName());
         dataGraph->SetTitle(strlen(theData->GetTitle()) ? theData->GetTitle() : theData->GetName());
         // next line triggers creation of the histogram inside the graph, in root 6.22 that isn't protected from being added to gDirectory
@@ -3709,6 +3741,10 @@ xRooNode xRooNode::fitResult(const char* opt) const {
                     }
                     else if(prefitError==0) prefitError = _d->get<RooAbsReal>()->getVal();
                     else prefitVal = _d->get<RooAbsReal>()->getVal();
+                }
+
+                if (pConstr->get<RooGaussian>() && pConstr->browse().find(".sigma")) {
+                    prefitError = pConstr->find(".sigma")->get<RooAbsReal>()->getVal();
                 }
                 //std::cout << p->GetName() << " extracted " << prefitVal << " " << prefitError << " from "; pConstr->deps().Print();
                 if (pConstr->get<RooPoisson>()) {
@@ -4765,6 +4801,10 @@ void xRooNode::Draw(Option_t* opt) {
         auto _thisClone = new xRooNode("node",fComp,fParent); _thisClone->SetBit(kCanDelete);
         _thisClone->AppendPad();
 
+        // ensure statusbar visible for interactive plot
+        if(gPad->GetCanvas() && !gPad->GetCanvas()->TestBit(TCanvas::kShowEventStatus)) {
+            gPad->GetCanvas()->ToggleEventStatus();
+        }
         gPad->AddExec("interactivePull","xRooNode::Interactive_Pull()");
 
         pad->cd();
@@ -5469,7 +5509,9 @@ void xRooNode::Draw(Option_t* opt) {
             ratioHist->GetXaxis()->SetLabelSize(ratioHist->GetXaxis()->GetLabelSize() * rHeight);
             ratioHist->GetYaxis()->SetTitleOffset( h->GetYaxis()->GetTitleOffset() / rHeight);
         } else {
+#if ROOT_VERSION_CODE < ROOT_VERSION(6,26,00)
             ratioHist->GetXaxis()->SetTitleOffset( ratioHist->GetXaxis()->GetTitleOffset() / gPad->GetHNDC());
+#endif
             ratioHist->GetYaxis()->SetTitleOffset( h->GetYaxis()->GetTitleOffset() );
         }
         ratioHist->GetXaxis()->SetTickLength(ratioHist->GetXaxis()->GetTickLength() * rHeight);

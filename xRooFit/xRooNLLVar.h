@@ -47,11 +47,12 @@ public:
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> generate(bool expected=false,int seed=0);
     //std::shared_ptr<const RooFitResult> snapshot();
 
-   class xRooFitResult {
+   class xRooFitResult : public std::shared_ptr<const RooFitResult> {
       public:
-       xRooFitResult(const std::shared_ptr<xRooNode>& in) : fNode(in) { }
-        const RooFitResult* operator->() const;
-        operator std::shared_ptr<const RooFitResult>() const;
+       xRooFitResult(const std::shared_ptr<xRooNode>& in);// : fNode(in) { }
+//        const RooFitResult* operator->() const;
+//        operator std::shared_ptr<const RooFitResult>() const;
+        operator const RooFitResult*() const;
         void Draw(Option_t* opt="");
         std::shared_ptr<xRooNode> fNode;
     };
