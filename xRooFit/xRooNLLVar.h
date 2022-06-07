@@ -50,7 +50,7 @@ public:
    class xRooFitResult : public std::shared_ptr<const RooFitResult> {
       public:
        xRooFitResult(const std::shared_ptr<xRooNode>& in);// : fNode(in) { }
-//        const RooFitResult* operator->() const;
+        const RooFitResult* operator->() const;
 //        operator std::shared_ptr<const RooFitResult>() const;
         operator const RooFitResult*() const;
         void Draw(Option_t* opt="");
@@ -111,6 +111,7 @@ public:
 
         std::shared_ptr<const RooFitResult> fUfit,fNull_cfit,fAlt_cfit;
         std::shared_ptr<const RooFitResult> fGenFit; // if the data was generated, this is the fit is was generated from
+        bool isExpected = false; // if genFit, flag says is asimov or not
 
         std::shared_ptr<xRooHypoPoint> fAsimov; // same as this point but pllType is twosided and data is expected post alt-fit
 
@@ -143,6 +144,8 @@ public:
         friend class xRooNLLVar;
         xRooHypoSpace(const char* name="", const char* title="") : TNamed(name,title) { }
 
+        void LoadFits(const char* apath);
+
         void Draw(Option_t* opt="") override;
 
         RooArgList poi();
@@ -150,6 +153,8 @@ public:
         xRooHypoPoint& point(size_t i) { return fPoints.at(i); }
 
       private:
+        std::shared_ptr<RooArgSet> fPars;
+        std::vector<std::shared_ptr<RooArgList>> fCoords; // points with ufit and cfit defined - altHypo attribute for when fits with alt value too
 
         std::vector<xRooHypoPoint> fPoints;
     };

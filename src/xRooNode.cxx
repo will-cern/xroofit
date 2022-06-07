@@ -58,6 +58,8 @@
 #include "TKey.h"
 #include "TEnv.h"
 
+xRooNode::InteractiveObject* xRooNode::gIntObj = nullptr;
+
 template<typename T> const T& _or_func(const T& a, const T& b) { if (a) return a; return b; }
 
 
@@ -5006,7 +5008,7 @@ void xRooNode::Draw(Option_t* opt) {
 
                 //std::cout << p->GetName() << " extracted " << prefitVal << " " << prefitError << " from "; pConstr->deps().Print();
                 pConstr->browse();
-                if (pConstr->get<RooPoisson>()) {
+                if (pConstr->get<RooPoisson>() && pConstr->find(".x")) {
                     std::string xName = pConstr->find(".x")->get()->GetName();
                     prefitVal = pConstr->find(".x")->get<RooAbsReal>()->getVal();
                     for(auto& _d : pConstr->deps()) {
@@ -5019,9 +5021,9 @@ void xRooNode::Draw(Option_t* opt) {
                     // prefiterror will be tau ... need 1/sqrt(tau) for error
                     prefitError = 1./sqrt(prefitError);
                 } else if(auto _g = pConstr->get<RooGaussian>(); _g) {
-                    prefitError = pConstr->find(".sigma")->get<RooAbsReal>()->getVal();
-                    prefitVal = pConstr->find(".x")->get<RooAbsReal>()->getVal(); // usually the globs
-                    if (strcmp(p->GetName(),pConstr->find(".x")->get<RooAbsReal>()->GetName())==0) {
+                    prefitError = (pConstr->find(".sigma")) ? pConstr->find(".sigma")->get<RooAbsReal>()->getVal() : 0;
+                    prefitVal = (pConstr->find(".x")) ? pConstr->find(".x")->get<RooAbsReal>()->getVal() : 0; // usually the globs
+                    if (pConstr->find(".x") && strcmp(p->GetName(),pConstr->find(".x")->get<RooAbsReal>()->GetName())==0) {
                         // hybrid construction case,
                         prefitVal = pConstr->find(".mean")->get<RooAbsReal>()->getVal();
                     }
@@ -5036,11 +5038,26 @@ void xRooNode::Draw(Option_t* opt) {
                 out->SetPointError(out->GetN()-1,0,0,(-_v->getErrorLo())/prefitError,(_v->getErrorHi())/prefitError);
                 graphLabels.push_back(p->GetName());
                 scale[p->GetName()] = prefitError; offset[p->GetName()] = prefitVal;
+            } else if(!fParent) {
+                // no parent to determine constraints from ... prefitError=0 will be the unconstrained ones
+                if (prefitError == 0) {
+                    // uses range of var if no postfit error either
+                    prefitError = (_v->getError()) ? _v->getError() : (std::max(std::max(_v->getMax()-_v->getVal(),_v->getVal()-_v->getMin()),4.)/4);
+                    ugraph->SetPoint(ugraph->GetN(),ugraph->GetN(),(_v->getVal()-prefitVal)/prefitError);
+                    ugraph->SetPointError(ugraph->GetN()-1,0,0,(-_v->getErrorLo())/prefitError,(_v->getErrorHi())/prefitError);
+                    ugraphLabels.push_back(p->GetName());
+                } else {
+                    out->SetPoint(out->GetN(),out->GetN(),(_v->getVal()-prefitVal)/prefitError);
+                    out->SetPointError(out->GetN()-1,0,0,(-_v->getErrorLo())/prefitError,(_v->getErrorHi())/prefitError);
+                    graphLabels.push_back(p->GetName());
+                }
+                scale[p->GetName()] = prefitError; offset[p->GetName()] = prefitVal;
+
             } else {
                 // unconstrained (or at least couldn't determine constraint) ... use postfit error if no prefit error
                 if (prefitError == 0) {
                     // uses range of var if no postfit error either
-                    prefitError = (_v->hasError()) ? _v->getError() : (std::max(std::max(_v->getMax()-_v->getVal(),_v->getVal()-_v->getMin()),4.)/4);
+                    prefitError = (_v->getError()) ? _v->getError() : (std::max(std::max(_v->getMax()-_v->getVal(),_v->getVal()-_v->getMin()),4.)/4);
                 }
                 ugraph->SetPoint(ugraph->GetN(),ugraph->GetN(),(_v->getVal()-prefitVal)/prefitError);
                 ugraph->SetPointError(ugraph->GetN()-1,0,0,(-_v->getErrorLo())/prefitError,(_v->getErrorHi())/prefitError);
@@ -5059,7 +5076,7 @@ void xRooNode::Draw(Option_t* opt) {
         graph->SetBit(kCanDelete);
 
         auto t = TH1::AddDirectoryStatus();TH1::AddDirectory(false);
-        auto hist = new TH1F(TString::Format("%s_pullFrame",GetName()),"Pulls",std::max(graph->GetN(),1),-0.5,std::max(graph->GetN(),1)-0.5);
+        auto hist = new TH1F(TString::Format(".%s_pullFrame",GetName()),fr->GetTitle(),std::max(graph->GetN(),1),-0.5,std::max(graph->GetN(),1)-0.5);
         TH1::AddDirectory(t);
         hist->SetBit(kCanDelete);
         int i=1;
@@ -5072,12 +5089,13 @@ void xRooNode::Draw(Option_t* opt) {
         hAxis = hist;
         clearPad();
         // create a new pad because adjust the margins ...
-        gPad->Divide(1,1);
         auto oldPad = gPad;
+        gPad->Divide(1,1);
         gPad->cd(1);
         gPad->SetBottomMargin(0.4);
 
         auto pNamesHist = dynamic_cast<TH1F*>(hist->Clone("pnames"));pNamesHist->Sumw2();
+        pNamesHist->SetDirectory(0);
 
         for(int i=1;i<=graph->GetN();i++) { // use graph->GetN() to protect against the 0 pars case
             auto _p = fr->floatParsFinal().find(hist->GetXaxis()->GetBinLabel(i));
@@ -5094,7 +5112,7 @@ void xRooNode::Draw(Option_t* opt) {
             auto pullBox = new TGraphErrors;
             pullBox->SetBit(kCanDelete);
             pullBox->SetPoint(0, -0.5, 0);
-            pullBox->SetPoint(1, hist->GetNbinsX() - 0.5, 0);
+            pullBox->SetPoint(1, hist->GetNbinsX()-0.5-nUnconstrained, 0);
             pullBox->SetPointError(0, 0, i);
             pullBox->SetPointError(1, 0, i);
             pullBox->SetFillColor((i==2) ? kYellow : kGreen);
@@ -5102,7 +5120,7 @@ void xRooNode::Draw(Option_t* opt) {
         }
         auto pullLine = new TGraph; pullLine->SetBit(kCanDelete);
         pullLine->SetPoint(0,-0.5,0);
-        pullLine->SetPoint(1,hist->GetNbinsX()-0.5,0);
+        pullLine->SetPoint(1,hist->GetNbinsX()-0.5-nUnconstrained,0);
         pullLine->SetLineStyle(2);
         pullLine->SetEditable(false);
         pullLine->Draw("l");
@@ -5466,7 +5484,7 @@ void xRooNode::Draw(Option_t* opt) {
         adjustYRange(h->GetMinimum()*0.9,h->GetMaximum()*1.1);
     }
 
-    if (!hasSame) {
+    if (!hasSame && h->GetYaxis()->GetTitleFont()%10 == 2) {
         h->GetYaxis()->SetTitleOffset( gPad->GetLeftMargin() / gStyle->GetPadLeftMargin() );
     }
 

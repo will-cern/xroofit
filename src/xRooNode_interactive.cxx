@@ -161,3 +161,33 @@ void xRooNode::Interactive_PLLPlot() {
 
 }
 
+#include "TSystem.h"
+
+void xRooNode::InteractiveObject::Interactive_PLLPlot(TVirtualPad *pad, TObject *obj, Int_t x, Int_t y) {
+
+    if(auto g = dynamic_cast<TGraph*>(obj); g && pad && pad->GetMother()) {
+        auto frPad = pad->GetMother()->GetPad(2);
+        if (frPad) {
+            if (!g->IsHighlight()) x = -1;
+            else if(x>=0) x+=1;
+            // x is the point index
+            TVirtualPad *_pad = frPad->GetPad(x);
+            auto selPad = dynamic_cast<TVirtualPad*>(frPad->GetPrimitive("selected"));
+            if (_pad && selPad) {
+                auto prim = selPad->GetListOfPrimitives();
+                prim->Remove(prim->At(0));
+                prim->Add(_pad);
+
+//                for (auto p: *pad->GetListOfPrimitives()) {
+//                    if (auto _p = dynamic_cast<TPad *>(p)) {
+//                        _p->Modified();
+//                    }
+//                }
+//                pad->Modified();
+//                pad->Update();
+                selPad->Modified(); selPad->Update();gSystem->ProcessEvents();
+            }
+        }
+    }
+
+}

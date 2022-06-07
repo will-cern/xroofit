@@ -26,6 +26,7 @@ class TVirtualPad;
 #include "xRooFit/xRooFit.h"
 #include "RooLinkedList.h"
 #include "RooCmdArg.h"
+#include "TQObject.h"
 
 class xRooNLLVar;
 
@@ -222,6 +223,12 @@ public:
 
     static void Interactive_PLLPlot();
     static void Interactive_Pull();
+    class InteractiveObject : public TQObject {
+      public:
+        void Interactive_PLLPlot(TVirtualPad *pad, TObject *obj, Int_t x, Int_t y);
+        ClassDef(InteractiveObject,0)
+    };
+    static InteractiveObject* gIntObj;
 
     mutable std::shared_ptr<TObject> fComp; //!
     int fTimes = 1; // when the same comp appears multiple times in a parent node, this is increased to reflect that

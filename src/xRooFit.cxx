@@ -419,7 +419,9 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
                                 }
                             }
                             if(match) {
-                                return std::make_shared<RooFitResult>(*cachedFit); // return a copy;
+                                return std::shared_ptr<RooFitResult>(cachedFit); // return a copy;
+                            } else {
+                                delete cachedFit;
                             }
                         }
                     }
@@ -427,6 +429,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
             }
         }
     }
+
+    if (nll.getAttribute("readOnly")) return nullptr;
 
 
 
@@ -564,7 +568,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         }
 
         //signal(SIGINT,gOldHandlerr);
-        out = _minimizer.save(fitName, resultTitle);
+        out = _minimizer.save(fitName, (resultTitle=="") ? TUUID(fitName).GetTime().AsString() : resultTitle.Data());
 
 
         if (save) {

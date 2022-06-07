@@ -180,7 +180,7 @@ void xRooNLLVar::Print(Option_t*) {
 #undef private
 
 void xRooNLLVar::reinitialize() {
-    {
+    if (fPdf) {
         cout_redirect c(fFuncCreationLog);
         // need to find all RooRealSumPdf nodes and mark them binned or unbinned as required
         RooArgSet s; fPdf->treeNodeServerList(&s,nullptr,true,false);
@@ -248,7 +248,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
 }
 
 xRooNLLVar::xRooFitResult::xRooFitResult(const std::shared_ptr<xRooNode>& in): std::shared_ptr<const RooFitResult>(std::dynamic_pointer_cast<const RooFitResult>(in->fComp)), fNode(in) { }
-//const RooFitResult* xRooNLLVar::xRooFitResult::operator->() const { return fNode->get<RooFitResult>(); }
+const RooFitResult* xRooNLLVar::xRooFitResult::operator->() const { return fNode->get<RooFitResult>(); }
 //xRooNLLVar::xRooFitResult::operator std::shared_ptr<const RooFitResult>() const { return std::dynamic_pointer_cast<const RooFitResult>(fNode->fComp); }
 xRooNLLVar::xRooFitResult::operator const RooFitResult*() const { return fNode->get<const RooFitResult>(); }
 void xRooNLLVar::xRooFitResult::Draw(Option_t* opt) { fNode->Draw(opt); }
@@ -714,7 +714,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
         nllVar->fFuncVars->assignValueOnly(fGenFit->constPars());
         nllVar->fFuncVars->assignValueOnly(fGenFit->floatParsFinal());
         // rename nll so if caching fit results will cache into subdir
-        nllVar->get()->SetName(TString::Format("%s/%s_toys",nllVar->get()->GetName(),fGenFit->GetName()));
+        nllVar->get()->SetName(TString::Format("%s/%s_%s",nllVar->get()->GetName(),fGenFit->GetName(),(isExpected) ? "asimov" : "toys"));
     }
     return (fUfit = nllVar->minimize());
 }
@@ -731,7 +731,8 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::null_cfit() {
     }
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
-    if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_toys",nllVar->get()->GetName(),fGenFit->GetName()));
+    nllVar->fFuncVars->find(fPOIName.c_str())->setStringAttribute("altHypo",std::isnan(fAltVal) ? TString::Format("%g",fAltVal) : nullptr);
+    if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_%s",nllVar->get()->GetName(),fGenFit->GetName(),(isExpected) ? "asimov" : "toys"));
     return (fNull_cfit = nllVar->minimize());
 }
 
@@ -749,7 +750,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::alt_cfit() {
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
     dynamic_cast<RooRealVar*>(nllVar->fFuncVars->find(fPOIName.c_str()))->setVal(fAltVal);
-    if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_toys",nllVar->get()->GetName(),fGenFit->GetName()));
+    if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_%s",nllVar->get()->GetName(),fGenFit->GetName(),(isExpected) ? "asimov" : "toys"));
     return (fAlt_cfit = nllVar->minimize());
 }
 
@@ -766,6 +767,8 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
         fAsimov->fPllType = xRooFit::Asymptotics::TwoSided;
         fAsimov->fUfit.reset();fAsimov->fNull_cfit.reset();fAsimov->fAlt_cfit.reset();
         fAsimov->data = asimov;
+        fAsimov->fGenFit = fAlt_cfit;
+        fAsimov->isExpected = true;
     }
     auto out = fAsimov->pll();
     return std::make_pair(std::abs(fNullVal - fAltVal)/sqrt(out.first), out.second*0.5*std::abs(fNullVal - fAltVal)/(out.first*sqrt(out.first)));
@@ -913,7 +916,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double valu
     if (_type == xRooFit::Asymptotics::Unknown) {
         // decide based on values
         if (std::isnan(alt_value)) _type = xRooFit::Asymptotics::TwoSided;
-        else if(value > alt_value) _type = xRooFit::Asymptotics::OneSidedPositive;
+        else if(value >= alt_value) _type = xRooFit::Asymptotics::OneSidedPositive;
         else _type = xRooFit::Asymptotics::Uncapped;
     }
 
@@ -1169,6 +1172,124 @@ RooArgList xRooNLLVar::xRooHypoSpace::poi() {
     return out;
 }
 
+#include "TKey.h"
+
+void xRooNLLVar::xRooHypoSpace::LoadFits(const char* apath) {
+
+    if (!gDirectory) return;
+    auto dir = gDirectory->GetDirectory(apath);
+    if (!dir) return;
+
+    // assume for now all fits in given dir will have the same pars
+    // so can just look at the float and const pars of first fit result to get all of them
+    std::map<std::set<std::pair<std::string,double>>,std::set<std::set<std::string>>> cfits;
+    std::set<std::string> allpois;
+
+    int nFits = 0;
+    if (auto keys = dir->GetListOfKeys(); keys) {
+        for (auto &&k: *keys) {
+            auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
+            if (cl->InheritsFrom("RooFitResult")) {
+                if (auto cachedFit = dir->Get<RooFitResult>(k->GetName());cachedFit) {
+                    nFits++;
+                    if(!fPars) {
+                        fPars = std::make_shared<RooArgSet>();
+                        fPars->addClone(cachedFit->floatParsFinal());
+
+                    }
+                    // build a set of the const par values
+                    std::set<std::pair<std::string,double>> constPars;
+                    for(auto& p : cachedFit->constPars()) {
+                        auto v = dynamic_cast<RooAbsReal*>(p); if (!v) { continue; };
+                        constPars.insert(std::make_pair(v->GetName(),v->getVal()));
+                        if (!fPars->contains(*v)) fPars->addClone(*v);
+                    }
+                    // now see if this is a subset of any existing cfit ... if not we will add it as a cfit
+                    bool isufit=false;
+                    for(auto&& [key,value] : cfits) {
+                        if(std::includes(key.begin(),key.end(),constPars.begin(),constPars.end())) {
+                            // add all par names of key that aren't in constPars
+                            std::set<std::string> pois;
+                            for(auto&& par : key) {
+                                if(constPars.find(par)==constPars.end()) {
+                                    pois.insert(par.first);allpois.insert(par.first);
+                                }
+                            }
+                            if(!pois.empty()) {
+                                value.insert(pois);
+                                isufit = true;
+                            }
+                        } else if(std::includes(constPars.begin(),constPars.end(),key.begin(),key.end())) {
+                            // cfit is actually a ufit of this fr ...
+                            std::set<std::string> pois;
+                            for(auto&& par : constPars) {
+                                if(key.find(par)==key.end()) {
+                                    pois.insert(par.first);allpois.insert(par.first);
+                                }
+                            }
+                            if(!pois.empty()) {
+                                cfits[constPars].insert(pois);
+                                isufit = true;
+                            }
+                        }
+                    }
+                    if(!isufit) {
+                        cfits[constPars];
+                    }
+                    delete cachedFit;
+                }
+            }
+        }
+    }
+    Info("xRooHypoSpace","Loaded %d fits",nFits);
+
+
+    if(allpois.size()==1) {
+        Info("xRooHypoSpace","Detected POI: %s",allpois.begin()->c_str());
+
+        auto nll = std::make_shared<xRooNLLVar>(nullptr, nullptr);
+        auto dummyNll = std::make_shared<RooRealVar>(apath, "Dummy NLL", 1);
+        nll->std::shared_ptr<RooAbsReal>::operator=(dummyNll);
+        dummyNll->setAttribute("readOnly");
+        // add pars as 'servers' on the dummy NLL
+        if (fPars) {
+            for (auto &&p: *fPars) {
+                dummyNll->addServer(*p); // this is ok provided fPars (i.e. hypoSpace) stays alive as long as the hypoPoint ...
+            }
+        }
+        nll->reinitialize(); // triggers filling of par lists etc
+
+        for(auto&& [key,value] : cfits) {
+            if(value.find(allpois) != value.end()) {
+                // get the value of the poi in the key set
+                auto _coords = std::make_shared<RooArgSet>();
+                for(auto& k : key) {
+                    _coords->addClone(RooRealVar(k.first.c_str(), k.first.c_str(), k.second));
+                }
+                xRooNLLVar::xRooHypoPoint hp;
+                hp.fPOIName = allpois.begin()->c_str();
+                hp.fNullVal = _coords->getRealValue(hp.fPOIName.c_str());
+                hp.fPllType = xRooFit::Asymptotics::TwoSided;
+                hp.coords = _coords;
+                hp.nllVar = nll;
+                if(!hp.null_cfit()) continue;
+                auto altVal = hp.null_cfit()->constPars().find(hp.fPOIName.c_str())->getStringAttribute("altHypo");
+                if(altVal) hp.fAltVal = TString(altVal).Atof();
+                else hp.fAltVal = std::numeric_limits<double>::quiet_NaN();
+
+                // decide based on values
+                if (std::isnan(hp.fAltVal)) hp.fPllType = xRooFit::Asymptotics::TwoSided;
+                else if(hp.fNullVal >= hp.fAltVal) hp.fPllType = xRooFit::Asymptotics::OneSidedPositive;
+                else hp.fPllType = xRooFit::Asymptotics::Uncapped;
+
+                fPoints.emplace_back(hp);
+            }
+        }
+    } else {
+        for(auto p : allpois) std::cout << "possible POI: " << p << std::endl;
+    }
+}
+
 #include "TGraphErrors.h"
 
 void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
@@ -1209,13 +1330,34 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
     *dynamic_cast<TAttLine*>(out) = *this;
     *dynamic_cast<TAttMarker*>(out) = *this;
     out->SetBit(kCanDelete);
+
+    if(!gPad) TCanvas::MakeDefCanvas();
+    auto basePad = gPad;
+    if (!sOpt.Contains("same")) basePad->Clear();
+    gPad->Divide(1,2);
+    gPad->cd(1);
+    out->SetEditable(false);
     out->Draw(sOpt);
+    basePad->cd(2);
 
     TGraph* badPoints = nullptr;
 
     TStopwatch s; s.Start();
+    std::shared_ptr<const RooFitResult> ufr;
     for(auto& p : fPoints) {
         auto val = p.pll().first;
+        if(!ufr) ufr = p.ufit();
+        if(auto fr = p.fNull_cfit; fr) { // access member to avoid unnecessarily creating fit result if wasnt needed
+            // create a new subpad and draw fitResult on it
+            auto _pad = gPad;
+            auto pad = new TPad(fr->GetName(),TString::Format("%s = %g",poi().first()->GetTitle(),p.fNullVal),0,0,1.,1);
+            pad->SetNumber(out->GetN()+1); // can't use "0" for a subpad
+            pad->cd();
+            xRooNode(fr).Draw();
+            _pad->cd();
+            //_pad->GetListOfPrimitives()->AddFirst(pad);
+            pad->AppendPad();
+        }
         if (std::isnan(val)) {
             if (!badPoints) {
                 badPoints = new TGraph;
@@ -1230,12 +1372,38 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
         }
         out->SetPoint(out->GetN(), p.fNullVal, p.pll().first );
         out->SetPointError(out->GetN()-1,0,p.pll().second);
+        basePad->GetPad(1)->Modified();
         if (s.RealTime() > 3) { // stops the clock
-            gPad->Update();gSystem->ProcessEvents();
+            basePad->Update();gSystem->ProcessEvents();
             s.Reset();s.Start();
         }
         s.Continue();
     }
+
+    // finish by overlaying ufit
+    if(ufr) {
+        auto _pad = gPad;
+        auto pad = new TPad(ufr->GetName(), "unconditional fit", 0, 0, 1., 1.);
+        pad->SetNumber(-1);
+        pad->cd();
+        xRooNode(ufr).Draw();
+        _pad->cd();
+        pad->AppendPad();
+    }
+
+    // draw one more pad to represent the selected, and draw the ufit pad onto that pad
+    auto pad = new TPad("selected","selected",0,0,1,1);
+    pad->Draw();
+    if(ufr) {
+        pad->cd();
+        basePad->GetPad(2)->GetPad(-1)->AppendPad();
+        pad->Modified();pad->Update();gSystem->ProcessEvents();
+    }
+    basePad->cd();
+
+
+    if (!xRooNode::gIntObj) { xRooNode::gIntObj = new xRooNode::InteractiveObject; }
+    gPad->GetCanvas()->Connect("Highlighted(TVirtualPad*,TObject*,Int_t,Int_t)","xRooNode::InteractiveObject",xRooNode::gIntObj,"Interactive_PLLPlot(TVirtualPad*,TObject*,Int_t,Int_t)");
 
     return;
 
