@@ -165,7 +165,7 @@ void xRooNode::Interactive_PLLPlot() {
 
 void xRooNode::InteractiveObject::Interactive_PLLPlot(TVirtualPad *pad, TObject *obj, Int_t x, Int_t y) {
 
-    if(auto g = dynamic_cast<TGraph*>(obj); g && pad && pad->GetMother()) {
+    if(auto g = dynamic_cast<TGraph*>(obj); g && pad && pad->GetMother() && pad->GetNumber()==1) {
         auto frPad = pad->GetMother()->GetPad(2);
         if (frPad) {
             if (!g->IsHighlight()) x = -1;

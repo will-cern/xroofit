@@ -180,6 +180,7 @@ void xRooNLLVar::Print(Option_t*) {
 #undef private
 
 void xRooNLLVar::reinitialize() {
+    TString oldName = ""; if (std::shared_ptr<RooAbsReal>::get()) oldName = std::shared_ptr<RooAbsReal>::get()->GetName();
     if (fPdf) {
         cout_redirect c(fFuncCreationLog);
         // need to find all RooRealSumPdf nodes and mark them binned or unbinned as required
@@ -224,6 +225,7 @@ void xRooNLLVar::reinitialize() {
             for(auto& a : setNames) fPdf->_myws->removeSet(a.c_str());
         }
         this->reset( fPdf->createNLL(*fData,*fOpts) );
+        if(oldName!="") std::shared_ptr<RooAbsReal>::get()->SetName(oldName);
         if(!origValues.empty()) {
             // need to evaluate NOW so that slaves are created while the BinnedLikelihood settings are in place
             std::shared_ptr<RooAbsReal>::get()->getVal();
@@ -238,6 +240,7 @@ void xRooNLLVar::reinitialize() {
 }
 
 std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooNLLVar::generate(bool expected,int seed) {
+    if(!fPdf) return std::pair(nullptr,nullptr);
     auto fr = std::make_shared<RooFitResult>();
     fr->setFinalParList(RooArgList());
     RooArgList l; l.add((fFuncVars) ? *fFuncVars : *std::unique_ptr<RooAbsCollection>(fPdf->getParameters(*fData)));
@@ -259,8 +262,10 @@ xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::
     // const-optimized and their values cached with the dataset, so if subsequently floated the
     // nll wont evaluate correctly
     //fConstVars.reset( fFuncVars->selectByAttrib("Constant",true) );
-    out->_constPars->setAttribAll("global",false);
-    if(fGlobs) std::unique_ptr<RooAbsCollection>(out->_constPars->selectCommon(*fGlobs))->setAttribAll("global",true);
+    if(out) {
+        out->_constPars->setAttribAll("global",false);
+        if(fGlobs) std::unique_ptr<RooAbsCollection>(out->_constPars->selectCommon(*fGlobs))->setAttribAll("global",true);
+    }
     return xRooFitResult(std::make_shared<xRooNode>(out,fPdf));
 }
 
@@ -669,10 +674,12 @@ RooRealVar& xRooNLLVar::xRooHypoPoint::mu_hat() {
 }
 
 double xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma) {
+    if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma)==0) return 1;
     return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal,fNullVal,sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
 }
 
 double xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma) {
+    if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma)==0) return 1;
     return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal,fAltVal,sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
 }
 
@@ -992,7 +999,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
         _max = std::max(obs.first+abs(obs.first)*0.1,_max);
     }
 
-    auto asi = (fAsimov) ? fAsimov->pll().first : std::numeric_limits<double>::quiet_NaN();
+    auto asi = (fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit) ? fAsimov->pll().first : std::numeric_limits<double>::quiet_NaN();
     if (!std::isnan(asi) && asi>0 && fPllType != xRooFit::Asymptotics::Unknown) {
         // can calculate asymptotic distributions,
         _min = std::min(asi-abs(asi),_min);
@@ -1300,6 +1307,10 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
     TGraphErrors* out = new TGraphErrors;
     out->SetName(GetName());
+    bool doCLs = true;
+    const char* sCL = (doCLs) ? "CLs" : "null";
+    auto obs_pcls = new TGraphErrors;obs_pcls->SetNameTitle(TString::Format("obs_p%s",sCL),TString::Format("Observed p_{%s};%s;p-value",sCL,poi().first()->GetTitle()));
+
     TString title = TString::Format(";%s", poi().first()->GetTitle());
 
     if (!fPoints.empty() && poi().size()==1) {
@@ -1335,7 +1346,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
     auto basePad = gPad;
     if (!sOpt.Contains("same")) basePad->Clear();
     gPad->Divide(1,2);
-    gPad->cd(1);
+    gPad->cd(1);gPad->SetBottomMargin(gPad->GetBottomMargin()*2.); // increase margin to be same as before
     out->SetEditable(false);
     out->Draw(sOpt);
     basePad->cd(2);
@@ -1373,11 +1384,36 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
         out->SetPoint(out->GetN(), p.fNullVal, p.pll().first );
         out->SetPointError(out->GetN()-1,0,p.pll().second);
         basePad->GetPad(1)->Modified();
+        if(!std::isnan(p.fAltVal)) {
+            // calculate p-values ...
+            double pval = (doCLs) ? p.pCLs_asymp() : p.pNull_asymp();
+            if(!std::isnan(pval)) {
+                if(obs_pcls->GetN()==0) {
+                    auto _pad = gPad;
+                    basePad->cd();
+                    basePad->GetPad(1)->SetBottomMargin(basePad->GetPad(1)->GetBottomMargin()*2);
+                    auto newPad = new TPad("pvalues","pvalues",basePad->GetPad(1)->GetXlowNDC(),basePad->GetPad(1)->GetYlowNDC(),basePad->GetPad(1)->GetXlowNDC() + basePad->GetPad(1)->GetWNDC(),basePad->GetPad(1)->GetYlowNDC()+basePad->GetPad(1)->GetHNDC()/2.);
+                    newPad->SetBottomMargin(basePad->GetPad(1)->GetBottomMargin());
+                    newPad->SetNumber(3);
+                    newPad->Draw();
+                    basePad->GetPad(1)->SetPad(basePad->GetPad(1)->GetXlowNDC(),basePad->GetPad(1)->GetYlowNDC()+basePad->GetPad(1)->GetHNDC()/2.,basePad->GetPad(1)->GetXlowNDC() + basePad->GetPad(1)->GetWNDC(),basePad->GetPad(1)->GetYlowNDC()+basePad->GetPad(1)->GetHNDC());
+                    newPad->cd();
+                    obs_pcls->SetBit(kCanDelete);
+                    obs_pcls->Draw("ALP"); _pad->cd();
+                }
+                obs_pcls->SetPoint(obs_pcls->GetN(),p.fNullVal,pval);
+                basePad->GetPad(3)->Modified();
+            }
+        }
         if (s.RealTime() > 3) { // stops the clock
             basePad->Update();gSystem->ProcessEvents();
             s.Reset();s.Start();
         }
         s.Continue();
+    }
+
+    if(obs_pcls->GetN()==0) {
+        delete obs_pcls;
     }
 
     // finish by overlaying ufit

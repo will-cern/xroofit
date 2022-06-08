@@ -375,6 +375,41 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
     }
     TString m_strategy = s;
 
+    // if fit caching enabled, try to locate a valid fitResult
+    // must have matching constPars
+    TDirectory* cacheDir = gDirectory;
+
+    if(cacheDir) {
+        if(auto nllDir = cacheDir->GetDirectory(nll.GetName()); nllDir) {
+            if (auto keys = nllDir->GetListOfKeys(); keys) {
+                for (auto &&k: *keys) {
+                    auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
+                    if (cl->InheritsFrom("RooFitResult")) {
+                        if(auto cachedFit = nllDir->Get<RooFitResult>(k->GetName());cachedFit && cachedFit->floatParsFinal().equals(*floatPars)) {
+                            bool match=true;
+                            for(auto& p : *constPars) {
+                                auto v = dynamic_cast<RooAbsReal*>(p); if (!v) { match=false;break; };
+                                if(auto _p = dynamic_cast<RooAbsReal*>(cachedFit->constPars().find(p->GetName())); _p) {
+                                    // note: do not need global observable values to match (globals currently added to constPars list)
+                                    if(!_p->getAttribute("global") && abs(_p->getVal() - v->getVal()) > 1e-12) {
+                                        match=false; break; }
+                                }
+                            }
+                            if(match) {
+                                return std::shared_ptr<RooFitResult>(cachedFit); // return a copy;
+                            } else {
+                                delete cachedFit;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (nll.getAttribute("readOnly")) return nullptr;
+
+
     int printLevel  =   fitConfig.MinimizerOptions().PrintLevel();
     RooFit::MsgLevel msglevel = RooMsgService::instance().globalKillBelow();
     if(printLevel < 0) RooMsgService::instance().setGlobalKillBelow(RooFit::FATAL);
@@ -400,37 +435,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         return result;
     }
 
-    // if fit caching enabled, try to locate a valid fitResult
-    // must have matching constPars
-    TDirectory* cacheDir = gDirectory;
 
-    if(cacheDir) {
-        if(auto nllDir = cacheDir->GetDirectory(nll.GetName()); nllDir) {
-            if (auto keys = nllDir->GetListOfKeys(); keys) {
-                for (auto &&k: *keys) {
-                    auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
-                    if (cl->InheritsFrom("RooFitResult")) {
-                        if(auto cachedFit = nllDir->Get<RooFitResult>(k->GetName());cachedFit && cachedFit->floatParsFinal().equals(*floatPars)) {
-                            bool match=true;
-                            for(auto& p : *constPars) {
-                                auto v = dynamic_cast<RooAbsReal*>(p); if (!v) { match=false;break; };
-                                if(auto _p = dynamic_cast<RooAbsReal*>(cachedFit->constPars().find(p->GetName())); _p) {
-                                    if(abs(_p->getVal() - v->getVal()) > 1e-12) { match=false; break; }
-                                }
-                            }
-                            if(match) {
-                                return std::shared_ptr<RooFitResult>(cachedFit); // return a copy;
-                            } else {
-                                delete cachedFit;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (nll.getAttribute("readOnly")) return nullptr;
 
 
 
