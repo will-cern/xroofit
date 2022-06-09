@@ -345,7 +345,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
 
     auto _nll = &nll;
 
-    TString resultTitle = nll.getStringAttribute("data");
+    TString resultTitle = nll.getStringAttribute("fitresultTitle");
     // extract any user pars from the nll too
     RooArgList fUserPars;
     if(nll.getStringAttribute("userPars")) {

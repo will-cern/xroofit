@@ -101,11 +101,16 @@ public:
         void addNullToys(int nToys=1);
         void addAltToys(int nToys=1);
 
+        RooArgList poi();
+        RooArgList alt_poi(); // values of the poi in the alt hypothesis (will be nans if not defined)
         RooRealVar& mu_hat(); // throws exception if ufit not available
 
-        std::string fPOIName;
-        xRooFit::Asymptotics::PLLType fPllType;
-        double fNullVal=1; double fAltVal=0;
+        //std::string fPOIName;
+        const char* fPOIName();
+        xRooFit::Asymptotics::PLLType fPllType = xRooFit::Asymptotics::Unknown;
+        //double fNullVal=1; double fAltVal=0;
+        double fNullVal();
+        double fAltVal();
 
         std::shared_ptr<const RooAbsCollection> coords; // pars of the nll that will be held const alongside POI
 
