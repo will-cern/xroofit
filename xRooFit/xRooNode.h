@@ -145,10 +145,9 @@ public:
     xRooNode Vary(const xRooNode& child);
     xRooNode Constrain(const xRooNode& child);
 
-    xRooNode Combine(const xRooNode& rhs);
-    xRooNode Reduce(const std::string& range = ""); // use the SetRange to reduce if blank
+    xRooNode Combine(const xRooNode& rhs); // combine rhs with this node
 
-    //Node2 fitTo(const char* dataName);
+    xRooNode reduced(const std::string& range = ""); // return a node representing reduced version of this node, will use the SetRange to reduce if blank
 
     // following versions are for the menu in the GUI
     void Add_(const char* name, const char* opt); // *MENU*

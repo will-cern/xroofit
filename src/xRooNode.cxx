@@ -653,7 +653,7 @@ void xRooNode::Vary_(const char* what) {
 
 xRooNode xRooNode::Remove(const xRooNode& child) {
 
-    if (strcmp(GetName(),".factors")==0 || strcmp(GetName(),".constraints")==0) {
+    if (strcmp(GetName(),".factors")==0 || strcmp(GetName(),".constraints")==0 || strcmp(GetName(),".components")==0) {
         auto toRemove = (child.get<RooAbsArg>()) ? child : xRooNode(find(child.GetName())->fComp);
         if (auto p = fParent->get<RooProdPdf>(); p) {
             auto pdf = toRemove.get<RooAbsArg>();
@@ -669,7 +669,7 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
                 p->_pdfNSetList.Remove(nset);
                 delete nset; // I don't think the RooLinkedList owned it so must delete ourself
 #endif
-
+                sterilize(); // next three lines shouldn't be necessary any more
                 p->_cacheMgr.reset();
                 p->setValueDirty();
                 p->setNormRange(0);
@@ -687,6 +687,7 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
             // remove server ... doesn't seem to trigger removal from proxy
             p->_compRSet.remove(*arg);
             p->removeServer(*arg,true);
+            sterilize();
             return xRooNode(*arg);
         } else if(auto p = fParent->get<RooSimultaneous>(); p) {
             // remove from all channels
@@ -694,8 +695,23 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
             for(auto& c : fParent->variations()) {
                try { c->constraints().Remove(toRemove); removed=true; } catch(std::runtime_error&) { /* wasn't a constraint in channel */ }
             }
+            sterilize();
             if (!removed) throw std::runtime_error(TString::Format("Cannot find %s in %s",child.GetName(),fParent->GetName()));
             return toRemove;
+        } else if(auto p = fParent->get<RooRealSumPdf>(); p) {
+            auto arg = toRemove.get<RooAbsArg>();
+            if (!arg) arg = p->_funcList.find(child.GetName());
+            if (!arg)
+                throw std::runtime_error(TString::Format("Cannot find %s in %s", child.GetName(), fParent->GetName()));
+            // remove, including coef removal ....
+            auto idx = p->_funcList.index(arg);
+            if (idx != -1) {
+                p->_funcList.remove(*arg);
+                p->removeServer(*arg, true);
+                p->_coefList.remove(*p->_coefList.at(idx));
+                sterilize();
+            }
+            return xRooNode(*arg);
         }
     }
 
@@ -715,10 +731,12 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
         return out;
     } else if(get<RooProduct>() || get<RooProdPdf>()) {
         return factors().Remove(child);
+    } else if(get<RooRealSumPdf>() || get<RooAddPdf>()) {
+        return components().Remove(child);
     }
 
 
-    throw std::runtime_error("Not implemented");
+    throw std::runtime_error("Removal not implemented for this type of object");
 }
 
 xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
@@ -3980,16 +3998,16 @@ std::shared_ptr<xRooNode> xRooNode::parentPdf() const {
     return out;
 }
 
-xRooNode xRooNode::Reduce(const std::string& _range) {
-    if(auto s = get<RooSimultaneous>(); s) {
-        auto rangeName = (_range.empty()) ? GetRange() : _range;
-        if (!rangeName.empty()) {
+xRooNode xRooNode::reduced(const std::string& _range) {
+    auto rangeName = (_range.empty()) ? GetRange() : _range;
+    if (!rangeName.empty()) {
+        std::vector<TString> patterns;
+        TStringToken pattern(rangeName, ",");
+        while (pattern.NextToken()) {
+            patterns.emplace_back(pattern);
+        }
+        if(auto s = get<RooSimultaneous>(); s) {
             // need to reduce the RooSimultaneous until fix: https://github.com/root-project/root/issues/8231
-            std::vector<TString> chanPatterns;
-            TStringToken pattern(rangeName, ",");
-            while (pattern.NextToken()) {
-                chanPatterns.emplace_back(pattern);
-            }
             auto& _cat = const_cast<RooAbsCategoryLValue&>(s->indexCat());
             auto newPdf = std::make_shared<RooSimultaneous>(TString::Format("%s_reduced",GetName()),"Reduced model",_cat);
             for(auto& c : variations()) {
@@ -3997,7 +4015,7 @@ xRooNode xRooNode::Reduce(const std::string& _range) {
                 cName = cName(cName.Index('=')+1,cName.Length());
                 _cat.setLabel(cName);
                 bool matchAny=false;
-                for(auto& p : chanPatterns) {
+                for(auto& p : patterns) {
                     if (cName.Contains(TRegexp(p,true))) { matchAny=true; break; }
                     if (_cat.hasRange(p) && _cat.inRange(p)) { matchAny=true; break; }
                 }
@@ -4006,8 +4024,24 @@ xRooNode xRooNode::Reduce(const std::string& _range) {
                 }
             }
             return xRooNode(newPdf,fParent);
+        } else if(auto r = get<RooRealSumPdf>(); r) {
+            // create a new sum pdf and add only the components matching the pattern given
+            xRooNode out(std::make_shared<RooRealSumPdf>(*r),fParent);
+            // go through functions and remove any that don't match pattern
+            RooArgList funcs; // to be removed
+            for(auto& c : out.components()) {
+                bool matchAny = false;
+                for(auto& p : patterns) {
+                    if(TString(c->GetName()).Contains(TRegexp(p,true))) { matchAny = true; break; }
+                }
+                if(!matchAny) funcs.add(*c->get<RooAbsArg>());
+            }
+            for(auto& c : funcs) out.Remove(*c);
+            out.browse();
+            return out;
         }
     }
+
     return xRooNode();
 }
 
@@ -4239,6 +4273,7 @@ void xRooNode::sterilize() {
         } else if (auto p = dynamic_cast<ParamHistFunc*>(obj); p) {
             p->_normIntMgr.reset();
         }
+        if( obj ) { obj->setValueDirty(); }
     };
     if (auto w = get<RooWorkspace>();w) {
         // sterilizing all nodes
@@ -4262,6 +4297,7 @@ void xRooNode::sterilize() {
         delete itr;
     };
     func(dynamic_cast<RooAbsArg*>(get()));
+    _doSterilize(dynamic_cast<RooAbsArg*>(get())); // sterilize self
 }
 
 TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binStart, int binEnd) const {
@@ -5670,8 +5706,9 @@ std::pair<double,double> xRooNode::IntegralAndError(const RooFitResult* fr) cons
     } else if( auto p = dynamic_cast<RooAbsReal*>(get()); p) {
         // only integrate over observables we actually depend on
         auto f = std::shared_ptr<RooAbsReal>(p->createIntegral(*std::unique_ptr<RooArgSet>( p->getObservables(_obs)))); // did use x here before using obs
+        double tmp = out; // coef value ... not included in Error of integral we just created (doesn't have coefs() return)
         out *= f->getVal();
-        err = xRooNode(f,*this).GetBinError(-1);
+        err = tmp * xRooNode(f,*this).GetBinError(-1,fr);
     } else {
         out = std::numeric_limits<double>::quiet_NaN();
     }
