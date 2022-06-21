@@ -315,9 +315,9 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     fitConfig.MinimizerOptions().SetMinimizerType("Minuit2");
     fitConfig.MinimizerOptions().SetErrorDef(0.5); // ensures errors are +/- 1 sigma ..IMPORTANT
     fitConfig.MinimizerOptions().SetMaxFunctionCalls(
-            0);  // calls per iteration. if left as 0 will set automatically to 500*nPars below
+            -1);  // calls per iteration. if left as 0 will set automatically to 500*nPars below
     fitConfig.MinimizerOptions().SetMaxIterations(
-            0); // if left as 0 will set automatically to 500*nPars
+            -1); // if left as 0 will set automatically to 500*nPars
     fitConfig.MinimizerOptions().SetStrategy(0);
     //fitConfig.MinimizerOptions().SetTolerance(
     //        1); // default is 0.01 (i think) but roominimizer uses 1 as default - use specify with ROOT::Math::MinimizerOptions::SetDefaultTolerance(..)
@@ -328,12 +328,45 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     extraOpts->SetValue("StrategySequence", "012");
     extraOpts->SetValue("LogSize",0); // length of log to capture and save
     extraOpts->SetValue("BoundaryCheck",0.); // if non-zero, warn if any post-fit value is close to boundary (e.g. 0.01 = within 1%)
+    extraOpts->SetValue("TrackProgress",30); // seconds between output to log of evaluation progress
     return fFitConfig;
 }
 
 #include "RooAbsTestStatistic.h"
 #include "TPRegexp.h"
 #include "RooStringVar.h"
+
+
+#include "RooRealProxy.h"
+
+class ProgressMonitor : public RooAbsReal {
+  public:
+    ProgressMonitor(RooAbsReal& f, int interval=30) : RooAbsReal(Form("progress_%s",f.GetName()),""), fFunc("func","func",this,f), fInterval(interval) {
+        s.Start();
+    }
+    virtual ~ProgressMonitor() { };
+    ProgressMonitor(const ProgressMonitor& other, const char* name=0) : RooAbsReal(other,name), fFunc("func",this,other.fFunc),fInterval(other.fInterval) { }
+    virtual TObject* clone(const char* newname) const override { return new ProgressMonitor(*this,newname); }
+
+    double evaluate() const override {
+        double out = fFunc;
+        counter++;
+        if(s.RealTime() > fInterval) {
+            s.Reset();
+            std::cerr << (counter) << ") " << TDatime().AsString() << " : " << out << std::endl;
+        } else {
+            s.Continue();
+        }
+        return out;
+    }
+  private:
+    RooRealProxy fFunc;
+    mutable int counter=0;
+    //double minVal = std::numeric_limits<double>::infinity();
+    //double prevMin = std::numeric_limits<double>::infinity();
+    mutable int fInterval=0; // time in seconds before next report
+    mutable TStopwatch s;
+};
 
 std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std::shared_ptr<ROOT::Fit::FitConfig>& _fitConfig) {
 
@@ -443,7 +476,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
     //Note: AsymptoticCalculator enforces not less than 1 on tolerance - should we do so too?
 
     if (_progress) {
-        //_nll = new ProgressMonitor(*_nll, _progress);
+        _nll = new ProgressMonitor(*_nll, _progress);
     }
 
 
@@ -660,7 +693,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         }
 
         if (_progress) {
-            //delete _nll;
+            delete _nll;
         }
     }
     if (out && !logs.empty()) {
