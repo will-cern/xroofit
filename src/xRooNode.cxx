@@ -1203,9 +1203,9 @@ xRooNode xRooNode::shallowCopy(const std::string& name, std::shared_ptr<xRooNode
 void xRooNode::Print(Option_t *opt) const {
     TString sOpt(opt);
     int depth=0;
-    if(sOpt.Contains("depth")) {
-        depth = TString(sOpt(sOpt.Index("depth")+5,sOpt.Length())).Atoi();
-        sOpt.ReplaceAll(TString::Format("depth%d",depth),"");
+    if(sOpt.Contains("depth=")) {
+        depth = TString(sOpt(sOpt.Index("depth=")+6,sOpt.Length())).Atoi();
+        sOpt.ReplaceAll(TString::Format("depth=%d",depth),"");
     }
     int indent=0;
     if(sOpt.Contains("indent")) {
@@ -1229,22 +1229,37 @@ void xRooNode::Print(Option_t *opt) const {
         }
     }
     const_cast<xRooNode*>(this)->browse();
-    int i=0;
+    std::vector<std::string> folderNames;
     for (auto &k : *this) {
-        for(int i=0;i<indent;i++) std::cout << " ";
-        std::cout << i++ << ") " << k->GetName() << " : ";
-        if(k->get()){
-            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) /*|| k->get<RooProduct>()*/) {
-                k->coords(); // move to coords before printing (in case this matters)
-                k->get()->Print(opt); // assumes finishes with an endl
-            }
-            else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
-            if(depth>0) {
-                k->Print(sOpt + TString::Format("depth%dindent%d",depth-1,indent+1));
-            }
+        if(std::find(folderNames.begin(),folderNames.end(),k->fFolder)==folderNames.end()) {
+            folderNames.push_back(k->fFolder);
         }
-        else std::cout << " NULL " << std::endl;
     }
+    for(auto& f : folderNames) {
+        int i=0; int iindent = indent;
+        if(!f.empty()) {
+            for(int j=0;j<indent;j++) std::cout << " ";
+            std::cout << f << std::endl;
+            iindent += 1;
+        }
+        for (auto &k : *this) {
+            if (k->fFolder != f) { i++; continue; }
+            for(int j=0;j<iindent;j++) std::cout << " ";
+            std::cout << i++ << ") " << k->GetName() << " : ";
+            if(k->get()){
+                if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) /*|| k->get<RooProduct>()*/) {
+                    k->coords(); // move to coords before printing (in case this matters)
+                    k->get()->Print(opt); // assumes finishes with an endl
+                }
+                else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
+                if(depth>0) {
+                    k->Print(sOpt + TString::Format("depth%dindent%d",depth-1,iindent+1));
+                }
+            }
+            else std::cout << " NULL " << std::endl;
+        }
+    }
+
 }
 
 
