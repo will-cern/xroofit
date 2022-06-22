@@ -4041,7 +4041,7 @@ xRooNode xRooNode::reduced(const std::string& _range) {
             return xRooNode(newPdf,fParent);
         } else if(auto r = get<RooRealSumPdf>(); r) {
             // create a new sum pdf and add only the components matching the pattern given
-            xRooNode out(std::make_shared<RooRealSumPdf>(*r),fParent);
+            xRooNode out(std::shared_ptr<TObject>(r->Clone()),fParent);
             // go through functions and remove any that don't match pattern
             RooArgList funcs; // to be removed
             for(auto& c : out.components()) {
@@ -5724,7 +5724,11 @@ std::pair<double,double> xRooNode::IntegralAndError(const RooFitResult* fr) cons
         double tmp = out; // coef value ... not included in Error of integral we just created (doesn't have coefs() return)
         out *= f->getVal();
         err = tmp * xRooNode(f,*this).GetBinError(-1,fr);
-    } else {
+    } else if (auto d = get<RooAbsData>()) {
+        auto vals = GetBinContents(1,0); // returns all bins
+        for(auto& v : vals) out += v;
+        err = 0; // should this be sqrt(sum(v^2)) or something similar
+    }else {
         out = std::numeric_limits<double>::quiet_NaN();
     }
     return std::make_pair(out,err);

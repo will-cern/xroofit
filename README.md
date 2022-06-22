@@ -1,6 +1,6 @@
 # xRooFit
 
-Extra tools for RooFit projects.
+Extra tools for RooFit projects. Home of the xRooBrowser.
 
 ## Setup
 
@@ -22,11 +22,113 @@ Then you just need to ensure the library is available in your environment path v
 ```asm
 source setup.sh
 ```
-xRooFit works in both c++ and python, with the experience in python being particularly pleasant as you don't have to think about object types.
+xRooFit works in both c++ and python, with the experience in python being particularly pleasant as you don't have to think about object types. The examples below are, unless otherwise stated/obvious, given in python. 
 
 ### Using xRooNode
 
 The `xRooNode` class is designed to wrap over an existing TObject and provide functionality to aid with interacting with that object. It is a smart pointer to the object, so you have access to all the methods of the object too.
+
+The methods of `xRooNode` can be split into the following categories:
+
+  * Graph Modifiers: Methods that alter the 'graph' representing the likelihood function
+    * Add(...)
+    * Multiply(...)
+    * Vary(...)
+    * Constrain(...)
+    * Remove(...)
+    * Combine(...)
+  * Object Modifiers: Modify the object that the node wraps (or potentially one of the objects of the child nodes)
+    * SetBinContent(bin, value [,parName, parVal] )
+    * SetBinError(bin, value)
+    * SetBinData(bin, value [,dsName])
+    * SetXaxis(...)
+  * Related nodes: these methods return the collection of nodes related to this node in some way:
+    * components(): the nodes that "add" together to make this node
+    * factors(): the nodes that "multiply" together to make this node
+    * variations(): the nodes that are "varied" (interpolated) between to make this node
+    * constraints(): the nodes that "constrain" this node (relevant for parameter nodes)
+    * datasets(): the nodes that represent data corresponding to this node (relevant for pdf nodes)
+      <br><br>
+    * deps(): the fundmanental (leaf) nodes that this node depends on (=obs()+pars())
+    * obs(): the leaf nodes that are observables
+    * globs(): the leaf nodes that are global observables (subset of observables)
+    * pars(): the leaf nodes that are parameters (i.e. not observables)
+    * vars(): the parameters that are not constant and so would float in a fit
+    * args(): the parameters that are currently constant
+    * reduced("list,of,regex"): for certain nodes this can return a subset shallow-copy of the node e.g. a node with some of the samples of a channel.
+  * Inspection methods: tell you about the node and move to related nodes
+    * `Print([option])`: lists the child nodes (components/factors/variations) of a node. Use "depth=X" where X is a number as the option to control depth
+    * `Draw([option])`: Visualize the node. Option can control what is visualized depending on the type of node. Some examples:
+      * E : adds error bars (based on the currently loaded fit result)
+      * RATIO : adds a ratio pad
+      * SIGNIFICANCE : adds a significance pad
+      * PULL : adds an interactive pull plot (to investigate parameter dependencies)
+    * `Browse()`: open the node in an Browser window for interactive exploration.
+    * `find("name")` (or `operator[]("name")`): return child with given name. Name can be in the form of a path to navigate quickly e.g. "modelName/channelName/sampleName".
+
+### Workspace Inspection
+
+Existing workspaces can be explored using the inspection methods above. The fastest way to get started is to browse interactively though. This can be done with:
+
+```python
+w = ROOT.xRooNode(ws); w.Browse(); # if ws is an existing RooWorkspace
+```
+or
+```python
+w = ROOT.xRooNode("filename"); w.Browse(); # if "filename" is an existing file containing a workspace
+```
+or even just open the workspace file and then do:
+```python
+b = ROOT.xRooBrowser()
+```
+which will browse all workspaces of all open files. 
+
+### Model Fitting
+
+Once you have identified the model and dataset you want to build a likelihood from you can quickly build the NLL function for it like this:
+
+```python
+nll = w["modelName"].nll("datasetName")
+```
+
+This can be subsequently minimized using:
+```python
+fr = nll.minimize()
+```
+
+The `fr` is a (wrapped version of) a `RooFitResult`. It can be visualized with `fr.Draw()` for example, or inspected with `fr.Print()`
+
+Asymmetric errors can be calculated for any floating parameters by flagging these parameters before the minimization:
+
+```python
+w["modelName"].pars()["parameterName"].setAttribute("minos",True)
+```
+
+The post-fit values and errors are accessible in the usual RooFit way e.g:
+
+```python
+fr.floatParsFinal().find("parameterName").Print()
+```
+
+Saving fit results for later analysis is also automatic (including fit configuration information for debugging) if you simply open a ROOT file in a writable state (and make it the current 'directory'):
+
+```python
+f = ROOT.TFile("myFits.root","RECREATE")
+fr = nll.minimize() # copy of fr has been saved into myFits.root
+```
+
+A subsequent call to minimize will actually retrieve the previous fit! By opening previously saved files you can also 'recover' your previous results this way.
+
+Scanning a profile likelihood ratio is accomplished using what xRooFit calls a "hypothesis space". Hypothesis spaces are ultimately intended for calculating frequentist confidence limits through hypothesis testing, but since such tests using a profile likelihood ratio as their test statistic a "hypothesis space" can be constructed and drawn in order to scan the profile likelihood ratio as follows:
+
+```python
+hs = nll.hypoSpace("parameterName",nPoints,low,high)
+hs.Draw("ALP") # draws a TGraph of the profile likelihood ratio  of the given points
+```
+
+### Workspace Building
+    
+Starting from an empty workspace, how can you start to build up a likelihood?
 
 As a quick example, suppose you wish to create a workspace with two channels, CR and SR, with two and one bin respectively, and two components, sig and bkg, where bkg has a systematic uncertainty on it that will be represented by a nuisance parameter (alpha) and sig is scaled by a floating normalization factor (mu), then here's some code to create that (in python):
 
@@ -54,39 +156,7 @@ w["simPdf/SR"].SetBinData(1,4) # example of setting data
 w.Browse() # explore what you've created
 ```
 
-The methods of `xRooNode` can be split into the following categories:
-
-  * Graph Modifiers: Methods that alter the 'graph' representing the likelihood function
-    * Add(...)
-    * Multiply(...)
-    * Vary(...)
-    * Constrain(...)
-    * Remove(...)
-    * Combine(...)
-    * Reduce(...)
-  * Object Modifiers: Modify the object that the node wraps (or potentially one of the objects of the child nodes)
-    * SetBinContent(bin, value [,parName, parVal] )
-    * SetBinError(bin, value)
-    * SetBinData(bin, value [,dsName])
-    * SetXaxis(...)
-  * Related nodes: these methods return the collection of nodes related to this node in some way:
-    * components(): the nodes that "add" together to make this node
-    * factors(): the nodes that "multiply" together to make this node
-    * variations(): the nodes that are "varied" (interpolated) between to make this node
-    * constraints(): the nodes that "constrain" this node (relevant for parameter nodes)
-    * datasets(): the nodes that represent data corresponding to this node (relevant for pdf nodes)
-      <br><br>
-    * deps(): the fundmanental (leaf) nodes that this node depends on (=obs()+pars())
-    * obs(): the leaf nodes that are observables
-    * globs(): the leaf nodes that are global observables (subset of observables)
-    * pars(): the leaf nodes that are parameters (i.e. not observables)
-    * vars(): the parameters that are not constant and so would float in a fit
-    * args(): the parameters that are currently constant
-  * Inspection methods: tell you about the node
-    * Print(): lists the child nodes (components/factors/variations) of a node
-    * Draw(): Visualize the node
-    
-Starting from an empty workspace, how can you start to build up a likelihood?
+Let's break this down. We start by creating the workspace and wrapping it in an xRooNode to get the extra functionality.
 
 ```python
 ws = ROOT.RooWorkspace("w","w");w = ROOT.xRooNode(ws)

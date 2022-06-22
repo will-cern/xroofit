@@ -754,6 +754,7 @@ std::string collectionContents(const RooAbsCollection& coll) {
         if(!out.empty()) out += ",";
         out += c->GetName();
         if(auto v = dynamic_cast<RooAbsReal*>(c); v) out += TString::Format("=%g",v->getVal());
+        else if(auto cc = dynamic_cast<RooAbsCategory*>(c); cc) out += TString::Format("=%s",cc->getLabel());
         else if(auto s = dynamic_cast<RooStringVar*>(c); v) out += TString::Format("=%s",s->getVal());
     }
     return out;
