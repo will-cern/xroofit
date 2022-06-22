@@ -64,7 +64,14 @@ The methods of `xRooNode` can be split into the following categories:
       * SIGNIFICANCE : adds a significance pad
       * PULL : adds an interactive pull plot (to investigate parameter dependencies)
     * `Browse()`: open the node in an Browser window for interactive exploration.
-    * `find("name")` (or `operator[]("name")`): return child with given name. Name can be in the form of a path to navigate quickly e.g. "modelName/channelName/sampleName".
+    * `find("name")` (or `operator[]("name")`): return child with given name. 
+    Name can be in the form of a path to navigate quickly e.g. "modelName/channelName/sampleName".
+      <br><br>
+    * `GetBinContent(bin)`: return the bin value of this node
+    * `GetBinData(bin[,dsName])`: return bin value of dataset of this node (equivalent to `datasets()[dsName].GetBinContent(bin)`)
+    * `GetBinError(bin[,fitResult])`: get the error in given bin, using the covariances in the optionally provided fit result (returns uncorrelated error calculation otherwise using the currently loaded parameter errors).
+    * `IntegralAndError([fitResult])`: return the integral and error (as a pair) of the current node, calculating the error with the given fitResult covariance matrix if provided (returns uncorrelated error calculation otherwise).
+    * `GetXaxis()` : returns a `TAxis` for the x-axis observable of this node, if relevant.
 
 ### Workspace Inspection
 
