@@ -36,6 +36,8 @@
 #include "TLegend.h"
 #include "TKey.h"
 
+#include "xRooFitVersion.h"
+
 xRooNLLVar xRooFit::createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts) {
     return xRooNLLVar(pdf,data,nllOpts);
 }
@@ -314,6 +316,8 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     fitConfig.SetParabErrors(true); // will use to run hesse after fit
     fitConfig.MinimizerOptions().SetMinimizerType("Minuit2");
     fitConfig.MinimizerOptions().SetErrorDef(0.5); // ensures errors are +/- 1 sigma ..IMPORTANT
+    fitConfig.SetParabErrors(true); // runs HESSE
+    fitConfig.SetMinosErrors(true); // computes asymmetric errors on any parameter with the "minos" attribute set
     fitConfig.MinimizerOptions().SetMaxFunctionCalls(
             -1);  // calls per iteration. if left as 0 will set automatically to 500*nPars below
     fitConfig.MinimizerOptions().SetMaxIterations(
@@ -329,6 +333,8 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     extraOpts->SetValue("LogSize",0); // length of log to capture and save
     extraOpts->SetValue("BoundaryCheck",0.); // if non-zero, warn if any post-fit value is close to boundary (e.g. 0.01 = within 1%)
     extraOpts->SetValue("TrackProgress",30); // seconds between output to log of evaluation progress
+    extraOpts->SetValue("xRooFitVersion",GIT_COMMIT_HASH); // not really options but here for logging purposes
+    //extraOpts->SetValue("ROOTVersion",ROOT_VERSION_CODE); - not needed as should by part of the ROOT TFile definition
     return fFitConfig;
 }
 
@@ -499,6 +505,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         bool hesse = _minimizer.fitter()->Config().ParabErrors();
         _minimizer.fitter()->Config().SetParabErrors(
                 false); // turn "off" so can run hesse as a separate step, appearing in status
+        bool minos = _minimizer.fitter()->Config().MinosErrors();
+        _minimizer.fitter()->Config().SetMinosErrors(false);
         bool restore = !_minimizer.fitter()->Config().UpdateAfterFit();
         _minimizer.fitter()->Config().SetUpdateAfterFit(true); // note: seems to always take effect
 
@@ -681,6 +689,10 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         //before returning we will override _minLL with the actual NLL value ... offsetting could have messed up the value
         out->setMinNLL(_nll->getVal());
 
+        // ensure no asymm errors on any pars
+        for(auto o : out->floatParsFinal()) {
+            if(auto v = dynamic_cast<RooRealVar*>(o); v) v->removeAsymError();
+        }
 
 
         // minimizer may have slightly altered the fitConfig (e.g. unavailable minimizer etc) so update for that ...
@@ -688,17 +700,27 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
             fitConfig.MinimizerOptions().SetMinimizerType(actualFirstMinimizer);
         }
 
+        if (_progress) {
+            delete _nll;
+        }
+
+        // call minos if requested on any parameters
+        if(status==0 && minos) {
+              std::unique_ptr<RooAbsCollection> pars(floatPars->selectByAttrib("minos",true));
+              for(auto p : *pars) {
+                  xRooFit::minos(nll,*out,p->GetName(),myFitConfig);
+              }
+        }
+
         if (restore) {
             *floatPars = out->floatParsInit();
         }
 
-        if (_progress) {
-            delete _nll;
-        }
+
     }
     if (out && !logs.empty()) {
         // save logs to StringVar in constPars list
-        out->_constPars->addClone(RooStringVar("log","log",logs.c_str()));
+        out->_constPars->addClone(RooStringVar(".log","log",logs.c_str()));
     }
 
     if(out && cacheDir && cacheDir->IsWritable()) {
@@ -717,7 +739,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
                 dir->WriteObject(&fitConfig,configName.data());
             }
             // add the fitConfig name into the fit result before writing, so can retrieve in future
-            out->_constPars->addClone(RooStringVar("fitConfigName","fitConfigName",configName.c_str()));
+            out->_constPars->addClone(RooStringVar(".fitConfigName","fitConfigName",configName.c_str()));
 
             dir->WriteObject(out,out->GetName());
 
@@ -727,6 +749,158 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
     return std::shared_ptr<const RooFitResult>(out);
 
 }
+
+
+// calculate asymmetric errors, if required, on the named parameter that was floating in the fit
+// returns status code. 0 = all good, 1 = failure, ...
+int xRooFit::minos(RooAbsReal& nll, const RooFitResult& ufit, const char* parName, const std::shared_ptr<ROOT::Fit::FitConfig>& _fitConfig) {
+
+    auto par = dynamic_cast<RooRealVar*>(std::unique_ptr<RooArgSet>(nll.getVariables())->find(parName));
+    if(!par) return 1;
+
+    auto par_hat = dynamic_cast<RooRealVar*>(ufit.floatParsFinal().find(parName));
+    if(!par_hat) return 1;
+
+    auto myFitConfig = _fitConfig ? _fitConfig : createFitConfig();
+    auto& fitConfig = *myFitConfig;
+
+    bool pErrs = fitConfig.ParabErrors();
+    fitConfig.SetParabErrors(false);
+    double mErrs = fitConfig.MinosErrors();
+    fitConfig.SetMinosErrors(false);
+
+    double val_best = par_hat->getVal();
+    double val_err = (par_hat->hasError() ? par_hat->getError() : -1);
+    double nll_min = ufit.minNll();
+
+    int status = 0;
+
+    bool isConst = par->isConstant();
+    par->setConstant(true);
+
+
+    auto findValue = [&](double val_guess, double N_sigma = 1, double precision=0.002, int printLevel=0) {
+        double tmu;
+        int nrItr = 0;
+        double sigma_guess = fabs((val_guess-val_best)/N_sigma);
+        double val_pre = val_guess-10*precision*sigma_guess; // this is just to set value st. guarantees will do at least one iteration
+        bool lastOverflow = false, lastUnderflow = false;
+        while (fabs(val_pre-val_guess) > precision*sigma_guess) {
+            val_pre = val_guess;
+            if (val_guess > 0 && par->getMax() < val_guess) par->setMax(2*val_guess);
+            if (val_guess < 0 && par->getMin() > val_guess) par->setMin(2*val_guess);
+            par->setVal(val_guess);
+            auto result = xRooFit::minimize(nll,myFitConfig);
+            if(!result) { status = 1; return std::numeric_limits<double>::quiet_NaN(); }
+            double nll_val = result->minNll();
+            status += result->status()*10;
+            tmu = 2*(nll_val-nll_min);
+            sigma_guess = fabs(val_guess-val_best)/sqrt(tmu);
+
+
+            if (tmu <= 0) {
+                // found an alternative or improved minima
+                std::cout << "Warning: Alternative best-fit of " << par->GetName() << " @ " << val_guess <<
+                          " vs " << val_best << std::endl;
+                double new_guess = val_guess + (val_guess - val_best);
+                val_best = val_guess;
+                val_guess = new_guess;
+                sigma_guess = fabs((val_guess-val_best)/N_sigma);
+                val_pre = val_guess-10*precision*sigma_guess;
+                status = (status/10)*10 + 1;
+                continue;
+            }
+
+
+            double corr = /*damping_factor**/(val_pre - val_best - N_sigma*sigma_guess);
+
+
+
+            // subtract off the difference in the new and damped correction
+            val_guess -= corr;
+
+            if(printLevel>1) {
+                //cout << "nPars:          " << nPars << std::endl;
+                //cout << "NLL:            " << nll->GetName() << " = " << nll->getVal() << endl;
+                //cout << "delta(NLL):     " << nll->getVal()-nll_min << endl;
+                std::cout << "NLL min: " << nll_min << std::endl;
+                std::cout << "N_sigma*sigma(pre):   " << fabs(val_pre-val_best) << std::endl;
+                std::cout << "sigma(guess):   " << sigma_guess << std::endl;
+                std::cout << "par(guess):     " << val_guess+corr << std::endl;
+                std::cout << "true val:       " << val_best << std::endl;
+                std::cout << "tmu:            " << tmu << std::endl;
+                std::cout << "Precision:      " << sigma_guess*precision << std::endl;
+                std::cout << "Correction:     " << (-corr<0?" ":"") << -corr << std::endl;
+                std::cout << "N_sigma*sigma(guess): " << fabs(val_guess-val_best) << std::endl;
+                std::cout << std::endl;
+            }
+            if(val_guess > par->getMax()) {
+                if(lastOverflow) {
+                    val_guess = par->getMin();
+                    break;
+                }
+                lastOverflow = true;
+                lastUnderflow = false;
+                val_guess = par->getMax()-1e-12;
+            } else if(val_guess < par->getMin()) {
+                if(lastUnderflow) {
+                    val_guess = par->getMin();
+                    break;
+                }
+                lastOverflow = false;
+                lastUnderflow = true;
+                val_guess = par->getMin()+1e-12;
+            } else {
+                lastUnderflow = false; lastOverflow = false;
+            }
+
+            nrItr++;
+            if (nrItr > 25) {
+                status = (status/10)*10 + 3;
+                break;
+            }
+        }
+
+        if(lastOverflow) {
+            //msg().Error("findSigma","%s at upper limit of %g .. error may be underestimated (t=%g)",par->GetName(),par->getMax(),tmu);
+            status = (status/10)*10 + 2;
+        } else if(lastUnderflow) {
+            //msg().Error("findSigma","%s at lower limit of %g .. error may be underestimated (t=%g)",par->GetName(),par->getMin(),tmu);
+            status = (status/10)*10 + 2;
+        }
+
+        if(printLevel>1) std::cout << "Found sigma for nll " << nll.GetName() << ": " << (val_guess-val_best)/N_sigma << std::endl;
+        if(printLevel>1) std::cout << "Finished in " << nrItr << " iterations." << std::endl;
+        if(printLevel>1) std::cout << std::endl;
+        return (val_guess-val_best)/N_sigma;
+    };
+
+
+    // determine if asym error defined by temporarily setting error to nan ... will then return non-nan if defined
+
+    par_hat->setError(std::numeric_limits<double>::quiet_NaN());
+    double lo = par_hat->getErrorLo(); double hi = par_hat->getErrorHi();
+    if(std::isnan(hi)) {
+        hi = findValue(val_best + val_err,1);
+    }
+    if(std::isnan(lo)) {
+        lo = -findValue(val_best - val_err,-1);
+    }
+    dynamic_cast<RooRealVar*>(ufit.floatParsFinal().find(parName))->setAsymError(lo,hi);
+    par_hat->setError(val_err);
+
+    fitConfig.SetParabErrors(pErrs);
+    fitConfig.SetMinosErrors(mErrs);
+    par->setConstant(isConst);
+
+    const_cast<RooFitResult&>(ufit)._statusHistory.push_back(std::make_pair(std::string(TString::Format("xMINOS_%s",parName)), status));
+    const_cast<RooFitResult&>(ufit)._status += status;
+
+    return status;
+
+
+}
+
 
 TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const xRooFit::Asymptotics::PLLType& pllType) {
     TCanvas* out = nullptr;
@@ -1011,3 +1185,4 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
 
     return out;
 }
+

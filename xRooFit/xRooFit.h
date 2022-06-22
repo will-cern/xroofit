@@ -56,6 +56,7 @@ public:
     static std::shared_ptr<RooLinkedList> createNLLOptions(); // obtain instance of default nll options
 
     static std::shared_ptr<const RooFitResult> minimize(RooAbsReal& nll, const std::shared_ptr<ROOT::Fit::FitConfig>& fitConfig = nullptr);
+    static int minos(RooAbsReal& nll, const RooFitResult& ufit, const char* parName="", const std::shared_ptr<ROOT::Fit::FitConfig>& _fitConfig = nullptr);
 
     class Asymptotics {
 
