@@ -1106,7 +1106,7 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
                 band2up->SetPoint(band2up->GetN(),exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) + exp_pcls[2].GetErrorYhigh(i));
             }
             for(int i=exp_pcls[2].GetN()-1;i>=0;i--) {
-                band2up->SetPoint(band2up->GetN(),(exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) - exp_pcls[2].GetErrorYlow(i));
+                band2up->SetPoint(band2up->GetN(),exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) - exp_pcls[2].GetErrorYlow(i));
             }
             for(int i=0;i<exp_pcls[-2].GetN();i++) {
                 band2down->SetPoint(band2down->GetN(),exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) + exp_pcls[-2].GetErrorYhigh(i));
