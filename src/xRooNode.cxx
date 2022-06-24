@@ -2512,6 +2512,13 @@ xRooNode xRooNode::constraints() const {
         else ++it;
     }
 
+    // if getting constraints of a fundamental then use the constraint names instead of the par name (because would be all same otherwise)
+    if (get<RooAbsArg>() && get<RooAbsArg>()->isFundamental()) {
+        for(auto& o : out) {
+            o->TNamed::SetName(o->get()->GetName());
+        }
+    }
+
     return out;
 }
 
