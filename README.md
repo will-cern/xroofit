@@ -55,7 +55,7 @@ The methods of `xRooNode` can be split into the following categories:
     * pars(): the leaf nodes that are parameters (i.e. not observables)
     * vars(): the parameters that are not constant and so would float in a fit
     * args(): the parameters that are currently constant
-    * reduced("list,of,regex"): for certain nodes this can return a subset shallow-copy of the node e.g. a node with some of the samples of a channel.
+    * coefs(): Return the coefficients (if any) that multiply this node given its inclusion in its parent (these are distinct from factors because coefs are not children of this node - they are a bit like a context-dependent factor).
   * Inspection methods: tell you about the node and move to related nodes
     * `Print([option])`: lists the child nodes (components/factors/variations) of a node. Use "depth=X" where X is a number as the option to control depth
     * `Draw([option])`: Visualize the node. Option can control what is visualized depending on the type of node. Some examples:
@@ -63,10 +63,11 @@ The methods of `xRooNode` can be split into the following categories:
       * RATIO : adds a ratio pad
       * SIGNIFICANCE : adds a significance pad
       * PULL : adds an interactive pull plot (to investigate parameter dependencies)
-    * `Browse()`: open the node in an Browser window for interactive exploration.
+    * `Browse()`: open the node in an Browser window for interactive exploration.<br><br>
     * `find("name")` (or `operator[]("name")`): return child with given name. 
     Name can be in the form of a path to navigate quickly e.g. "modelName/channelName/sampleName".
-      <br><br>
+    * `reduced("list,of,regex")`: for certain nodes this can return a subset shallow-copy of the node e.g. a node with some of the samples of a channel.
+<br><br>
     * `GetBinContent(bin)`: return the bin value of this node
     * `GetBinData(bin[,dsName])`: return bin value of dataset of this node (equivalent to `datasets()[dsName].GetBinContent(bin)`)
     * `GetBinError(bin[,fitResult])`: get the error in given bin, using the covariances in the optionally provided fit result (returns uncorrelated error calculation otherwise using the currently loaded parameter errors).
@@ -111,10 +112,28 @@ Asymmetric errors can be calculated for any floating parameters by flagging thes
 w["modelName"].pars()["parameterName"].setAttribute("minos",True)
 ```
 
-The post-fit values and errors are accessible in the usual RooFit way e.g:
+Parameters can also be flipped from floating to constant and vice-versa in a similar fashion, e.g.:
+
+```python
+w["modelName"].pars()["parameterName"].setConstant(True)
+```
+
+The post-fit values and errors are also accessible in the usual RooFit way e.g:
 
 ```python
 fr.floatParsFinal().find("parameterName").Print()
+```
+
+Post-fit yields can be obtained for any node, taking account of the parameter covariances:
+
+```python
+w["modelName/channelName/sampleName"].IntegralAndError(fr)
+```
+
+You can even do the calculation for a group of samples by using the `reduced` method to select a subset:
+
+```python
+w["modelName/channelName/samples"].reduced("regexp1,regex*2").IntegralAndError(fr)
 ```
 
 Saving fit results for later analysis is also automatic (including fit configuration information for debugging) if you simply open a ROOT file in a writable state (and make it the current 'directory'):

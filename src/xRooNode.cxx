@@ -102,6 +102,7 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
                     });
                     if (fComp) {
                         TNamed::SetNameTitle(fComp->GetName(),fComp->GetTitle());
+                        fParent = std::make_shared<xRooNode>(_file); // keep file alive - seems necessary to save workspace again in some cases
                         break;
                     }
                 }
@@ -2035,6 +2036,14 @@ void xRooNode::SetBinContent_(int bin, double value, const char* par, double par
     }
 }
 
+void xRooNode::SetContents_(double value) {
+    try {
+        if(!SetContents(value)) throw std::runtime_error("Failed to SetContent");
+    } catch(const std::exception& e) {
+        new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
+    }
+}
+
 bool xRooNode::SetBinContent(int bin, double value, const char* par, double parVal) {
 
     // create if needed
@@ -3333,6 +3342,13 @@ xRooNode xRooNode::components() const {
             out.emplace_back(std::make_shared<xRooNode>(k.c_str(),v,*this));
             out.back()->fFolder = "!sets";
         }
+
+        std::unique_ptr<TIterator> iter( p->_snapshots.MakeIterator() );
+        RooArgSet* snap ;
+        while((snap=(RooArgSet*)iter->Next())) {
+            out.emplace_back(std::make_shared<xRooNode>(*snap,*this));
+            out.back()->fFolder = "!snapshots";
+        }
     } else if(strlen(GetName())>0 && GetName()[0]=='!' && fParent) {
         // special case of dynamic property
         if (TString(GetName())=="!.vars") {
@@ -4535,6 +4551,12 @@ double xRooNode::GetBinData(int bin, const char* dataName) {
 }
 
 std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const {
+    if(fBinNumber!=-1) {
+        if(binStart!=binEnd || !fParent) {
+            throw std::runtime_error(TString::Format("%s is a bin - only has one value",GetName()));
+        }
+        return fParent->GetBinContents(fBinNumber,fBinNumber);
+    }
     std::vector<double> out;
     if(get<RooAbsData>()) {
         auto g = BuildGraph(nullptr,true/*include points for zeros*/);
