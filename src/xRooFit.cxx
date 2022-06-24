@@ -1039,15 +1039,15 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
 
         auto testPoint = [&](double testVal) {
             auto hp = nll.hypoPoint(mu->GetName(), testVal, altVal, pllType);
-            obs_ts->AddPoint(testVal,hp.pll().first);obs_ts->SetPointError(obs_ts->GetN()-1,0,hp.pll().second);
+            obs_ts->SetPoint(obs_ts->GetN(),testVal,hp.pll().first);obs_ts->SetPointError(obs_ts->GetN()-1,0,hp.pll().second);
 
             if(nToysNull>0) {
 
             }
 
-            obs_pcls->AddPoint(testVal,(doCLs) ? hp.pCLs_asymp() : hp.pNull_asymp());
+            obs_pcls->SetPoint(obs_pcls->GetN(),testVal,(doCLs) ? hp.pCLs_asymp() : hp.pNull_asymp());
             for(auto& s : expSig) {
-                exp_pcls[s].AddPoint(testVal,(doCLs) ? hp.pCLs_asymp(s) : hp.pNull_asymp(s));
+                exp_pcls[s].SetPoint(exp_pcls[s].GetN(),testVal,(doCLs) ? hp.pCLs_asymp(s) : hp.pNull_asymp(s));
             }
             if (doCLs) Info("hypoTest","%s=%g: %s=%g sigma_mu=%g %s=%g",mu->GetName(),testVal,obs_ts->GetName(),obs_ts->GetPointY(obs_ts->GetN()-1),hp.sigma_mu().first,obs_pcls->GetName(),obs_pcls->GetPointY(obs_pcls->GetN()-1));
             else Info("hypoTest","%s=%g: %s=%g %s=%g",mu->GetName(),testVal,obs_ts->GetName(),obs_ts->GetPointY(obs_ts->GetN()-1),obs_pcls->GetName(),obs_pcls->GetPointY(obs_pcls->GetN()-1));
@@ -1086,9 +1086,9 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
 
 
 
-        obs_cls->AddPoint(getLimit(*obs_pcls),0.05);
+        obs_cls->SetPoint(obs_cls->GetN(),getLimit(*obs_pcls),0.05);
         for(auto& s : expSig) {
-            exp_cls[s].AddPoint(getLimit(exp_pcls[s]),0.05);
+            exp_cls[s].SetPoint(exp_cls[s].GetN(),getLimit(exp_pcls[s]),0.05);
         }
 
 
@@ -1102,18 +1102,18 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
             band2down->SetFillColor(kYellow);
             band2up->SetFillStyle(3005);band2down->SetFillStyle(3005);
             for(int i=0;i<exp_pcls[2].GetN();i++) {
-                band2->AddPoint(exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) - exp_pcls[2].GetErrorYlow(i));
-                band2up->AddPoint(exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) + exp_pcls[2].GetErrorYhigh(i));
+                band2->SetPoint(band2->GetN(),exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) - exp_pcls[2].GetErrorYlow(i));
+                band2up->SetPoint(band2up->GetN(),exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) + exp_pcls[2].GetErrorYhigh(i));
             }
             for(int i=exp_pcls[2].GetN()-1;i>=0;i--) {
-                band2up->AddPoint(exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) - exp_pcls[2].GetErrorYlow(i));
+                band2up->SetPoint(band2up->GetN(),(exp_pcls[2].GetPointX(i),exp_pcls[2].GetPointY(i) - exp_pcls[2].GetErrorYlow(i));
             }
             for(int i=0;i<exp_pcls[-2].GetN();i++) {
-                band2down->AddPoint(exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) + exp_pcls[-2].GetErrorYhigh(i));
+                band2down->SetPoint(band2down->GetN(),exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) + exp_pcls[-2].GetErrorYhigh(i));
             }
             for(int i=exp_pcls[-2].GetN()-1;i>=0;i--) {
-                band2->AddPoint(exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) + exp_pcls[-2].GetErrorYhigh(i));
-                band2down->AddPoint(exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) - exp_pcls[-2].GetErrorYlow(i));
+                band2->SetPoint(band2->GetN(),exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) + exp_pcls[-2].GetErrorYhigh(i));
+                band2down->SetPoint(band2down->GetN(),exp_pcls[-2].GetPointX(i),exp_pcls[-2].GetPointY(i) - exp_pcls[-2].GetErrorYlow(i));
             }
             band2->SetBit(kCanDelete); band2up->SetBit(kCanDelete); band2down->SetBit(kCanDelete);
             auto ax = (TNamed*)band2->Clone(".axis");ax->SetTitle(TString::Format("Hypothesis Test;%s",mu->GetTitle()));
@@ -1132,18 +1132,18 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
             band2down->SetFillColor(kGreen);
             band2up->SetFillStyle(3005);band2down->SetFillStyle(3005);
             for(int i=0;i<exp_pcls[1].GetN();i++) {
-                band2->AddPoint(exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) - exp_pcls[1].GetErrorYlow(i));
-                band2up->AddPoint(exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) + exp_pcls[1].GetErrorYhigh(i));
+                band2->SetPoint(band2->GetN(),exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) - exp_pcls[1].GetErrorYlow(i));
+                band2up->SetPoint(band2up->GetN(),exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) + exp_pcls[1].GetErrorYhigh(i));
             }
             for(int i=exp_pcls[1].GetN()-1;i>=0;i--) {
-                band2up->AddPoint(exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) - exp_pcls[1].GetErrorYlow(i));
+                band2up->SetPoint(band2up->GetN(),exp_pcls[1].GetPointX(i),exp_pcls[1].GetPointY(i) - exp_pcls[1].GetErrorYlow(i));
             }
             for(int i=0;i<exp_pcls[-1].GetN();i++) {
-                band2down->AddPoint(exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) + exp_pcls[-1].GetErrorYhigh(i));
+                band2down->SetPoint(band2down->GetN(),exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) + exp_pcls[-1].GetErrorYhigh(i));
             }
             for(int i=exp_pcls[-1].GetN()-1;i>=0;i--) {
-                band2->AddPoint(exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) + exp_pcls[-1].GetErrorYhigh(i));
-                band2down->AddPoint(exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) - exp_pcls[-1].GetErrorYlow(i));
+                band2->SetPoint(band2->GetN(),exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) + exp_pcls[-1].GetErrorYhigh(i));
+                band2down->SetPoint(band2down->GetN(),exp_pcls[-1].GetPointX(i),exp_pcls[-1].GetPointY(i) - exp_pcls[-1].GetErrorYlow(i));
             }
             band2->SetBit(kCanDelete); band2up->SetBit(kCanDelete); band2down->SetBit(kCanDelete);
             band2->Draw("F");
