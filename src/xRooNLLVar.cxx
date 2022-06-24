@@ -197,10 +197,9 @@ void xRooNLLVar::reinitialize() {
                     // since RooNLLVar will assume binBoundaries available (not null), we should check bin boundaries available
                     bool setBinned = false;
                     if (isBinned) {
-                        RooArgSet obs;
-                        a->getObservables(fData->get(), obs);
-                        if (obs.size() == 1) { // RooNLLVar requires exactly 1 obs
-                            auto *var = static_cast<RooRealVar *>(obs.first());
+                        std::unique_ptr<RooArgSet> obs(a->getObservables(fData->get()));
+                        if (obs->size() == 1) { // RooNLLVar requires exactly 1 obs
+                            auto *var = static_cast<RooRealVar *>(obs->first());
                             std::unique_ptr<std::list<Double_t>> boundaries{
                                     dynamic_cast<RooAbsReal *>(a)->binBoundaries(*var, var->getMin(), var->getMax())};
                             if (boundaries) {
@@ -1407,18 +1406,18 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
         for(auto& s : {1,2}) {
             std::get<0>(exp_pbands[s])->Set(0);std::get<1>(exp_pbands[s])->Set(0);std::get<2>(exp_pbands[s])->Set(0);
             for(int i=0;i<exp_pcls[s]->GetN();i++) {
-                std::get<0>(exp_pbands[s])->AddPoint(exp_pcls[s]->GetPointX(i),exp_pcls[s]->GetPointY(i) - exp_pcls[s]->GetErrorYlow(i));
-                std::get<1>(exp_pbands[s])->AddPoint(exp_pcls[s]->GetPointX(i),exp_pcls[s]->GetPointY(i) + exp_pcls[s]->GetErrorYhigh(i));
+                std::get<0>(exp_pbands[s])->SetPoint(std::get<0>(exp_pbands[s])->GetN(),exp_pcls[s]->GetPointX(i),exp_pcls[s]->GetPointY(i) - exp_pcls[s]->GetErrorYlow(i));
+                std::get<1>(exp_pbands[s])->SetPoint(std::get<1>(exp_pbands[s])->GetN(),exp_pcls[s]->GetPointX(i),exp_pcls[s]->GetPointY(i) + exp_pcls[s]->GetErrorYhigh(i));
             }
             for(int i=exp_pcls[s]->GetN()-1;i>=0;i--) {
-                std::get<1>(exp_pbands[s])->AddPoint(exp_pcls[s]->GetPointX(i),exp_pcls[s]->GetPointY(i) - exp_pcls[s]->GetErrorYlow(i));
+                std::get<1>(exp_pbands[s])->SetPoint(std::get<1>(exp_pbands[s])->GetN(),exp_pcls[s]->GetPointX(i),exp_pcls[s]->GetPointY(i) - exp_pcls[s]->GetErrorYlow(i));
             }
             for(int i=0;i<exp_pcls[-s]->GetN();i++) {
-                std::get<2>(exp_pbands[s])->AddPoint(exp_pcls[-s]->GetPointX(i),exp_pcls[-s]->GetPointY(i) + exp_pcls[-s]->GetErrorYhigh(i));
+                std::get<2>(exp_pbands[s])->SetPoint(std::get<2>(exp_pbands[s])->GetN(),exp_pcls[-s]->GetPointX(i),exp_pcls[-s]->GetPointY(i) + exp_pcls[-s]->GetErrorYhigh(i));
             }
             for(int i=exp_pcls[-s]->GetN()-1;i>=0;i--) {
-                std::get<0>(exp_pbands[s])->AddPoint(exp_pcls[-s]->GetPointX(i),exp_pcls[-s]->GetPointY(i) + exp_pcls[-s]->GetErrorYhigh(i));
-                std::get<2>(exp_pbands[s])->AddPoint(exp_pcls[-s]->GetPointX(i),exp_pcls[-s]->GetPointY(i) - exp_pcls[-s]->GetErrorYlow(i));
+                std::get<0>(exp_pbands[s])->SetPoint(std::get<0>(exp_pbands[s])->GetN(),exp_pcls[-s]->GetPointX(i),exp_pcls[-s]->GetPointY(i) + exp_pcls[-s]->GetErrorYhigh(i));
+                std::get<2>(exp_pbands[s])->SetPoint(std::get<2>(exp_pbands[s])->GetN(),exp_pcls[-s]->GetPointX(i),exp_pcls[-s]->GetPointY(i) - exp_pcls[-s]->GetErrorYlow(i));
             }
         }
     };
