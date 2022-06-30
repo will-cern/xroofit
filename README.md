@@ -2,13 +2,29 @@
 
 Extra tools for RooFit projects. Home of the xRooBrowser.
 
+xRooFit works in both c++ and python, with the experience in python being particularly pleasant as you don't have to think about object types. The examples below are, unless otherwise stated/obvious, given in python.
+
 ## Setup
 
-Ensure you have a recent ROOT release setup (e.g. 6.22 or 6.24). Also ensure you have cmake available. For ATLAS users you can get both of these with
+### Recommended setup
 
-```asm
-lsetup "views LCG_100 x86_64-centos7-gcc8-opt"
+You are recommended to use xRooFit through the [StatAnalysis](https://gitlab.cern.ch/atlas/StatAnalysis) releases, where it comes pre-compiled in the release.
+
+This software is available with e.g.:
+
+```bash
+docker run –it gitlab-registry.cern.ch/atlas/statanalysis:0-0-2
 ```
+
+or for ATLAS users:
+
+```bash
+asetup StatAnalysis,0.0.2
+```
+
+### Compiling from source
+
+Ensure you have a recent ROOT release setup (e.g. 6.22 or 6.24). Also ensure you have cmake available. 
 
 checkout the project (using your favourite git clone method), and then compile it like this:
 
@@ -22,7 +38,6 @@ Then you just need to ensure the library is available in your environment path v
 ```asm
 source setup.sh
 ```
-xRooFit works in both c++ and python, with the experience in python being particularly pleasant as you don't have to think about object types. The examples below are, unless otherwise stated/obvious, given in python. 
 
 ### Using xRooNode
 
