@@ -1214,17 +1214,17 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName, int nPoints
         return s;
     }
     for(double i = low; i<=high; i+= (high-low)/(nPoints-1)) {
-        s.fPoints.emplace_back(hypoPoint(parName,i,alt_value,pllType));
+        s.emplace_back(hypoPoint(parName,i,alt_value,pllType));
     }
     // make all hypoPoints use the same NLLVar instance
-    for(auto& p : s.fPoints) p.nllVar = s.fPoints.front().nllVar;
+    for(auto& p : s) p.nllVar = s.front().nllVar;
     return s;
 }
 
 RooArgList xRooNLLVar::xRooHypoSpace::poi() {
     RooArgList out;
-    if(!fPoints.empty()) {
-        out.add(*std::unique_ptr<RooAbsCollection>(fPoints.front().nllVar->pars()->selectCommon(fPoints.front().poi())));
+    if(!empty()) {
+        out.add(*std::unique_ptr<RooAbsCollection>(front().nllVar->pars()->selectCommon(front().poi())));
     }
     return out;
 }
@@ -1370,7 +1370,7 @@ void xRooNLLVar::xRooHypoSpace::LoadFits(const char* apath) {
                 else if(hp.fNullVal() >= hp.fAltVal()) hp.fPllType = xRooFit::Asymptotics::OneSidedPositive;
                 else hp.fPllType = xRooFit::Asymptotics::Uncapped;
 
-                fPoints.emplace_back(hp);
+                emplace_back(hp);
             }
         }
     } else {
@@ -1434,9 +1434,9 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
     TString title = TString::Format(";%s", poi().first()->GetTitle());
 
     auto pllType = xRooFit::Asymptotics::TwoSided;
-    if (!fPoints.empty() && poi().size()==1) {
+    if (!empty() && poi().size()==1) {
         auto v = dynamic_cast<RooRealVar*>(poi().first());
-        for(auto& p : fPoints) {
+        for(auto& p : *this) {
             if (p.fPllType != xRooFit::Asymptotics::TwoSided) {
                 pllType = p.fPllType;
             }
@@ -1481,7 +1481,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
     TStopwatch s; s.Start();
     std::shared_ptr<const RooFitResult> ufr;
-    for(auto& p : fPoints) {
+    for(auto& p : *this) {
         if(p.fPllType != pllType) continue; // must all have same pll type
         auto val = p.pll().first;
         if(!ufr) ufr = p.ufit();

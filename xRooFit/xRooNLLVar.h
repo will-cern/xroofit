@@ -144,7 +144,7 @@ public:
     // use alt_value = nan to skip the asimov calculations
     xRooHypoPoint hypoPoint(const char* parName, double value, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
 
-    class xRooHypoSpace : public TNamed, public TAttFill, public TAttMarker, public TAttLine {
+    class xRooHypoSpace : public TNamed, public TAttFill, public TAttMarker, public TAttLine, public std::vector<xRooHypoPoint> {
       public:
         friend class xRooNLLVar;
         xRooHypoSpace(const char* name="", const char* title="") : TNamed(name,title) { }
@@ -155,13 +155,12 @@ public:
 
         RooArgList poi();
 
-        xRooHypoPoint& point(size_t i) { return fPoints.at(i); }
+        xRooHypoPoint& point(size_t i) { return at(i); }
 
       private:
         std::shared_ptr<RooArgSet> fPars;
         std::vector<std::shared_ptr<RooArgList>> fCoords; // points with ufit and cfit defined - altHypo attribute for when fits with alt value too
 
-        std::vector<xRooHypoPoint> fPoints;
     };
 
     xRooHypoSpace hypoSpace(const char* parName, int nPoints, double low, double high, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
