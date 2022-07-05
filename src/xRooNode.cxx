@@ -5169,6 +5169,7 @@ void xRooNode::Draw(Option_t* opt) {
 
         auto t = TH1::AddDirectoryStatus();TH1::AddDirectory(false);
         auto hist = new TH1F(TString::Format(".%s_pullFrame",GetName()),fr->GetTitle(),std::max(graph->GetN(),1),-0.5,std::max(graph->GetN(),1)-0.5);
+        hist->SetStats(false);
         TH1::AddDirectory(t);
         hist->SetBit(kCanDelete);
         int i=1;
