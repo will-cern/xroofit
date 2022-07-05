@@ -1491,7 +1491,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
             auto pad = new TPad(fr->GetName(),TString::Format("%s = %g",poi().first()->GetTitle(),p.fNullVal()),0,0,1.,1);
             pad->SetNumber(out->GetN()+1); // can't use "0" for a subpad
             pad->cd();
-            xRooNode(fr).Draw();
+            xRooNode(fr).Draw("goff");
             _pad->cd();
             //_pad->GetListOfPrimitives()->AddFirst(pad);
             pad->AppendPad();
@@ -1586,7 +1586,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
         auto pad = new TPad(ufr->GetName(), "unconditional fit", 0, 0, 1., 1.);
         pad->SetNumber(-1);
         pad->cd();
-        xRooNode(ufr).Draw();
+        xRooNode(ufr).Draw("goff");
         _pad->cd();
         pad->AppendPad();
     }

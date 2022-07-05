@@ -4738,6 +4738,7 @@ void xRooNode::Draw(Option_t* opt) {
     bool hasRatio = sOpt.Contains("ratio"); sOpt.ReplaceAll("ratio","");
     bool hasSignificance = sOpt.Contains("significance"); sOpt.ReplaceAll("significance","");
     bool hasSame = sOpt.Contains("same"); sOpt.ReplaceAll("same","");
+    bool hasGoff = sOpt.Contains("goff"); sOpt.ReplaceAll("goff","");
     bool hasOverlay = sOpt.Contains("overlay");
     TString overlayName = "";
     if (hasOverlay) {
@@ -4786,7 +4787,7 @@ void xRooNode::Draw(Option_t* opt) {
         }
     }
 
-    PadRefresher padRefresh(!hasSame ? gPad : nullptr);
+    PadRefresher padRefresh((!hasSame && !hasGoff) ? gPad : nullptr);
 
     // TODO: Figure out way to adjust range for error hist so show at least 3x smallest error
     auto adjustYRange = [&](double min, double max, TH1* hh = nullptr, bool symmetrize=false) {
