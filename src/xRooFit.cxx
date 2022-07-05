@@ -473,6 +473,15 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         result->setMinNLL( _nll->getVal() );
         result->setEDM(0);
         result->setStatus(floatPars->getSize()==0 ? 0 : 1);
+
+        if(cacheDir && cacheDir->IsWritable()) {
+            // save a copy of fit result to relevant dir
+            if(!cacheDir->GetDirectory(nll.GetName())) cacheDir->mkdir(nll.GetName());
+            if(auto dir = cacheDir->GetDirectory(nll.GetName()); dir) {
+                dir->WriteObject(result.get(),result->GetName());
+            }
+        }
+
         if(printLevel < 0) RooMsgService::instance().setGlobalKillBelow(msglevel);
         return result;
     }
