@@ -178,7 +178,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
                             RooFIter iter2(pdf->serverMIterator() );
                             for (RooAbsArg *a2 = iter2.next(); a2 != 0; a2 = iter2.next()) {
                                 RooAbsReal * rrv2 = dynamic_cast<RooAbsReal *>(a2);
-                                if (rrv2 && !rrv2->dependsOn(*gob) && !rrv2->isConstant() ) {
+                                if (rrv2 && !rrv2->dependsOn(*gob) && (!rrv2->isConstant() || !rrv2->InheritsFrom("RooConstVar")) ) {
 
 
                                     // found server not depending on the gob
@@ -356,10 +356,13 @@ class ProgressMonitor : public RooAbsReal {
 
     double evaluate() const override {
         double out = fFunc;
+        if(prevMin == std::numeric_limits<double>::infinity()) prevMin = out;
+        if(!std::isnan(out)) minVal = std::min(minVal,out);
         counter++;
         if(s.RealTime() > fInterval) {
             s.Reset();
-            std::cerr << (counter) << ") " << TDatime().AsString() << " : " << out << std::endl;
+            std::cerr << (counter) << ") " << TDatime().AsString() << " : " << minVal << " Delta = " << (minVal-prevMin)<< std::endl;
+            prevMin = minVal;
         } else {
             s.Continue();
         }
@@ -368,8 +371,8 @@ class ProgressMonitor : public RooAbsReal {
   private:
     RooRealProxy fFunc;
     mutable int counter=0;
-    //double minVal = std::numeric_limits<double>::infinity();
-    //double prevMin = std::numeric_limits<double>::infinity();
+    mutable double minVal = std::numeric_limits<double>::infinity();
+    mutable double prevMin = std::numeric_limits<double>::infinity();
     mutable int fInterval=0; // time in seconds before next report
     mutable TStopwatch s;
 };
