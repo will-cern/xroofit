@@ -695,16 +695,22 @@ RooRealVar& xRooNLLVar::xRooHypoPoint::mu_hat() {
 
 double xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma) {
     if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma)==0) return 1;
-    return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal(),fNullVal(),sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
+    auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
+    if (!first_poi) return std::numeric_limits<double>::quiet_NaN();
+    return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
 }
 
 double xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma) {
     if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma)==0) return 1;
-    return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal(),fAltVal(),sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
+    auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
+    if (!first_poi) return std::numeric_limits<double>::quiet_NaN();
+    return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
 }
 
 double xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma) {
-    return (std::isnan(nSigma)) ? pll().first : xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first,mu_hat().getMin("physical"),mu_hat().getMax("physical"));
+    auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
+    if (!first_poi) return std::numeric_limits<double>::quiet_NaN();
+    return (std::isnan(nSigma)) ? pll().first : xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
 }
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma) {
@@ -735,6 +741,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
     nllVar->setData(data);
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
+    if(nllVar->fFuncGlobs) nllVar->fFuncGlobs->setAttribAll("Constant",true);
     dynamic_cast<RooRealVar*>(nllVar->fFuncVars->find(fPOIName()))->setConstant(false);
     if (fGenFit) {
         // make initial guess same as pars we generated with
@@ -771,6 +778,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::null_cfit() {
     }
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
+    if(nllVar->fFuncGlobs) nllVar->fFuncGlobs->setAttribAll("Constant",true);
     nllVar->fFuncVars->find(fPOIName())->setStringAttribute("altHypo",(!std::isnan(fAltVal())) ? TString::Format("%g",fAltVal()) : nullptr);
     if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_%s",nllVar->get()->GetName(),fGenFit->GetName(),(isExpected) ? "asimov" : "toys"));
     nllVar->get()->setStringAttribute("fitresultTitle",collectionContents(poi()).c_str());
@@ -790,6 +798,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::alt_cfit() {
     }
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
+    if(nllVar->fFuncGlobs) nllVar->fFuncGlobs->setAttribAll("Constant",true);
     *nllVar->fFuncVars = alt_poi();
     if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_%s",nllVar->get()->GetName(),fGenFit->GetName(),(isExpected) ? "asimov" : "toys"));
     nllVar->get()->setStringAttribute("fitresultTitle",collectionContents(alt_poi()).c_str());
@@ -1433,19 +1442,19 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
             }
         }
         if(pllType == xRooFit::Asymptotics::OneSidedPositive) {
-            if (v && v->hasRange("physical")) title += TString::Format(";Lower-Bound One-Sided Limit PLR");
+            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";Lower-Bound One-Sided Limit PLR");
             else if(v) title += TString::Format(";One-Sided Limit PLR");
             else title += ";q";
         } else if(pllType == xRooFit::Asymptotics::TwoSided) {
-            if (v && v->hasRange("physical")) title += TString::Format(";Lower-Bound PLR");
+            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";Lower-Bound PLR");
             else if(v) title += TString::Format(";PLR");
             else title += ";t";
         } else if(pllType == xRooFit::Asymptotics::OneSidedNegative) {
-            if (v && v->hasRange("physical")) title += TString::Format(";Lower-Bound One-Sided Discovery PLR");
+            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";Lower-Bound One-Sided Discovery PLR");
             else if(v) title += TString::Format(";One-Sided Discovery PLR");
             else title += ";r";
         } else if(pllType == xRooFit::Asymptotics::Uncapped) {
-            if (v && v->hasRange("physical")) title += TString::Format(";Lower-Bound Uncapped PLR");
+            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";Lower-Bound Uncapped PLR");
             else if(v) title += TString::Format(";Uncapped PLR");
             else title += ";s";
         } else {
@@ -1490,10 +1499,15 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
         if (std::isnan(val)) {
             if (!badPoints) {
                 badPoints = new TGraph;
-                badPoints->SetBit(kCanDelete); badPoints->SetName("badPoints"); badPoints->Draw("P");
+                badPoints->SetBit(kCanDelete); badPoints->SetName("badPoints");
+                auto _pad = gPad;
+                basePad->GetPad(1)->cd();
+                badPoints->Draw("P");
+                _pad->cd();
                 badPoints->SetMarkerStyle(5); badPoints->SetMarkerColor(kRed); badPoints->SetMarkerSize(1);
             }
             badPoints->SetPoint(badPoints->GetN(),p.fNullVal(),0);
+            basePad->GetPad(1)->Modified();
         } else{
             if (badPoints && out->GetN()) {
                 // can now position the marker on the line ...
