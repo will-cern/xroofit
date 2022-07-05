@@ -4077,6 +4077,17 @@ xRooNode xRooNode::reduced(const std::string& _range) {
             for(auto& c : funcs) out.Remove(*c);
             out.browse();
             return out;
+        } else if (!get()) {
+            // filter the children ....
+            xRooNode out(std::shared_ptr<TObject>(nullptr),fParent);
+            for(auto c : *this) {
+                bool matchAny = false;
+                for(auto& p : patterns) {
+                    if(TString(c->GetName()).Contains(TRegexp(p,true))) { matchAny = true; break; }
+                }
+                if(matchAny) out.push_back(c);
+            }
+            return out;
         }
     }
 
@@ -5163,7 +5174,7 @@ void xRooNode::Draw(Option_t* opt) {
         for(auto& l : graphLabels) { hist->GetXaxis()->SetBinLabel(i++, l); }
         for(auto& l : ugraphLabels) { hist->GetXaxis()->SetBinLabel(i++, l); }
         hist->SetMaximum(4);hist->SetMinimum(-4);
-        hist->GetXaxis()->LabelsOption("v");
+        if (graph->GetN()) hist->GetXaxis()->LabelsOption("v");
         hist->GetYaxis()->SetNdivisions(8,0,0);
         hist->GetYaxis()->SetTitle("(#hat{#theta}-#theta_{i})/#sigma_{i}");
         hAxis = hist;
