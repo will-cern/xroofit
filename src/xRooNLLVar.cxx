@@ -66,6 +66,10 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
         fOpts->Add(RooFit::GlobalObservables(*_funcGlobs).Clone());
     }
 
+    if (auto flag = dynamic_cast<RooCmdArg*>(fOpts->find("ReuseNLL"))) {
+        kReuseNLL = flag->getInt(0);
+    }
+
     // if fit range specified, and pdf is a RooSimultaneous, may need to 'reduce' the model if some of the pdfs are in range and others are not
     if (auto range = dynamic_cast<RooCmdArg*>(fOpts->find("RangeWithName"))) {
         TString rangeName = range->getString(0);
@@ -529,7 +533,7 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
 
 
     try {
-        if (nllTerm()->operMode()==RooAbsTestStatistic::MPMaster) {
+        if (!kReuseNLL || nllTerm()->operMode()==RooAbsTestStatistic::MPMaster) {
             throw std::runtime_error("not supported");
         }
         auto out = nllTerm()->setData(*_data.first, false /* clone data? */);

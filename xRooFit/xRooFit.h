@@ -26,6 +26,8 @@ class TCanvas;
 class xRooFit {
 
 public:
+    // Extra options for NLL creation:
+    static RooCmdArg ReuseNLL(bool flag); // if should try to reuse the NLL object when it changes dataset
 
     // Static methods that work with the 'first class' object types:
     //    Pdfs: RooAbsPdf

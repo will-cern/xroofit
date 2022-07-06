@@ -38,6 +38,8 @@
 
 #include "xRooFitVersion.h"
 
+RooCmdArg xRooFit::ReuseNLL(bool flag) { return RooCmdArg("ReuseNLL",flag,0,0,0,0,0,0,0); }
+
 xRooNLLVar xRooFit::createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data, const RooLinkedList& nllOpts) {
     return xRooNLLVar(pdf,data,nllOpts);
 }

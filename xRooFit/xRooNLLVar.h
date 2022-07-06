@@ -226,6 +226,6 @@ public:
     std::shared_ptr<RooAbsCollection> fFuncGlobs;
     std::string fFuncCreationLog; // messaging from when function was last created -- to save from printing to screen
 
-
+    bool kReuseNLL = true;
 
 };
