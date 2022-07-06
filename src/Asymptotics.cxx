@@ -105,6 +105,8 @@ Double_t xRooFit::Asymptotics::PValue(const IncompatFunc& compatRegions, double 
     Double_t Lambda_y = 0;
     if(std::abs(poiVal-poi_primeVal)>1e-12) Lambda_y = (poiVal-poi_primeVal)/sigma;
 
+    if (std::isnan(Lambda_y)) return -1;
+
     Double_t k_low = (lowBound == -std::numeric_limits<double>::infinity()) ? std::numeric_limits<double>::infinity() : pow((poiVal - lowBound)/sigma,2);
     Double_t k_high = (upBound == std::numeric_limits<double>::infinity()) ? std::numeric_limits<double>::infinity() : pow((upBound - poiVal)/sigma,2);
 
