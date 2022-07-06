@@ -731,9 +731,9 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::pll() {
     if (!ufit() || ufit()->status() != 0)  return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
     auto cFactor = xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
     if (cFactor == 0) return std::make_pair(0,0);
-    if (!null_cfit() || null_cfit()->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+    if (!cfit_null() || cfit_null()->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
     //std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
-    return std::make_pair(2.*cFactor*(null_cfit()->minNll()-ufit()->minNll()),2.*cFactor*sqrt(pow(null_cfit()->edm(),2)+pow(ufit()->edm(),2)));
+    return std::make_pair(2.*cFactor*(cfit_null()->minNll() - ufit()->minNll()), 2. * cFactor * sqrt(pow(cfit_null()->edm(), 2) + pow(ufit()->edm(), 2)));
     //return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
 }
 
@@ -770,7 +770,7 @@ std::string collectionContents(const RooAbsCollection& coll) {
     return out;
 }
 
-std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::null_cfit() {
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null() {
     if (fNull_cfit) return fNull_cfit;
     if (!nllVar) return nullptr;
     if(!nllVar->fFuncVars) nllVar->reinitialize();
@@ -789,7 +789,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::null_cfit() {
     return (fNull_cfit = nllVar->minimize());
 }
 
-std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::alt_cfit() {
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt() {
     if (std::isnan(fAltVal())) return nullptr;
     if (fAlt_cfit) return fAlt_cfit;
     if (!nllVar) return nullptr;
@@ -812,11 +812,11 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::alt_cfit() {
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
 
     if (!fAsimov) {
-        if (!alt_cfit() || !nllVar) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+        if (!cfit_alt() || !nllVar) return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
         if(!nllVar->fFuncVars) nllVar->reinitialize();
         AutoRestorer snap(*nllVar->fFuncVars);
-        *nllVar->fFuncVars = alt_cfit()->floatParsFinal();
-        *nllVar->fFuncVars = alt_cfit()->constPars();
+        *nllVar->fFuncVars = cfit_alt()->floatParsFinal();
+        *nllVar->fFuncVars = cfit_alt()->constPars();
         auto asimov = nllVar->generate(true);
         fAsimov = std::make_shared<xRooHypoPoint>(*this);
         fAsimov->fPllType = xRooFit::Asymptotics::TwoSided;
@@ -880,10 +880,10 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateNull(int seed) {
     out.nllVar = nllVar;
     if (!nllVar) return out;
     if(!nllVar->fFuncVars) nllVar->reinitialize();
-    *nllVar->fFuncVars = null_cfit()->floatParsFinal();
-    *nllVar->fFuncVars = null_cfit()->constPars();
+    *nllVar->fFuncVars = cfit_null()->floatParsFinal();
+    *nllVar->fFuncVars = cfit_null()->constPars();
     out.data = nllVar->generate(false,seed);
-    out.fGenFit = null_cfit();
+    out.fGenFit = cfit_null();
     return out;
 }
 
@@ -892,12 +892,12 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
     out.coords = coords; out.fPllType = fPllType; //out.fPOIName = fPOIName; out.fNullVal=fNullVal; out.fAltVal = fAltVal;
     out.nllVar = nllVar;
     if (!nllVar) return out;
-    if (!alt_cfit()) return out;
+    if (!cfit_alt()) return out;
     if(!nllVar->fFuncVars) nllVar->reinitialize();
-    *nllVar->fFuncVars = alt_cfit()->floatParsFinal();
-    *nllVar->fFuncVars = alt_cfit()->constPars();
+    *nllVar->fFuncVars = cfit_alt()->floatParsFinal();
+    *nllVar->fFuncVars = cfit_alt()->constPars();
     out.data = nllVar->generate(false,seed);
-    out.fGenFit = alt_cfit();
+    out.fGenFit = cfit_alt();
     return out;
 }
 

@@ -74,8 +74,8 @@ public:
         std::pair<double,double> pll(); // observed test statistic value
         std::pair<double,double> sigma_mu(); // estimate of sigma_mu parameter
         std::shared_ptr<const RooFitResult> ufit();
-        std::shared_ptr<const RooFitResult> null_cfit();
-        std::shared_ptr<const RooFitResult> alt_cfit();
+        std::shared_ptr<const RooFitResult> cfit_null();
+        std::shared_ptr<const RooFitResult> cfit_alt();
 
 
         std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> data;
