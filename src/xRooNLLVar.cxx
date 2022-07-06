@@ -541,7 +541,6 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
         return out;
     } catch(std::runtime_error&) {
         // happens when using MP need to rebuild the nll instead
-        reset();
         AutoRestorer snap(*fFuncVars);
         // ensure the const state is back where it was at nll construction time;
         fFuncVars->setAttribAll("Constant",false); fConstVars->setAttribAll("Constant",true);
@@ -567,7 +566,8 @@ std::shared_ptr<RooAbsReal> xRooNLLVar::func() const {
 
 void xRooNLLVar::AddOption(const RooCmdArg& opt) {
     fOpts->Add(opt.Clone(nullptr));
-    reset(); // will trigger reinitialize
+    if (std::shared_ptr<RooAbsReal>::get()) reinitialize(); // do this way to keep name of nll if user set
+    else reset(); // will trigger reinitialize
 }
 
 RooAbsData* xRooNLLVar::data() const {
