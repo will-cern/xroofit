@@ -36,16 +36,19 @@ Double_t xRooFit::Asymptotics::k(const IncompatFunc& compatRegions, double pValu
                 cFunc(_compatibilityFunction) {}
 
         double operator()(double x) const {
-            return PValue(cFunc, x, poiVal, alt_val, sigma_mu,low,high) - target;
+            double val = PValue(cFunc, x, poiVal, alt_val, sigma_mu,low,high);
+            if(val < 0) kInvalid = true;
+            return val - target;
         }
 
         double poiVal, alt_val, sigma_mu, low,high,target;
         IncompatFunc cFunc;
+        mutable bool kInvalid = false;
     };
 
     TailIntegralFunction f(poiVal, poiPrimeVal, sigma, low, high, compatRegions, targetTailIntegral);
     ROOT::Math::BrentRootFinder brf;
-    ROOT::Math::WrappedFunction<TailIntegralFunction> wf(f);
+    ROOT::Math::WrappedFunction<TailIntegralFunction&> wf(f);
 
     auto tmpLvl = gErrorIgnoreLevel;
     gErrorIgnoreLevel = kFatal;
@@ -62,6 +65,9 @@ Double_t xRooFit::Asymptotics::k(const IncompatFunc& compatRegions, double pValu
         if (brf.Solve()) {
             _prev_pll = _pll;
             _pll = brf.Root();
+        }
+        if(f.kInvalid) { // happens if problem evaluating PValue (e.g. sigma was nan)
+            _pll = std::numeric_limits<double>::quiet_NaN(); break;
         }
         //std::cout << " -- " << brf.Root() << " " << FitManager::altPValue(_pll, mu, alt_val, sigma, pllModifier()) << " >> " << wf(_pll) << std::endl;
         tryCount++;
