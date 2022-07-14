@@ -27,6 +27,8 @@
 
 #include <chrono>
 
+std::set<int> xRooNLLVar::xRooHypoPoint::allowedStatusCodes = {0};
+
 xRooNLLVar::~xRooNLLVar() {
 
 }
@@ -44,6 +46,7 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
     RooMsgService::instance().getStream(RooFit::INFO).removeTopic(RooFit::NumIntegration);
 
     fOpts = std::shared_ptr<RooLinkedList>(new RooLinkedList,[](RooLinkedList* l) { if(l) l->Delete(); delete l; } );
+    fOpts->SetName("");
 
     for(int i=0; i< opts.GetSize(); i++) {
         if (strlen(opts.At(i)->GetName())==0) continue; // skipping "none" cmds
@@ -177,6 +180,7 @@ void xRooNLLVar::Print(Option_t*) {
         std::cout << "  MinimizerOptions: " << std::endl;
         fFitConfig->MinimizerOptions().Print();
     }
+    std::cout << "Last Rebuild Log Output: " << fFuncCreationLog << std::endl;
 }
 
 #define private public
@@ -228,6 +232,7 @@ void xRooNLLVar::reinitialize() {
             for(auto& a : setNames) fPdf->_myws->removeSet(a.c_str());
         }
         this->reset( fPdf->createNLL(*fData,*fOpts) );
+        if(fPdf->_myws) { xRooNode(*fPdf->_myws).sterilize(); } // there seems to be a nasty bug somewhere that can make the cache become invalid, so clear it here
         if(oldName!="") std::shared_ptr<RooAbsReal>::get()->SetName(oldName);
         if(!origValues.empty()) {
             // need to evaluate NOW so that slaves are created while the BinnedLikelihood settings are in place
@@ -260,11 +265,31 @@ xRooNLLVar::xRooFitResult::operator const RooFitResult*() const { return fNode->
 void xRooNLLVar::xRooFitResult::Draw(Option_t* opt) { fNode->Draw(opt); }
 
 xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig>& _config) {
-    auto out = xRooFit::minimize(*get(),(_config) ? _config : fitConfig());
+    auto& nll = *get();
+    auto out = xRooFit::minimize(nll,(_config) ? _config : fitConfig());
     // add any pars that are const here that aren't in constPars list because they may have been
     // const-optimized and their values cached with the dataset, so if subsequently floated the
     // nll wont evaluate correctly
     //fConstVars.reset( fFuncVars->selectByAttrib("Constant",true) );
+
+    // if saving fits, check the nllOpts have been saved as well ...
+
+    if (out) {
+        if (strlen(fOpts->GetName())==0) fOpts->SetName(TUUID().AsString());
+        auto cacheDir = gDirectory;
+        if(cacheDir && cacheDir->IsWritable()) {
+            // save a copy of fit result to relevant dir
+            if(!cacheDir->GetDirectory(nll.GetName())) cacheDir->mkdir(nll.GetName());
+            if(auto dir = cacheDir->GetDirectory(nll.GetName()); dir) {
+                if(!dir->Get<RooLinkedList>(fOpts->GetName())) {
+                    dir->WriteObject(fOpts.get(),fOpts->GetName());
+                }
+            }
+        }
+    }
+
+
+    // before returning, flag which of the constPars were actually global observables
     if(out) {
         out->_constPars->setAttribAll("global",false);
         if(fGlobs) std::unique_ptr<RooAbsCollection>(out->_constPars->selectCommon(*fGlobs))->setAttribAll("global",true);
@@ -291,69 +316,11 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooNLLVar::fitConfig() {
     return fFitConfig;
 }
 
-std::pair<double,double> xRooNLLVar::pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType) {
-
-    // start by floating everything and consting all the const vars
-    if (!fFuncVars) {
-        reinitialize();
-    } else {
-        fFuncVars->setAttribAll("Constant",false);
-        fConstVars->setAttribAll("Constant",true);
-    }
-
-    auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
-    if (!poi) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
-
-    AutoRestorer snap(*fFuncVars);
-
-    poi->setConstant(false);
-    auto ufit = minimize();
-    if (ufit->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
-    auto cFactor = xRooFit::Asymptotics::CompatFactor(pllType, value, static_cast<RooAbsReal*>(ufit->floatParsFinal().find(parName))->getVal());
-    if (cFactor == 0) return std::make_pair(0,0);
-
-
-    poi->setConstant(true); poi->setVal(value);
-    auto cfit = minimize();
-    if (cfit->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);;
-
-    //std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
-
-    return std::make_pair(2.*cFactor*(cfit->minNll()-ufit->minNll()),2.*cFactor*sqrt(pow(cfit->edm(),2)+pow(ufit->edm(),2)));
-    //return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
+ROOT::Math::IOptions* xRooNLLVar::fitConfigOptions() {
+    if(auto conf = fitConfig(); conf) return const_cast<ROOT::Math::IOptions *>(conf->MinimizerOptions().ExtraOptions());
+    return nullptr;
 }
 
-std::pair<double,double> xRooNLLVar::sigma_mu(const char* parName, double value, double prime_value) {
-    // this estimate involves:
-    // 1. fit @ prime_value
-    // 2. get expected data
-    // 3. evaluate pll of expected data at value
-
-    // start by floating everything and consting all the const vars
-    if (!fFuncVars) {
-        reinitialize();
-    } else {
-        fFuncVars->setAttribAll("Constant",false);
-        fConstVars->setAttribAll("Constant",true);
-    }
-    auto poi = dynamic_cast<RooRealVar*>(fFuncVars->find(parName));
-    if (!poi) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
-
-    AutoRestorer _snap(*fFuncVars);
-
-    poi->setConstant(true); poi->setVal(prime_value);
-    auto cfit_prime = minimize();
-    if (cfit_prime->status () != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
-
-    auto oldData = std::make_pair(fData,(fGlobs) ? std::shared_ptr<RooAbsCollection>(fGlobs->snapshot()) : nullptr);
-
-    setData(generate(true));
-    get()->SetName(TString::Format("%s/%s_toys",get()->GetName(),cfit_prime->GetName()));
-    auto out = pll(parName,value);
-    setData(oldData);
-    return std::make_pair(std::abs(value - prime_value)/sqrt(out.first), out.second*0.5*std::abs(value - prime_value)/(out.first*sqrt(out.first)));
-
-}
 
 double xRooNLLVar::getEntryVal(size_t entry) {
     auto _data = data();
@@ -497,7 +464,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
 }
 
 Bool_t xRooNLLVar::setData(const xRooNode& data) {
-    if (!data.get<RooAbsData>()) {
+    if (data.fComp && !data.get<RooAbsData>()) {
         return false;
     }
     return setData(std::dynamic_pointer_cast<RooAbsData>(data.fComp),std::shared_ptr<const RooAbsCollection>(data.globs().argList().snapshot()));
@@ -507,7 +474,9 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
 
     if (fData == _data.first && fGlobs == _data.second) return true;
 
-    if (fGlobs && !(fGlobs->empty() && !_data.second)) { // second condition allows for no globs being a nullptr
+    auto _globs = fGlobs; // done to keep globs alive while NLL might still be alive.
+
+    if (fGlobs && !(fGlobs->empty() && !_data.second) && _data.first) { // second condition allows for no globs being a nullptr, third allow globs to remain if nullifying data
         if (!_data.second) throw std::runtime_error("Missing globs");
         // ignore 'extra' globs
         RooArgSet s;s.add(*fGlobs);
@@ -536,7 +505,9 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
         if (!kReuseNLL || nllTerm()->operMode()==RooAbsTestStatistic::MPMaster) {
             throw std::runtime_error("not supported");
         }
-        auto out = nllTerm()->setData(*_data.first, false /* clone data? */);
+        bool out = false;
+        if(_data.first) out = nllTerm()->setData(*_data.first, false /* clone data? */);
+        else reset();
         fData = _data.first;
         return out;
     } catch(std::runtime_error&) {
@@ -544,6 +515,7 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>,std::shar
         AutoRestorer snap(*fFuncVars);
         // ensure the const state is back where it was at nll construction time;
         fFuncVars->setAttribAll("Constant",false); fConstVars->setAttribAll("Constant",true);
+        std::shared_ptr<RooAbsData> __data = fData; // do this just to keep fData alive while killing previous NLLVar (can't kill data while NLL constructed with it)
         fData = _data.first;
         reinitialize();
         return true;
@@ -690,11 +662,37 @@ void xRooNLLVar::xRooHypoPoint::Print() {
 
 RooRealVar& xRooNLLVar::xRooHypoPoint::mu_hat() {
     if (ufit()) {
-        auto var = dynamic_cast<RooRealVar*>(ufit()->floatParsFinal().find(fPOIName()));
+        auto var = dynamic_cast<RooRealVar *>(ufit()->floatParsFinal().find(fPOIName()));
         if (var) return *var;
         else throw std::runtime_error("Cannot find POI");
     }
     throw std::runtime_error("Unconditional fit unavailable");
+}
+
+std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov() {
+
+    if (!fAsimov && nllVar) {
+        if(!nllVar->fFuncVars) nllVar->reinitialize();
+        AutoRestorer snap(*nllVar->fFuncVars);
+        if (!data.first && fGenFit) { // case of no data, can still compute asimov by using the GenFit which is acting as a parameter snapshot
+            *nllVar->fFuncVars = fGenFit->floatParsFinal();
+            *nllVar->fFuncVars = fGenFit->constPars();
+        } else if (!cfit_alt()) { // otherwise must have the alt fit
+            return fAsimov;
+        } else {
+            *nllVar->fFuncVars = cfit_alt()->floatParsFinal();
+            *nllVar->fFuncVars = cfit_alt()->constPars();
+        }
+        auto asimov = nllVar->generate(true);
+        fAsimov = std::make_shared<xRooHypoPoint>(*this);
+        fAsimov->fPllType = xRooFit::Asymptotics::TwoSided;
+        fAsimov->fUfit.reset();fAsimov->fNull_cfit.reset();fAsimov->fAlt_cfit.reset();
+        fAsimov->data = asimov;
+        fAsimov->fGenFit = fAlt_cfit;
+        fAsimov->isExpected = true;
+    }
+
+    return fAsimov;
 }
 
 double xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma) {
@@ -728,10 +726,10 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma) {
 
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::pll() {
-    if (!ufit() || ufit()->status() != 0)  return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+    if (!ufit() || allowedStatusCodes.find(ufit()->status())==allowedStatusCodes.end())  return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
     auto cFactor = xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
     if (cFactor == 0) return std::make_pair(0,0);
-    if (!cfit_null() || cfit_null()->status() != 0) return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+    if (!cfit_null() || allowedStatusCodes.find(cfit_null()->status())==allowedStatusCodes.end()) return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
     //std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
     return std::make_pair(2.*cFactor*(cfit_null()->minNll() - ufit()->minNll()), 2. * cFactor * sqrt(pow(cfit_null()->edm(), 2) + pow(ufit()->edm(), 2)));
     //return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
@@ -811,21 +809,11 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt() {
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
 
-    if (!fAsimov) {
-        if (!cfit_alt() || !nllVar) return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
-        if(!nllVar->fFuncVars) nllVar->reinitialize();
-        AutoRestorer snap(*nllVar->fFuncVars);
-        *nllVar->fFuncVars = cfit_alt()->floatParsFinal();
-        *nllVar->fFuncVars = cfit_alt()->constPars();
-        auto asimov = nllVar->generate(true);
-        fAsimov = std::make_shared<xRooHypoPoint>(*this);
-        fAsimov->fPllType = xRooFit::Asymptotics::TwoSided;
-        fAsimov->fUfit.reset();fAsimov->fNull_cfit.reset();fAsimov->fAlt_cfit.reset();
-        fAsimov->data = asimov;
-        fAsimov->fGenFit = fAlt_cfit;
-        fAsimov->isExpected = true;
+    if(!asimov()) {
+        std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
     }
-    auto out = fAsimov->pll();
+
+    auto out = asimov()->pll();
     return std::make_pair(std::abs(fNullVal() - fAltVal())/sqrt(out.first), out.second*0.5*std::abs(fNullVal() - fAltVal())/(out.first*sqrt(out.first)));
 }
 

@@ -18,6 +18,7 @@ class RooRealVar;
 
 #include "xRooFit.h"
 #include <map>
+#include <set>
 #include "TAttFill.h"
 #include "TAttLine.h"
 #include "TAttMarker.h"
@@ -61,14 +62,11 @@ public:
 
     void SetFitConfig(const std::shared_ptr<ROOT::Fit::FitConfig>& in) { fFitConfig = in; }
     std::shared_ptr<ROOT::Fit::FitConfig> fitConfig(); // returns fit config, or creates a default one if not existing
-
-    std::pair<double,double> pll(const char* parName, double value, const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::TwoSided);
-    std::pair<double,double> sigma_mu(const char* parName, double value, double prime_value);
-
-
+    ROOT::Math::IOptions* fitConfigOptions(); // return pointer to non-const version of the options inside the fit config
 
     class xRooHypoPoint {
     public:
+        static std::set<int> allowedStatusCodes;
         void Print();
         void Draw(Option_t* opt="");
         std::pair<double,double> pll(); // observed test statistic value
@@ -104,6 +102,8 @@ public:
         RooArgList poi();
         RooArgList alt_poi(); // values of the poi in the alt hypothesis (will be nans if not defined)
         RooRealVar& mu_hat(); // throws exception if ufit not available
+
+        std::shared_ptr<xRooHypoPoint> asimov(); // a two-sided hypoPoint with the alt hypothesis asimov dataset (used in sigma_mu() calculation)
 
         //std::string fPOIName;
         const char* fPOIName();

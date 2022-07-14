@@ -299,6 +299,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
     };
 
     out = genSubPdf(&pdf);
+    out.first->SetName(uuid);
 
     *_allVars = *_snap;
 
@@ -309,6 +310,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
 std::shared_ptr<RooLinkedList> xRooFit::createNLLOptions() {
     auto out = std::shared_ptr<RooLinkedList>(new RooLinkedList, [](RooLinkedList* l) { l->Delete(); delete l; });
     out->Add(RooFit::Offset().Clone());
+    out->Add(RooFit::Optimize(0).Clone()); // disable const-optimization at the construction step ... can happen in the minimization though
     return out;
 }
 
@@ -331,7 +333,8 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     fitConfig.MinimizerOptions().SetExtraOptions(ROOT::Math::GenAlgoOptions());
     // have to const cast to set extra options
     auto extraOpts = const_cast<ROOT::Math::IOptions *>(fitConfig.MinimizerOptions().ExtraOptions());
-    extraOpts->SetValue("StrategySequence", "012");
+    extraOpts->SetValue("OptimizeConst",1); // if 0 will disable constant term optimization and cache-and-track of the NLL
+    extraOpts->SetValue("StrategySequence", "0s01s12s2m");
     extraOpts->SetValue("LogSize",0); // length of log to capture and save
     extraOpts->SetValue("BoundaryCheck",0.); // if non-zero, warn if any post-fit value is close to boundary (e.g. 0.01 = within 1%)
     extraOpts->SetValue("TrackProgress",30); // seconds between output to log of evaluation progress
@@ -390,6 +393,9 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
     auto _nll = &nll;
 
     TString resultTitle = nll.getStringAttribute("fitresultTitle");
+    TString fitName = TUUID().AsString();
+    if(resultTitle=="") resultTitle = TUUID(fitName).GetTime().AsString();
+
     // extract any user pars from the nll too
     RooArgList fUserPars;
     if(nll.getStringAttribute("userPars")) {
@@ -529,19 +535,86 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         //gCurrentSampler = this;
         //gOldHandlerr = signal(SIGINT,toyInterruptHandlerr);
 
-        TString fitName = TUUID().AsString();
         TString actualFirstMinimizer = _minimizer.fitter()->Config().MinimizerType();
 
         int status = 0;
 
+        int constOptimize = 1;
+        _minimizer.fitter()->Config().MinimizerOptions().ExtraOptions()->GetValue("OptimizeConst",constOptimize);
+        _minimizer.optimizeConst(constOptimize ? 2 : 0);
+        if(constOptimize) {
+            nll.constOptimizeTestStatistic(RooAbsArg::ConfigChange, true); // trigger a re-evaluate of which nodes to cache-and-track
+            nll.constOptimizeTestStatistic(RooAbsArg::ValueChange, true); // update the cache values -- is this needed??
+        }
 
-        _minimizer.optimizeConst(2);
-        // todo use the fitConfig to store which pars are const etc to track the state of this ... doing what RooMinimizer does in fact
-        nll.constOptimizeTestStatistic(RooAbsArg::ConfigChange, true); // trigger a re-evaluate of which nodes to cache
-        nll.constOptimizeTestStatistic(RooAbsArg::ValueChange, true); // update the cache values -- is this needed??
-        for (int tries = 1, maxtries = 4; tries <= maxtries; ++tries) {
-            TString minim = _minimizer.fitter()->Config().MinimizerType();
-            TString algo = _minimizer.fitter()->Config().MinimizerAlgoType();
+        int sIdx = -1;
+        TString minim = _minimizer.fitter()->Config().MinimizerType();
+        TString algo = _minimizer.fitter()->Config().MinimizerAlgoType();
+        if (minim == "Minuit2") sIdx = m_strategy.Index('0' + strategy);
+        else if (minim == "Minuit") sIdx = m_strategy.Index('m');
+
+        int tries = 0; int maxtries = 4; bool first=true;
+        while(tries < maxtries && sIdx != -1) {
+            status = _minimizer.minimize(minim, algo);
+            if (first && actualFirstMinimizer != _minimizer.fitter()->Config().MinimizerType())
+                actualFirstMinimizer = _minimizer.fitter()->Config().MinimizerType();
+            first=false;
+            tries++;
+
+            // RooMinimizer loses the useful status code, so here we will override it
+            status = _minimizer.fitter()->Result().Status(); // note: Minuit failure is status code 4, minuit2 that is edm above max
+            _minimizer._statusHistory.back().second = _minimizer.fitter()->Result().Status();
+            minim = _minimizer.fitter()->Config().MinimizerType(); // may have changed value
+            if (save)
+                algNames.push_back(_minimizer.fitter()->Config().MinimizerType()
+                                   + _minimizer.fitter()->Config().MinimizerAlgoType() +
+                                   std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy()));
+            //int status = _minimizer->migrad();
+            if (status % 1000 == 0) break; //fit was good
+
+            if (_minimizer.fitter()->Result().Status() == 4 && minim != "Minuit") {
+                if (printLevel >= -1)
+                    Warning("fitTo", "%s Hit max function calls of %d", fitName.Data(),
+                            _minimizer.fitter()->Config().MinimizerOptions().MaxFunctionCalls());
+                if (autoMaxCalls) {
+                    if (printLevel >= -1) Warning("fitTo", "will try doubling this");
+                    _minimizer.fitter()->Config().MinimizerOptions().SetMaxFunctionCalls(
+                            _minimizer.fitter()->Config().MinimizerOptions().MaxFunctionCalls() * 2);
+                    _minimizer.fitter()->Config().MinimizerOptions().SetMaxIterations(
+                            _minimizer.fitter()->Config().MinimizerOptions().MaxIterations() * 2);
+                    continue;
+                }
+            }
+
+            //NOTE: minuit2 seems to distort the tolerance in a weird way, so that tol becomes 100 times smaller than specified
+            //Also note that if fits are failing because of edm over max, it can be a good idea to activate the Offset option when building nll
+            if (printLevel >= -1)
+                Warning("fitTo", "%s Status=%d (edm=%f, tol=%f, strat=%d), tries=#%d...", fitName.Data(), status,
+                        _minimizer.fitter()->Result().Edm(),
+                        _minimizer.fitter()->Config().MinimizerOptions().Tolerance(),
+                        _minimizer.fitter()->Config().MinimizerOptions().Strategy(), tries);
+
+            // decide what to do next based on strategy sequence
+            if (sIdx == m_strategy.Length()-1) {
+                break; // done
+            }
+
+            if (m_strategy(sIdx+1) == 'm') {
+                minim = "Minuit"; algo = "migradImproved";
+            } else if(m_strategy(sIdx+1) == 's') {
+                algo = "Scan";
+            } else {
+                strategy = int(m_strategy(sIdx + 1) - '0');
+                _minimizer.setStrategy(strategy);
+                minim = "Minuit2"; algo = "Migrad";
+            }
+            tries--;
+            sIdx++;
+        }
+
+        for (int tries = 5, maxtries = 4; tries <= maxtries; ++tries) {
+            minim = _minimizer.fitter()->Config().MinimizerType();
+            algo = _minimizer.fitter()->Config().MinimizerAlgoType();
             status = _minimizer.minimize(minim, algo);
             if (tries == 1 && actualFirstMinimizer != _minimizer.fitter()->Config().MinimizerType())
                 actualFirstMinimizer = _minimizer.fitter()->Config().MinimizerType();
@@ -600,6 +673,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
                 _minimizer.fitter()->Config().SetMinimizer(minim, algo);
             }
         }
+        if(constOptimize) { _minimizer.optimizeConst(0); } // doing this because saw happens in RooAbsPdf::minimizeNLL method
 
         /* Minuit2 status codes:
          * status = 0    : OK
@@ -628,7 +702,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         }
 
         //signal(SIGINT,gOldHandlerr);
-        out = _minimizer.save(fitName, (resultTitle=="") ? TUUID(fitName).GetTime().AsString() : resultTitle.Data());
+        out = _minimizer.save(fitName, resultTitle);
 
 
         if (save) {
