@@ -79,17 +79,21 @@ public:
         std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> data;
 
         // leave nSigma=NaN for observed p-value
-        double pNull_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
-        double pAlt_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
-        double pCLs_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()) { return (pNull_asymp(nSigma)==0) ? 0 : (pNull_asymp(nSigma)/pAlt_asymp(nSigma)); }
-        double ts_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
+        std::pair<double,double> pNull_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
+        std::pair<double,double> pAlt_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
+        std::pair<double,double> pCLs_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()){
+            auto null = pNull_asymp(nSigma);
+            auto alt = pAlt_asymp(nSigma);
+            return std::make_pair( (null.first==0) ? 0 : null.first/alt.first, sqrt(pow(null.second/null.first,2) + pow(alt.second/alt.first,2)));
+        }
+        std::pair<double,double> ts_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
 
         std::pair<double,double> pNull_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
         std::pair<double,double> pAlt_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
         std::pair<double,double> pCLs_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) {
             auto null = pNull_toys(nSigma);
             auto alt = pAlt_toys(nSigma);
-            return std::make_pair(null.first/alt.first, sqrt(pow(null.second/null.first,2) + pow(alt.second/alt.first,2)));
+            return std::make_pair( (null.first==0) ? 0 : null.first/alt.first, sqrt(pow(null.second/null.first,2) + pow(alt.second/alt.first,2)));
         }
         std::pair<double,double> ts_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
 

@@ -119,14 +119,14 @@ double testPoint(xRooNode w, double testValue = 1, double altValue = 0, int nToy
     auto _pll = hypoTest.pll();
     auto _sigma_mu = hypoTest.sigma_mu();
 
-    auto clsb_obs = hypoTest.pNull_asymp();
-    auto clb_obs = hypoTest.pAlt_asymp();
+    auto clsb_obs = hypoTest.pNull_asymp().first;
+    auto clb_obs = hypoTest.pAlt_asymp().first;
 
     std::cout << "obs_pll = " << _pll.first << " sigma_mu = " << _sigma_mu.first << std::endl;
     std::cout << "cls_obs = " << (clsb_obs/clb_obs) << " [ clsb_obs = " << clsb_obs << " clb_obs = " << clb_obs << " ]" << std::endl;
 
     for(int i=-2;i<=2;i++) {
-        std::cout << i << " sigma: " << hypoTest.pCLs_asymp(i) << std::endl;
+        std::cout << i << " sigma: " << hypoTest.pCLs_asymp(i).first << std::endl;
     }
 
 
@@ -224,9 +224,10 @@ TEST(test1,test1) {
 
     //old res: 0.0019764892592501124 - got without change to ranges on POI
 
+    // updte to 00188366 when realised "physical" range isnt propagated into floatParsFinal in FitResults
 
-    ASSERT_LT(res, 0.00190043 + 1e-7);
-    ASSERT_GT(res, 0.00190043 - 1e-7);
+    ASSERT_LT(res, 0.00188366 + 1e-7);
+    ASSERT_GT(res, 0.00188366 - 1e-7);
 
 }
 

@@ -1133,9 +1133,10 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
 
             }
 
-            obs_pcls->SetPoint(obs_pcls->GetN(),testVal,(doCLs) ? hp.pCLs_asymp() : hp.pNull_asymp());
+            obs_pcls->SetPoint(obs_pcls->GetN(),testVal,(doCLs) ? hp.pCLs_asymp().first : hp.pNull_asymp().first);
+            obs_pcls->SetPointError(obs_pcls->GetN()-1,0,(doCLs) ? hp.pCLs_asymp().second : hp.pNull_asymp().second);
             for(auto& s : expSig) {
-                exp_pcls[s].SetPoint(exp_pcls[s].GetN(),testVal,(doCLs) ? hp.pCLs_asymp(s) : hp.pNull_asymp(s));
+                exp_pcls[s].SetPoint(exp_pcls[s].GetN(),testVal,(doCLs) ? hp.pCLs_asymp(s).first : hp.pNull_asymp(s).first);
             }
             if (doCLs) Info("hypoTest","%s=%g: %s=%g sigma_mu=%g %s=%g",mu->GetName(),testVal,obs_ts->GetName(),obs_ts->GetPointY(obs_ts->GetN()-1),hp.sigma_mu().first,obs_pcls->GetName(),obs_pcls->GetPointY(obs_pcls->GetN()-1));
             else Info("hypoTest","%s=%g: %s=%g %s=%g",mu->GetName(),testVal,obs_ts->GetName(),obs_ts->GetPointY(obs_ts->GetN()-1),obs_pcls->GetName(),obs_pcls->GetPointY(obs_pcls->GetN()-1));

@@ -695,24 +695,32 @@ std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov() {
     return fAsimov;
 }
 
-double xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma) {
-    if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma)==0) return 1;
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma) {
+    if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma).first==0) return std::pair(1,0);
     auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
-    if (!first_poi) return std::numeric_limits<double>::quiet_NaN();
-    return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    if (!first_poi) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+    double nom = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double up = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double down = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    return std::pair(nom,std::max(std::abs(up-nom),std::abs(down-nom)));
 }
 
-double xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma) {
-    if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma)==0) return 1;
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma) {
+    if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma).first==0) return std::pair(1,0);
     auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
-    if (!first_poi) return std::numeric_limits<double>::quiet_NaN();
-    return xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma),fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    if (!first_poi) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+
+    double nom = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double up = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double down = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+
+    return std::pair(nom,std::max(std::abs(up-nom),std::abs(down-nom)));
 }
 
-double xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma) {
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma) {
     auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
-    if (!first_poi) return std::numeric_limits<double>::quiet_NaN();
-    return (std::isnan(nSigma)) ? pll().first : xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    if (!first_poi) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+    return (std::isnan(nSigma)) ? pll() : std::pair<double,double>(xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical")),0);
 }
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma) {
@@ -1184,12 +1192,12 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
         }
         if (label.Length()>0) l->AddEntry("",label,"");
         label="";
-        if (!std::isnan(pNullA) || !std::isnan(pAltA)) {
+        if (!std::isnan(pNullA.first) || !std::isnan(pAltA.first)) {
             auto pCLs = pCLs_asymp();
             label += " p_{asymp}=(";
-            label += (std::isnan(pNullA)) ? "-" : TString::Format("%g",pNullA);
-            label += (std::isnan(pAltA)) ? ",-" : TString::Format(",%g",pAltA);
-            label += (std::isnan(pCLs)) ? ",-)" : TString::Format(",%g)",pCLs);
+            label += (std::isnan(pNullA.first)) ? "-" : TString::Format("%.4f +/- %.4f",pNullA.first,pNullA.second);
+            label += (std::isnan(pAltA.first)) ? ",-" : TString::Format("%.4f +/- %.4f",pAltA.first,pAltA.second);
+            label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format("%.4f +/- %.4f",pCLs.first,pCLs.second);
         }
         if (label.Length()>0) l->AddEntry("",label,"");
 
@@ -1515,7 +1523,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
             for(auto nSig : expSig) {
                 auto pval = (doCLs) ? p.pCLs_asymp(nSig==999 ? std::numeric_limits<double>::quiet_NaN() : double(nSig)) : p.pNull_asymp(nSig==999 ? std::numeric_limits<double>::quiet_NaN() : double(nSig));
-                if (!std::isnan(pval)) {
+                if (!std::isnan(pval.first)) {
                     auto _pad = gPad;
                     bool isFirst = !(basePad->GetPad(3));
                     if (isFirst) {
@@ -1554,7 +1562,8 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
                         _pad->cd();
                     }
 
-                    exp_pcls[nSig]->SetPoint(exp_pcls[nSig]->GetN(), p.fNullVal(), pval);
+                    exp_pcls[nSig]->SetPoint(exp_pcls[nSig]->GetN(), p.fNullVal(), pval.first);
+                    exp_pcls[nSig]->SetPointError(exp_pcls[nSig]->GetN()-1, 0, pval.second);
                     if(nSig!=0 && nSig!=999) updateBands();
 
                     basePad->GetPad(3)->Modified();
