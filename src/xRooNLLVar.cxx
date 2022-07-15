@@ -1393,7 +1393,9 @@ void xRooNLLVar::xRooHypoSpace::LoadFits(const char* apath) {
             }
         }
     } else {
-        for(auto p : allpois) std::cout << "possible POI: " << p << std::endl;
+        std::cout << "possible POI: ";
+        for(auto p : allpois)  std::cout << p << ",";
+        std::cout << std::endl;
     }
 }
 
