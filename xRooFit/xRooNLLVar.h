@@ -81,11 +81,7 @@ public:
         // leave nSigma=NaN for observed p-value
         std::pair<double,double> pNull_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
         std::pair<double,double> pAlt_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
-        std::pair<double,double> pCLs_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()){
-            auto null = pNull_asymp(nSigma);
-            auto alt = pAlt_asymp(nSigma);
-            return std::make_pair( (null.first==0) ? 0 : null.first/alt.first, sqrt(pow(null.second/null.first,2) + pow(alt.second/alt.first,2)));
-        }
+        std::pair<double,double> pCLs_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
         std::pair<double,double> ts_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
 
         std::pair<double,double> pNull_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
@@ -93,7 +89,9 @@ public:
         std::pair<double,double> pCLs_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) {
             auto null = pNull_toys(nSigma);
             auto alt = pAlt_toys(nSigma);
-            return std::make_pair( (null.first==0) ? 0 : null.first/alt.first, sqrt(pow(null.second/null.first,2) + pow(alt.second/alt.first,2)));
+            double pval = (null.first==0) ? 0 : null.first/alt.first;
+            // TODO: should do error calculation like for asymp (calulate up and down separately and then take err)
+            return std::make_pair( pval, pval*sqrt(pow(null.second/null.first,2) + pow(alt.second/alt.first,2)));
         }
         std::pair<double,double> ts_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
 

@@ -701,7 +701,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma) {
     if (!first_poi) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
     double nom = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
     double up = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
-    double down = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double down = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first-ts_asymp(nSigma).second,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
     return std::pair(nom,std::max(std::abs(up-nom),std::abs(down-nom)));
 }
 
@@ -712,9 +712,28 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma) {
 
     double nom = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
     double up = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
-    double down = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double down = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first-ts_asymp(nSigma).second,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
 
     return std::pair(nom,std::max(std::abs(up-nom),std::abs(down-nom)));
+}
+
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma){
+    if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma).first==0) return std::pair(1,0);
+    auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
+    if (!first_poi) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+
+    double nom1 = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double up1 = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double down1 = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first-ts_asymp(nSigma).second,fNullVal(),fNullVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double nom2 = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double up2 = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first+ts_asymp(nSigma).second,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double down2 = xRooFit::Asymptotics::PValue(fPllType,ts_asymp(nSigma).first-ts_asymp(nSigma).second,fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+
+    auto nom = (nom1==0) ? 0 : nom1/nom2;
+    auto up = (up1==0) ? 0 : up1/up2;
+    auto down = (down1==0) ? 0 : down1/down2;
+
+    return std::make_pair(nom,std::max(std::abs(up-nom),std::abs(down-nom)));
 }
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma) {
