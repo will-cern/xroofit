@@ -411,6 +411,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
     auto _nllVars = std::unique_ptr<RooAbsCollection>(_nll->getVariables());
 
     std::unique_ptr<RooAbsCollection> constPars( _nllVars->selectByAttrib("Constant",kTRUE) );
+    constPars->add(fUserPars,true); // add here so checked for when loading from cache
     std::unique_ptr<RooAbsCollection> floatPars( _nllVars->selectByAttrib("Constant",kFALSE));
 
     int _progress = 0;
@@ -473,7 +474,6 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         result->SetName(TUUID().AsString()); result->SetTitle(resultTitle);
         result->setFinalParList( parsList );
         result->setInitParList( parsList );
-        constPars->add(fUserPars,true);
         result->setConstParList(  dynamic_cast<RooArgSet&>(*constPars) ); /* RooFitResult takes a snapshot */
         TMatrixDSym d; d.ResizeTo(parsList.size(),parsList.size());
         result->setCovarianceMatrix( d );
@@ -541,8 +541,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
 
         int constOptimize = 1;
         _minimizer.fitter()->Config().MinimizerOptions().ExtraOptions()->GetValue("OptimizeConst",constOptimize);
-        _minimizer.optimizeConst(constOptimize ? 2 : 0);
         if(constOptimize) {
+            _minimizer.optimizeConst(2);
             nll.constOptimizeTestStatistic(RooAbsArg::ConfigChange, true); // trigger a re-evaluate of which nodes to cache-and-track
             nll.constOptimizeTestStatistic(RooAbsArg::ValueChange, true); // update the cache values -- is this needed??
         }

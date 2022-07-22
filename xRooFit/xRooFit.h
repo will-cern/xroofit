@@ -1,4 +1,6 @@
 #pragma once
+#ifndef XROOFIT_XROOFIT_H
+#define XROOFIT_XROOFIT_H
 
 /**
  * This is the main include for the xRooFit project.
@@ -162,3 +164,5 @@ public:
 
 #include "xRooFit/xRooNLLVar.h"
 #include "xRooFit/xRooHypoSpace.h"
+
+#endif // include guard
