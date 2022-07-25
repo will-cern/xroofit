@@ -4437,7 +4437,6 @@ TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binS
             fr->setFinalParList(l2);
         }
 
-        RooArgList normSet = obs().argList();
 
         if (!fr->_VM || fr->_VM->GetNcols() < fr->floatParsFinal().size()) {
             TMatrixDSym cov(fr->floatParsFinal().getSize());
@@ -5808,8 +5807,6 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const RooFi
         fr->setFinalParList(l2);
     }
 
-    RooArgList normSet = obs().argList();
-
     if (!fr->_VM || fr->_VM->GetNcols() < fr->floatParsFinal().size()) {
         TMatrixDSym cov(fr->floatParsFinal().getSize());
         auto prevCov = fr->_VM;
@@ -5836,6 +5833,13 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const RooFi
 
     bool doBinWidth=false;
     auto ax = (binStart==-1&&binEnd==-1) ? nullptr : GetXaxis();
+
+    RooArgList normSet = obs().argList();
+    // to give consistency with BuildHistogram method, should be only the axis var if defined
+    if (ax) {
+        normSet.clear(); normSet.add(*dynamic_cast<RooAbsArg*>(ax->GetParent()));
+    }
+
     if (auto p = dynamic_cast<RooAbsPdf *>(o); ax && (p || _coefs.get() || o->getAttribute("density"))) {
         // pdfs of samples embedded in a sumpdf (aka have a coef) will convert their density value to a content
         doBinWidth=true;
