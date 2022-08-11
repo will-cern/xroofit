@@ -808,6 +808,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                 RooRealVar w("weightVar", "weightVar", 1);
                 _obs.add(w);
                 RooDataSet d(child.GetName(), child.GetTitle(), _obs, "weightVar");
+                d.SetBit(1<<20, _ws->allData().empty()); // sets as selected if is only ds
                 _ws->import(d);
             }
             /*if(!_ws->data(child.GetName())) {
@@ -1209,9 +1210,9 @@ void xRooNode::Print(Option_t *opt) const {
         sOpt.ReplaceAll(TString::Format("depth=%d",depth),"");
     }
     int indent=0;
-    if(sOpt.Contains("indent")) {
-        indent = TString(sOpt(sOpt.Index("indent")+6,sOpt.Length())).Atoi();
-        sOpt.ReplaceAll(TString::Format("indent%d",indent),"");
+    if(sOpt.Contains("indent=")) {
+        indent = TString(sOpt(sOpt.Index("indent=")+7,sOpt.Length())).Atoi();
+        sOpt.ReplaceAll(TString::Format("indent=%d",indent),"");
     }
     bool _more = sOpt.Contains("m");
     if (_more) sOpt.Replace(sOpt.Index("m"),1,"");
@@ -1220,7 +1221,7 @@ void xRooNode::Print(Option_t *opt) const {
         std::cout << GetPath();
         if (get() && get() != this) {
             std::cout << ": ";
-            if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental() || get<RooConstVar>())) ||
+            if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental() || get<RooConstVar>() || get<RooAbsData>())) ||
                 get<RooProduct>()) {
                 coords(); // move to coords before printing (in case this matters)
                 get()->Print(sOpt);
@@ -1248,13 +1249,13 @@ void xRooNode::Print(Option_t *opt) const {
             for(int j=0;j<iindent;j++) std::cout << " ";
             std::cout << i++ << ") " << k->GetName() << " : ";
             if(k->get()){
-                if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>())) /*|| k->get<RooProduct>()*/) {
+                if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>()||k->get<RooAbsData>())) /*|| k->get<RooProduct>()*/) {
                     k->coords(); // move to coords before printing (in case this matters)
                     k->get()->Print(opt); // assumes finishes with an endl
                 }
                 else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
-                if(depth>0) {
-                    k->Print(sOpt + TString::Format("depth%dindent%d",depth-1,iindent+1));
+                if(depth!=0) {
+                    k->Print(sOpt + TString::Format("depth=%dindent=%d",depth-1,iindent+1));
                 }
             }
             else std::cout << " NULL " << std::endl;
@@ -3764,6 +3765,11 @@ void xRooNode::SetFitResult(const RooFitResult* fr) {
     }
 }
 
+void xRooNode::SetFitResult(const xRooNode& fr) {
+    if(auto _fr = fr.get<const RooFitResult>()) { SetFitResult(_fr); }
+    else throw std::runtime_error("Not a RooFitResult");
+}
+
 xRooNode xRooNode::fitResult(const char* opt) const {
 
     if (get<RooFitResult>()) return *this;
@@ -5165,6 +5171,7 @@ void xRooNode::Draw(Option_t* opt) {
         delete ugraph;
 
         graph->SetBit(kCanDelete);
+        graph->SetMarkerStyle(20);graph->SetMarkerSize(0.5);
 
         auto t = TH1::AddDirectoryStatus();TH1::AddDirectory(false);
         auto hist = new TH1F(TString::Format(".%s_pullFrame",GetName()),fr->GetTitle(),std::max(graph->GetN(),1),-0.5,std::max(graph->GetN(),1)-0.5);
@@ -5611,7 +5618,7 @@ void xRooNode::Draw(Option_t* opt) {
         else { ratioHist->SetMaximum();ratioHist->SetMinimum(); } // resets min and max
 
 
-        double rHeight = (1. - (gPad->GetHNDC()))/(gPad->GetHNDC());
+        double rHeight = (_tmpPad->GetHNDC())/(gPad->GetHNDC());
         if (ratioHist->GetYaxis()->GetTitleFont()%10 == 2) {
             ratioHist->GetYaxis()->SetTitleSize(ratioHist->GetYaxis()->GetTitleSize() * rHeight);
             ratioHist->GetYaxis()->SetLabelSize(ratioHist->GetYaxis()->GetLabelSize() * rHeight);
