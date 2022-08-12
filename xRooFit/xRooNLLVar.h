@@ -13,6 +13,7 @@ class RooAbsReal;
 class RooNLLVar;
 class RooConstraintSum;
 class RooRealVar;
+class TGraphErrors;
 
 #include "Fit/FitConfig.h"
 
@@ -133,35 +134,52 @@ public:
         void addToys(bool alt,int nToys);
     };
 
-//    class xRooHypoTester {
-//        void AddNLLVar(xRooNLLVar &nllVar, const RooArgList &extraPars = {});
-//
-//        void LoadFile(const char *file); // load fits and toy results from a file
-//        void SaveAs(const char *file); // save results to a file
-//
-//        xRooHypoTestResult hypoTest(const char* poiName, double value, double alt_value, const xRooFit::Asymptotics::PLLType& pllType);
-//
-//    };
-
     // use alt_value = nan to skip the asimov calculations
     xRooHypoPoint hypoPoint(const char* parName, double value, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
 
     class xRooHypoSpace : public TNamed, public TAttFill, public TAttMarker, public TAttLine, public std::vector<xRooHypoPoint> {
       public:
         friend class xRooNLLVar;
-        xRooHypoSpace(const char* name="", const char* title="") : TNamed(name,title) { }
+        xRooHypoSpace(const char* name="", const char* title="");
+
+        bool AddWorkspace(const char* wsFilename, const char* extraPars="");
+
+        bool AddModel(const xRooNode& pdf, const char* validity="");
 
         void LoadFits(const char* apath);
 
         void Draw(Option_t* opt="") override;
 
         RooArgList poi();
+        std::shared_ptr<RooArgSet> pars() const { return fPars; };
+
+        xRooHypoPoint& AddPoint(const char* coords=""); //adds a new point at given coords or returns existing
 
         xRooHypoPoint& point(size_t i) { return at(i); }
 
+        // build a TGraphErrors of pValues over the existing points
+        std::shared_ptr<TGraphErrors> pValues(double nSigma=std::numeric_limits<double>::quiet_NaN(),bool cls=true);
+
+        // estimates where corresponding pValues graph becomes equal to 0.05
+        // will evaluate more points until limit is below given relative uncert
+        // linearly interpolates log(pVal) when obtaining limits.
+        std::pair<double,double> GetLimit(double nSigma=std::numeric_limits<double>::quiet_NaN(),bool cls=true, double relUncert = std::numeric_limits<double>::infinity());
+
+        std::shared_ptr<xRooNode> pdf(const RooAbsCollection& parValues) const;
+        std::shared_ptr<xRooNode> pdf(const char* parValues="") const;
+
       private:
+        static RooArgList toArgs(const char* str);
+
+        xRooFit::Asymptotics::PLLType fTestStatType = xRooFit::Asymptotics::Unknown;
         std::shared_ptr<RooArgSet> fPars;
         std::vector<std::shared_ptr<RooArgList>> fCoords; // points with ufit and cfit defined - altHypo attribute for when fits with alt value too
+
+        std::map<std::shared_ptr<xRooNode>,std::shared_ptr<xRooNLLVar>> fNlls; // existing NLL functions of added pdfs;
+
+        std::set<std::shared_ptr<xRooNode>> fWorkspaces; // added workspaces (kept open)
+
+        std::set<std::pair<std::shared_ptr<RooArgList>,std::shared_ptr<xRooNode>>> fPdfs;
 
     };
 

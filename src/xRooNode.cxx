@@ -151,6 +151,9 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
                     s->setAttribute("obs");s->setAttribute("global");
                 }
             }
+            if (TString(k).EndsWith("_POI")) {
+                v.setAttribAll("poi");
+            }
         }
         if (!_allGlobs.empty() && _ws->_namedSets.count("globalObservables") == 0) {
             _ws->defineSet("globalObservables",_allGlobs);
