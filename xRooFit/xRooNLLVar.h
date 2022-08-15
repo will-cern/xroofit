@@ -148,6 +148,9 @@ public:
 
         void LoadFits(const char* apath);
 
+        // do a profile likelihood scan over given parameter, number of points between low and high
+        int Scan(const char* parName, int nPoints, double low, double high);
+
         void Draw(Option_t* opt="") override;
 
         RooArgList poi();
@@ -158,7 +161,7 @@ public:
         xRooHypoPoint& point(size_t i) { return at(i); }
 
         // build a TGraphErrors of pValues over the existing points
-        std::shared_ptr<TGraphErrors> pValues(double nSigma=std::numeric_limits<double>::quiet_NaN(),bool cls=true);
+        std::shared_ptr<TGraphErrors> pValues(double nSigma=std::numeric_limits<double>::quiet_NaN(),bool cls=true,bool band=true,bool toys=false);
 
         // estimates where corresponding pValues graph becomes equal to 0.05
         // will evaluate more points until limit is below given relative uncert
@@ -214,16 +217,20 @@ public:
     RooAbsData* data() const; // returns the data hidden inside the NLLVar if there is some
 
 
+    // NLL = nllTerm + constraintTerm
+    // nllTerm = sum( entryVals ) + extendedTerm + simTerm [+ binnedDataTerm if activated binnedL option]
+    // this is what it should be, at least
 
-    // get the Nll value for a specific entry.
     // total nll should be all these values + constraint term + extended term + simTerm [+binnedDataTerm if activated binnedL option]
-    double getEntryVal(size_t entry);
-
     RooNLLVar* nllTerm() const;
     RooConstraintSum* constraintTerm() const;
+
+    double getEntryVal(size_t entry); // get the Nll value for a specific entry
     double extendedTerm() const;
     double simTerm() const;
     double binnedDataTerm() const;
+
+
 
     // change the dataset - will check globs are the same
     Bool_t setData(const std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>>& _data);

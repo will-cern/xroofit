@@ -27,6 +27,8 @@
 
 #include <chrono>
 
+#include "Math/GenAlgoOptions.h"
+
 std::set<int> xRooNLLVar::xRooHypoPoint::allowedStatusCodes = {0};
 
 xRooNLLVar::~xRooNLLVar() {
@@ -58,6 +60,11 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf>& pdf,
                 throw std::runtime_error("GlobalObservables mismatch");
             }
         } else {
+            if (strcmp(opts.At(i)->GetName(),"Optimize")==0) {
+                // this flag will trigger constOptimizeTestStatistic to be called on the nll in createNLL method
+                // we should ensure that the fitconfig setting is consistent with it ...
+                fitConfigOptions()->SetValue("OptimizeConst", dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
+            }
             fOpts->Add(opts.At(i)->Clone(
                     nullptr)); //nullptr needed because accessing Clone via TObject base class puts "" instead, so doesnt copy names
         }
@@ -531,6 +538,13 @@ std::shared_ptr<RooAbsReal> xRooNLLVar::func() const {
         // TODO: currently changes to globs also triggers this since the vars includes globs (vars are the non-obs pars)
         //std::cout << "Reinitializing because of change of const parameters:" << f->contentsString() << std::endl;
         const_cast<xRooNLLVar*>(this)->reinitialize();
+
+        // note ... it may be sufficient here to do:
+        //nll.constOptimizeTestStatistic(RooAbsArg::ConfigChange, constOptimize>1 /* do tracking too if >1 */); // trigger a re-evaluate of which nodes to cache-and-track
+        //nll.constOptimizeTestStatistic(RooAbsArg::ValueChange, constOptimize>1); // update the cache values -- is this needed??
+        // this forces the optimization to be redone
+        // for now leave as a reinitialize though, until had a chance to test this properly
+
     }
     if (fGlobs && fFuncGlobs) {*fFuncGlobs = *fGlobs; fFuncGlobs->setAttribAll("Constant",true);}
     return *this;
@@ -771,7 +785,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
     if(nllVar->fFuncGlobs) nllVar->fFuncGlobs->setAttribAll("Constant",true);
-    dynamic_cast<RooRealVar*>(nllVar->fFuncVars->find(fPOIName()))->setConstant(false);
+    std::unique_ptr<RooAbsCollection>(nllVar->fFuncVars->selectCommon(poi()))->setAttribAll("Constant",false); // float the poi
     if (fGenFit) {
         // make initial guess same as pars we generated with
         nllVar->fFuncVars->assignValueOnly(fGenFit->constPars());
@@ -837,7 +851,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt() {
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
 
     if(!asimov()) {
-        std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+        return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
     }
 
     auto out = asimov()->pll();
