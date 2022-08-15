@@ -1228,6 +1228,7 @@ void xRooNode::Print(Option_t *opt) const {
                 get<RooProduct>()) {
                 coords(); // move to coords before printing (in case this matters)
                 get()->Print(sOpt);
+                //std::cout << std::endl;
             } else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
         } else if (!get()) {
             std::cout << std::endl;
@@ -1254,7 +1255,8 @@ void xRooNode::Print(Option_t *opt) const {
             if(k->get()){
                 if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>()||k->get<RooAbsData>())) /*|| k->get<RooProduct>()*/) {
                     k->coords(); // move to coords before printing (in case this matters)
-                    k->get()->Print(opt); // assumes finishes with an endl
+                    k->get()->Print(sOpt); // assumes finishes with an endl
+                    //std::cout << std::endl;
                 }
                 else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
                 if(depth!=0) {
@@ -3905,7 +3907,7 @@ const char* xRooNode::GetRange() const {
         if(auto o = _parent->get<RooAbsArg>(); o && o->getStringAttribute("range")) out = o->getStringAttribute("range");
         _parent = _parent->fParent;
     }
-    return out.empty() ? nullptr : out.c_str();
+    return out.c_str();
 }
 
 #include "TRegexp.h"
@@ -3937,7 +3939,7 @@ xRooNLLVar xRooNode::nll(const xRooNode& _data, const RooLinkedList& opts) const
     auto _opts = std::shared_ptr<RooLinkedList>(new RooLinkedList,[](RooLinkedList* l) { if(l) l->Delete(); delete l; } );
     RooArgSet _globsSet(_globs.argList());
     _opts->Add(RooFit::GlobalObservables(_globsSet).Clone());
-    if (GetRange()) _opts->Add(RooFit::Range(GetRange()).Clone());
+    if (GetRange() && strlen(GetRange())) _opts->Add(RooFit::Range(GetRange()).Clone());
 
     // copy over opts ... need to clone each so can safely delete when _opts destroyed
     for(int i=0; i< opts.GetSize(); i++) {
@@ -4929,7 +4931,7 @@ void xRooNode::Draw(Option_t* opt) {
         auto _idx = chanVar.getIndex();
         auto _range = GetRange();
         std::vector<TString> chanPatterns;
-        if (_range) {
+        if (_range && strlen(_range)) {
             TStringToken pattern(_range, ",");
             while (pattern.NextToken()) {
                 chanPatterns.emplace_back(pattern);
