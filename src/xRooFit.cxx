@@ -333,7 +333,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     fitConfig.MinimizerOptions().SetExtraOptions(ROOT::Math::GenAlgoOptions());
     // have to const cast to set extra options
     auto extraOpts = const_cast<ROOT::Math::IOptions *>(fitConfig.MinimizerOptions().ExtraOptions());
-    extraOpts->SetValue("OptimizeConst",1); // if 0 will disable constant term optimization and cache-and-track of the NLL
+    extraOpts->SetValue("OptimizeConst",2); // if 0 will disable constant term optimization and cache-and-track of the NLL. 1 = just caching, 2 = cache and track
     extraOpts->SetValue("StrategySequence", "0s01s12s2m");
     extraOpts->SetValue("LogSize",0); // length of log to capture and save
     extraOpts->SetValue("BoundaryCheck",0.); // if non-zero, warn if any post-fit value is close to boundary (e.g. 0.01 = within 1%)
@@ -436,14 +436,17 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
                 for (auto &&k: *keys) {
                     auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
                     if (cl->InheritsFrom("RooFitResult")) {
-                        if(auto cachedFit = nllDir->Get<RooFitResult>(k->GetName());cachedFit && cachedFit->floatParsFinal().equals(*floatPars)) {
+                        if(auto cachedFit = nllDir->Get<RooFitResult>(k->GetName());cachedFit) {
                             bool match=true;
-                            for(auto& p : *constPars) {
-                                auto v = dynamic_cast<RooAbsReal*>(p); if (!v) { match=false;break; };
-                                if(auto _p = dynamic_cast<RooAbsReal*>(cachedFit->constPars().find(p->GetName())); _p) {
-                                    // note: do not need global observable values to match (globals currently added to constPars list)
-                                    if(!_p->getAttribute("global") && abs(_p->getVal() - v->getVal()) > 1e-12) {
-                                        match=false; break; }
+                            if (!cachedFit->floatParsFinal().equals(*floatPars)) {match=false;}
+                            else {
+                                for(auto& p : *constPars) {
+                                    auto v = dynamic_cast<RooAbsReal*>(p); if (!v) { match=false;break; };
+                                    if(auto _p = dynamic_cast<RooAbsReal*>(cachedFit->constPars().find(p->GetName())); _p) {
+                                        // note: do not need global observable values to match (globals currently added to constPars list)
+                                        if(!_p->getAttribute("global") && abs(_p->getVal() - v->getVal()) > 1e-12) {
+                                            match=false; break; }
+                                    }
                                 }
                             }
                             if(match) {
@@ -539,12 +542,22 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
 
         int status = 0;
 
-        int constOptimize = 1;
+        int constOptimize = 2;
         _minimizer.fitter()->Config().MinimizerOptions().ExtraOptions()->GetValue("OptimizeConst",constOptimize);
         if(constOptimize) {
-            _minimizer.optimizeConst(2);
-            nll.constOptimizeTestStatistic(RooAbsArg::ConfigChange, true); // trigger a re-evaluate of which nodes to cache-and-track
-            nll.constOptimizeTestStatistic(RooAbsArg::ValueChange, true); // update the cache values -- is this needed??
+            _minimizer.optimizeConst(constOptimize);
+            // for safety force a refresh of the cache (and tracking) in the nll
+            // DO NOT do a ConfigChange ... this is just a deactivate-reactivate of caching
+            // but it seems like doing this breaks the const optimization and function is badly behaved
+            // so once its turned on never turn it off.
+            //nll.constOptimizeTestStatistic(RooAbsArg::ConfigChange, constOptimize>1 /* do tracking too if >1 */); // trigger a re-evaluate of which nodes to cache-and-track
+            // the next line seems safe to do but wont bother doing it because not bothering with above
+            // need to understand why turning the cache off and on again breaks it??
+            //nll.constOptimizeTestStatistic(RooAbsArg::ValueChange, constOptimize>1); // update the cache values -- is this needed??
+        } else {
+            // disable const optimization
+            // warning - if the nll was previously activated then it seems like deactivating may break it.
+            nll.constOptimizeTestStatistic(RooAbsArg::DeActivate);
         }
 
         int sIdx = -1;
@@ -673,7 +686,6 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
                 _minimizer.fitter()->Config().SetMinimizer(minim, algo);
             }
         }
-        if(constOptimize) { _minimizer.optimizeConst(0); } // doing this because saw happens in RooAbsPdf::minimizeNLL method
 
         /* Minuit2 status codes:
          * status = 0    : OK
@@ -700,6 +712,10 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
                 Warning("fitTo", "%s hesse status is %d", fitName.Data(), _status);
             }
         }
+
+        // DO NOT DO THIS - seems to mess with the NLL function in a way that breaks the cache - reactivating wont fix
+        //if(constOptimize) { _minimizer.optimizeConst(0); } // doing this because saw happens in RooAbsPdf::minimizeNLL method
+
 
         //signal(SIGINT,gOldHandlerr);
         out = _minimizer.save(fitName, resultTitle);
