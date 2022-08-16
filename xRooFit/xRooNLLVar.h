@@ -148,25 +148,35 @@ public:
 
         void LoadFits(const char* apath);
 
-        // do a profile likelihood scan over given parameter, number of points between low and high
-        int Scan(const char* parName, int nPoints, double low, double high);
+        // A points over given parameter, number of points between low and high
+        int AddPoints(const char* parName, int nPoints, double low, double high);
 
         void Draw(Option_t* opt="") override;
 
         RooArgList poi();
         std::shared_ptr<RooArgSet> pars() const { return fPars; };
+        RooArgList axes();
 
         xRooHypoPoint& AddPoint(const char* coords=""); //adds a new point at given coords or returns existing
 
         xRooHypoPoint& point(size_t i) { return at(i); }
 
         // build a TGraphErrors of pValues over the existing points
-        std::shared_ptr<TGraphErrors> pValues(double nSigma=std::numeric_limits<double>::quiet_NaN(),bool cls=true,bool band=true,bool toys=false);
+        // opt should include any of the following:
+        //  cls: do pCLs, otherwise do pNull
+        //  expX: do expected, X sigma (use +X or -X for contour, otherwise will return band unless X=0)
+        //  toys: pvalues from available toys
+        //  readonly: don't compute anything, just return available values
+        std::shared_ptr<TGraphErrors> BuildGraph(const char* opt);
 
         // estimates where corresponding pValues graph becomes equal to 0.05
-        // will evaluate more points until limit is below given relative uncert
         // linearly interpolates log(pVal) when obtaining limits.
-        std::pair<double,double> GetLimit(double nSigma=std::numeric_limits<double>::quiet_NaN(),bool cls=true, double relUncert = std::numeric_limits<double>::infinity());
+        // returns value and error
+        static std::pair<double,double> GetLimit(const TGraph& pValues, double target=0.05);
+
+        // will evaluate more points until limit is below given relative uncert
+
+        std::pair<double,double> GetLimit(const char* opt, double relUncert = std::numeric_limits<double>::infinity());
 
         std::shared_ptr<xRooNode> pdf(const RooAbsCollection& parValues) const;
         std::shared_ptr<xRooNode> pdf(const char* parValues="") const;
@@ -176,7 +186,7 @@ public:
 
         xRooFit::Asymptotics::PLLType fTestStatType = xRooFit::Asymptotics::Unknown;
         std::shared_ptr<RooArgSet> fPars;
-        std::vector<std::shared_ptr<RooArgList>> fCoords; // points with ufit and cfit defined - altHypo attribute for when fits with alt value too
+        std::vector<std::shared_ptr<RooArgList>> fCoords; // points with ufit and cfit defined - altVal attribute for when fits with alt value too
 
         std::map<std::shared_ptr<xRooNode>,std::shared_ptr<xRooNLLVar>> fNlls; // existing NLL functions of added pdfs;
 

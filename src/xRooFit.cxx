@@ -1097,15 +1097,15 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
     if(poi.size()==1) {
         auto mu = dynamic_cast<RooRealVar*>(poi.first());
 
-        double altVal = (mu->getStringAttribute("altHypo")) ? TString(mu->getStringAttribute("altHypo")).Atof() : std::numeric_limits<double>::quiet_NaN();
+        double altVal = (mu->getStringAttribute("altVal")) ? TString(mu->getStringAttribute("altVal")).Atof() : std::numeric_limits<double>::quiet_NaN();
 
         if (std::isnan(altVal) && mu->hasRange("physical")) {
             // use the smallest absolute value for the altValue
             altVal = mu->getMin("physical");
-            Info("hypoTest","No altHypo specified - using min of given physical range = %g",altVal);
+            Info("hypoTest","No altVal specified - using min of given physical range = %g",altVal);
         } else {
             if (!std::isnan(altVal)) Info("hypoTest", "alt hypo: %g - CLs activated", altVal);
-            else Info("hypoTest", "No altHypo found - to specify setStringAttribute(\"altHypo\",\"<value>\") on POI or set the physical range");
+            else Info("hypoTest", "No altVal found - to specify setStringAttribute(\"altVal\",\"<value>\") on POI or set the physical range");
         }
         bool doCLs = !std::isnan(altVal) && abs(mu->getMin("hypoPoints")) > altVal && abs(mu->getMax("hypoPoints")) > altVal;
 

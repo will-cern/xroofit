@@ -622,7 +622,7 @@ RooArgList xRooNLLVar::xRooHypoPoint::alt_poi() {
     for(auto a : out) {
         auto v = dynamic_cast<RooAbsRealLValue*>(a);
         if(!v) continue;
-        if(auto s = a->getStringAttribute("altHypo"); s && strlen(s)) {
+        if(auto s = a->getStringAttribute("altVal"); s && strlen(s)) {
             v->setVal(TString(s).Atof());
         } else {
             v->setVal(std::numeric_limits<double>::quiet_NaN());
@@ -822,7 +822,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null() {
     nllVar->fFuncVars->setAttribAll("Constant",false);
     *nllVar->fFuncVars = *coords; // will reconst the coords
     if(nllVar->fFuncGlobs) nllVar->fFuncGlobs->setAttribAll("Constant",true);
-    nllVar->fFuncVars->find(fPOIName())->setStringAttribute("altHypo",(!std::isnan(fAltVal())) ? TString::Format("%g",fAltVal()) : nullptr);
+    nllVar->fFuncVars->find(fPOIName())->setStringAttribute("altVal",(!std::isnan(fAltVal())) ? TString::Format("%g",fAltVal()) : nullptr);
     if(fGenFit) nllVar->get()->SetName(TString::Format("%s/%s_%s",nllVar->get()->GetName(),fGenFit->GetName(),(isExpected) ? "asimov" : "toys"));
     nllVar->get()->setStringAttribute("fitresultTitle",collectionContents(poi()).c_str());
     return (fNull_cfit = nllVar->minimize());
@@ -944,7 +944,7 @@ void xRooNLLVar::xRooHypoPoint::addToys(bool alt,int nToys) {
         if(std::isnan(std::get<1>(toys.back()))) nans++;
         times[i] = s.RealTime() - lastTime; // stops the clock
         lastTime = s.RealTime();
-        if (s.RealTime() > 3) {
+        if (s.RealTime() > 10) {
             std::cout << "\r" << TString::Format("Generated %d/%d %s hypothesis toys [%.2f toys/s]...",i+1,nToys,alt ? "alt" : "null",double(i-lasti)/s.RealTime()) << std::flush;
             lasti = i;
             s.Reset();s.Start();
@@ -992,8 +992,8 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double valu
     poi->setConstant();
     auto _snap = std::unique_ptr<RooAbsCollection>(fFuncVars->selectByAttrib("Constant",true))->snapshot();
     _snap->find(poi->GetName())->setAttribute("poi",true);
-    if(std::isnan(alt_value)) _snap->find(poi->GetName())->setStringAttribute("altHypo",nullptr);
-    else _snap->find(poi->GetName())->setStringAttribute("altHypo",TString::Format("%g",alt_value));
+    if(std::isnan(alt_value)) _snap->find(poi->GetName())->setStringAttribute("altVal",nullptr);
+    else _snap->find(poi->GetName())->setStringAttribute("altVal",TString::Format("%g",alt_value));
     if(fGlobs) _snap->remove(*fGlobs,true,true);
     out.coords.reset( _snap );
 
@@ -1086,8 +1086,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
     }
     if(_min>0) _min=0;
 
-    if(!nllVar->fFuncVars) nllVar->reinitialize();
-    auto poi = dynamic_cast<RooRealVar*>(nllVar->fFuncVars->find(fPOIName()));
+    auto _poi = dynamic_cast<RooRealVar*>(poi().first());
 
     auto makeHist = [&](bool isAlt) {
         TString title;
@@ -1113,21 +1112,21 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
         title += TString::Format("%s' = %g",fPOIName(), (isAlt) ? fAltVal() : fNullVal());
         title += TString::Format(" , N_{toys}=%lu",(isAlt) ? altToys.size() : nullToys.size());
         if (nBadOrZero > 0) title += TString::Format(" (N_{bad/0}=%lu)",nBadOrZero);
-        auto v = poi;
+        auto v = _poi;
         if(fPllType == xRooFit::Asymptotics::OneSidedPositive) {
-            if (v && v->getMin()==0) title += TString::Format(";#tilde{q}_{%s=%g}",v->GetTitle(),v->getVal());
+            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";#tilde{q}_{%s=%g}",v->GetTitle(),v->getVal());
             else if(v) title += TString::Format(";q_{%s=%g}",v->GetTitle(),v->getVal());
             else title += ";q";
         } else if(fPllType == xRooFit::Asymptotics::TwoSided) {
-            if (v && v->getMin()==0) title += TString::Format(";#tilde{t}_{%s=%g}",v->GetTitle(),v->getVal());
+            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";#tilde{t}_{%s=%g}",v->GetTitle(),v->getVal());
             else if(v) title += TString::Format(";t_{%s=%g}",v->GetTitle(),v->getVal());
             else title += ";t";
         } else if(fPllType == xRooFit::Asymptotics::OneSidedNegative) {
-            if (v && v->getMin()==0) title += TString::Format(";#tilde{r}_{%s=%g}",v->GetTitle(),v->getVal());
+            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";#tilde{r}_{%s=%g}",v->GetTitle(),v->getVal());
             else if(v) title += TString::Format(";r_{%s=%g}",v->GetTitle(),v->getVal());
             else title += ";r";
         } else if(fPllType == xRooFit::Asymptotics::Uncapped) {
-            if (v && v->getMin()==0) title += TString::Format(";#tilde{s}_{%s=%g}",v->GetTitle(),v->getVal());
+            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";#tilde{s}_{%s=%g}",v->GetTitle(),v->getVal());
             else if(v) title += TString::Format(";s_{%s=%g}",v->GetTitle(),v->getVal());
             else title += ";s";
         } else {
@@ -1177,16 +1176,16 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
     if(l) { l->AddEntry(nullHist); l->AddEntry(altHist); }
 
 
-    if (!std::isnan(sigma_mu().first) && !std::isnan(fAltVal()) && fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit) {
+    if (fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit && !std::isnan(sigma_mu().first) && !std::isnan(fAltVal())) {
         auto hh = (TH1 *) nullHist->Clone("null_asymp");
         hh->SetLineStyle(2);
         hh->Reset();
         for (int i = 1; i <= hh->GetNbinsX(); i++) {
             hh->SetBinContent(i,
                               xRooFit::Asymptotics::PValue(fPllType, hh->GetBinLowEdge(i), fNullVal(), fNullVal(),
-                                                           sigma_mu().first, poi->getMin("physical"), poi->getMax("physical")) -
+                                                           sigma_mu().first, _poi->getMin("physical"), _poi->getMax("physical")) -
                               xRooFit::Asymptotics::PValue(fPllType, hh->GetBinLowEdge(i + 1), fNullVal(),
-                                                           fNullVal(), sigma_mu().first, poi->getMin("physical"), poi->getMax("physical")));
+                                                           fNullVal(), sigma_mu().first, _poi->getMin("physical"), _poi->getMax("physical")));
         }
         hh->Draw("lsame");
         hh = (TH1 *) altHist->Clone("alt_asymp");
@@ -1195,9 +1194,9 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
         for (int i = 1; i <= hh->GetNbinsX(); i++) {
             hh->SetBinContent(i,
                               xRooFit::Asymptotics::PValue(fPllType, hh->GetBinLowEdge(i), fNullVal(), fAltVal(),
-                                                           sigma_mu().first, poi->getMin("physical"), poi->getMax("physical")) -
+                                                           sigma_mu().first, _poi->getMin("physical"), _poi->getMax("physical")) -
                               xRooFit::Asymptotics::PValue(fPllType, hh->GetBinLowEdge(i + 1), fNullVal(),
-                                                           fAltVal(), sigma_mu().first, poi->getMin("physical"), poi->getMax("physical")));
+                                                           fAltVal(), sigma_mu().first, _poi->getMin("physical"), _poi->getMax("physical")));
         }
         hh->Draw("lsame");
     }
@@ -1207,7 +1206,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
     //for(auto p : fObs) {
         auto tl = ll.DrawLine(pll().first,hAxis->GetMinimum(),pll().first,0.1);
         auto label = TString::Format("obs ts = %.4f",pll().first);
-        if (pll().second) label += TString::Format(" +/- %.4f",pll().second);
+        if (pll().second) label += TString::Format(" #pm %.4f",pll().second);
         auto pNull = pNull_toys();
         auto pAlt = pAlt_toys();
 
@@ -1219,18 +1218,18 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
         if (!std::isnan(pNull.first) || !std::isnan(pAlt.first)) {
             auto pCLs = pCLs_toys();
             label += " p_{toy}=(";
-            label += (std::isnan(pNull.first)) ? "-" : TString::Format("%.4f +/- %.4f",pNull.first,pNull.second);
-            label += (std::isnan(pAlt.first)) ? ",-" : TString::Format("%.4f +/- %.4f",pAlt.first,pAlt.second);
-            label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format("%.4f +/- %.4f",pCLs.first,pCLs.second);
+            label += (std::isnan(pNull.first)) ? "-" : TString::Format("%.4f #pm %.4f",pNull.first,pNull.second);
+            label += (std::isnan(pAlt.first)) ? ",-" : TString::Format(",%.4f #pm %.4f",pAlt.first,pAlt.second);
+            label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format(",%.4f #pm %.4f",pCLs.first,pCLs.second);
         }
         if (label.Length()>0) l->AddEntry("",label,"");
         label="";
         if (!std::isnan(pNullA.first) || !std::isnan(pAltA.first)) {
             auto pCLs = pCLs_asymp();
             label += " p_{asymp}=(";
-            label += (std::isnan(pNullA.first)) ? "-" : TString::Format("%.4f +/- %.4f",pNullA.first,pNullA.second);
-            label += (std::isnan(pAltA.first)) ? ",-" : TString::Format("%.4f +/- %.4f",pAltA.first,pAltA.second);
-            label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format("%.4f +/- %.4f",pCLs.first,pCLs.second);
+            label += (std::isnan(pNullA.first)) ? "-" : TString::Format("%.4f #pm %.4f",pNullA.first,pNullA.second);
+            label += (std::isnan(pAltA.first)) ? ",-" : TString::Format(",%.4f #pm %.4f",pAltA.first,pAltA.second);
+            label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format(",%.4f #pm %.4f",pCLs.first,pCLs.second);
         }
         if (label.Length()>0) l->AddEntry("",label,"");
 
