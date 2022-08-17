@@ -591,7 +591,9 @@ const char* xRooNode::GetIconName() const {
         if(o->InheritsFrom("RooConstVar")) return nullptr;
         if(o->InheritsFrom("RooStats::HistFactory::FlexibleInterpVar")) return "TMethodBrowsable-leaf";
         if(auto a = dynamic_cast<RooAbsReal*>(o); a) {
-            if (auto _ax = GetXaxis(); _ax && a->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(_ax->GetParent()))) {
+            if (auto _ax = GetXaxis(); _ax && (a->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(_ax->GetParent())) ||
+                    (dynamic_cast<RooAbsRealLValue*>(_ax->GetParent()) &&
+                    std::unique_ptr<std::list<double>>(a->binBoundaries(*dynamic_cast<RooAbsRealLValue*>(_ax->GetParent()),-std::numeric_limits<double>::infinity(),std::numeric_limits<double>::infinity()))))) {
                 return "TH1D";
             }
             return "TF1";
@@ -660,7 +662,7 @@ void xRooNode::Vary_(const char* what) {
 xRooNode xRooNode::Remove(const xRooNode& child) {
 
     if (strcmp(GetName(),".factors")==0 || strcmp(GetName(),".constraints")==0 || strcmp(GetName(),".components")==0) {
-        auto toRemove = (child.get<RooAbsArg>()) ? child : xRooNode(find(child.GetName())->fComp);
+        auto toRemove = (child.get<RooAbsArg>() || !find(child.GetName())) ? child : xRooNode( find(child.GetName())->fComp );
         if (auto p = fParent->get<RooProdPdf>(); p) {
             auto pdf = toRemove.get<RooAbsArg>();
             if (!pdf) pdf = p->_pdfList.find(child.GetName());
@@ -711,11 +713,20 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
                 throw std::runtime_error(TString::Format("Cannot find %s in %s", child.GetName(), fParent->GetName()));
             // remove, including coef removal ....
             auto idx = p->_funcList.index(arg);
+
             if (idx != -1) {
+
                 p->_funcList.remove(*arg);
                 p->removeServer(*arg, true);
-                p->_coefList.remove(*p->_coefList.at(idx));
+                // have to be careful removing coef because if shared will end up removing them all!!
+                std::vector<RooAbsArg*> _coefs;
+                for(int ii=0;ii<p->_coefList.size();ii++) { if(ii != idx) _coefs.push_back(p->_coefList.at(ii)); }
+                p->_coefList.removeAll();
+                for(auto& a : _coefs) p->_coefList.add(*a);
+
                 sterilize();
+            } else {
+                throw std::runtime_error(TString::Format("Cannot find %s in %s", child.GetName(), fParent->GetName()));
             }
             return xRooNode(*arg);
         }
@@ -1511,8 +1522,13 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             auto out = Multiply(acquireNew<RooStats::HistFactory::FlexibleInterpVar>(child.GetName(),child.GetTitle(),RooArgList(),1,std::vector<double>(),std::vector<double>()));
             if(get() /* can happen this is null if on a bin node with no shapeFactors*/) Info("Multiply","Scaled %s by new overall factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
             return out;
-        } else if (sOpt=="expr" && ws()) {
+        } else if (sOpt=="func" && ws()) {
             // need to get way to get dependencies .. can't pass all as causes circular dependencies issues.
+            if(auto arg = ws()->factory(TString("expr::")+child.GetName())) {
+                auto out = Multiply(*arg);
+                if(get() /* can happen this is null if on a bin node with no shapeFactors*/) Info("Multiply","Scaled %s by new func factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
+                return out;
+            }
             //auto out = Multiply( acquireNew<RooFormulaVar>("exprFactor",child.GetName(),child.GetName(),ws()->_allOwnedNodes,false /* don't check dependents all feature */) );
             //Info("Multiply","Scaled %s by new expr factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
             //return out;
@@ -3298,7 +3314,11 @@ xRooNode xRooNode::components() const {
 
     }*/ else if(auto p = get<RooWorkspace>(); p) {
         for(auto& o : p->components()) {
-            if (o->hasClients()) continue; // only top-level nodes
+            // only top-level nodes (only clients are integrals)
+            //if (o->hasClients()) continue;
+            bool hasClients = false;
+            for(auto& c : o->clients()) if(!c->InheritsFrom("RooRealIntegral")) { hasClients=true; break; }
+            if (hasClients) continue;
             out.emplace_back(std::make_shared<xRooNode>(*o,*this));
             if(o->InheritsFrom("RooAbsPdf")) out.back()->fFolder = "!models";
             else out.back()->fFolder = "!scratch";
@@ -5437,7 +5457,10 @@ void xRooNode::Draw(Option_t* opt) {
             gPad->SetGrid(1, 1);
         }
     }
-    TString dOpt = (rar->isBinnedDistribution(*vv) || rar->getAttribute("BinnedLikelihood")) ? "" : "LF2";
+    TString dOpt = (rar->isBinnedDistribution(*vv) || rar->getAttribute("BinnedLikelihood") || (dynamic_cast<RooAbsRealLValue*>(vv) &&
+            std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue*>(vv),
+                                                                  -std::numeric_limits<double>::infinity(),
+                                                                  std::numeric_limits<double>::infinity())))) ? "" : "LF2";
     if (rar==vv) dOpt="TEXT";
 
     if (hasSame) dOpt += " same";
@@ -5530,9 +5553,11 @@ void xRooNode::Draw(Option_t* opt) {
             // any title is longer than 10 chars
             int e = std::min(allTitles.begin()->size(),allTitles.rbegin()->size());
             int ii = 0;
+            bool goodPrefix = false;
             while(ii<e && allTitles.begin()->at(ii)==allTitles.rbegin()->at(ii)) {
-                ii++;
+                ii++; if (allTitles.begin()->at(ii)=='_' || allTitles.begin()->at(ii)==' ') goodPrefix=true;
             }
+            if (!goodPrefix) ii=0;
             // also find how many characters are needed to distinguish all entries (that dont have the same name)
             // then carry on up to first space or underscore
             int jj=0;
