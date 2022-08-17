@@ -551,7 +551,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph& pValu
         if (std::isnan(gr->GetPointY(i))) gr->RemovePoint(i);
         else {
             // convert to log ....
-            gr->SetPointY(i,log(gr->GetPointY(i)));
+            gr->SetPointY(i,log(std::max(gr->GetPointY(i),1e-10)));
             i++;
         }
     }
