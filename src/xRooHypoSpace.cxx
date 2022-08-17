@@ -767,6 +767,17 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
         out->Draw("ALP");
     }
 
+
+    std::pair<double,double> minMax(std::numeric_limits<double>::infinity(),-std::numeric_limits<double>::infinity());
+    for(auto& p : *this) {
+        if (p.fPllType != pllType) continue; // must all have same pll type
+        auto val = p.pll().first;
+        minMax.first = std::min(minMax.first,val);
+        minMax.second = std::max(minMax.second,val);
+    }
+    out->GetHistogram()->SetMinimum(minMax.first);
+    out->GetHistogram()->SetMaximum(minMax.second);
+
     TGraph* badPoints = nullptr;
 
     TStopwatch s; s.Start();
@@ -790,22 +801,21 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
             if (!badPoints) {
                 badPoints = new TGraph;
                 badPoints->SetBit(kCanDelete); badPoints->SetName("badPoints");
-                auto _pad = gPad;
-                mainPad->cd();
-                badPoints->Draw("P");
-                _pad->cd();
                 badPoints->SetMarkerStyle(5); badPoints->SetMarkerColor(kRed); badPoints->SetMarkerSize(1);
+                out->GetListOfFunctions()->Add(badPoints,"P");
             }
-            badPoints->SetPoint(badPoints->GetN(),p.fNullVal(),0);
+            badPoints->SetPoint(badPoints->GetN(),p.fNullVal(),out->Eval(p.fNullVal()));
             mainPad->Modified();
         } else {
-            if (badPoints && out->GetN()) {
-                // can now position the marker on the line ...
-                badPoints->SetPointY(badPoints->GetN()-1,(out->GetPointY(out->GetN()-1)+val)/2.);
-            }
             out->SetPoint(out->GetN(), p.fNullVal(), p.pll().first );
             out->SetPointError(out->GetN()-1,0,p.pll().second);
             out->Sort();
+
+            // reposition bad points
+            if(badPoints) {
+                for(int i=0;i<badPoints->GetN();i++) badPoints->SetPointY(i,out->Eval(badPoints->GetPointX(i)));
+            }
+
             mainPad->Modified();
         }
         if (s.RealTime() > 3) { // stops the clock
