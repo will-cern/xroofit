@@ -281,14 +281,14 @@ xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::
 
     // if saving fits, check the nllOpts have been saved as well ...
 
-    if (out) {
+    if (out && !nll.getAttribute("readOnly")) {
         if (strlen(fOpts->GetName())==0) fOpts->SetName(TUUID().AsString());
         auto cacheDir = gDirectory;
         if(cacheDir && cacheDir->IsWritable()) {
             // save a copy of fit result to relevant dir
             if(!cacheDir->GetDirectory(nll.GetName())) cacheDir->mkdir(nll.GetName());
             if(auto dir = cacheDir->GetDirectory(nll.GetName()); dir) {
-                if(!dir->Get<RooLinkedList>(fOpts->GetName())) {
+                if(!dir->FindKey(fOpts->GetName())) {
                     dir->WriteObject(fOpts.get(),fOpts->GetName());
                 }
             }
@@ -752,7 +752,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma){
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma) {
     auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
-    if (!first_poi) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+    if (!first_poi || (!std::isnan(nSigma) && std::isnan(sigma_mu().first))) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
     return (std::isnan(nSigma)) ? pll() : std::pair<double,double>(xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical")),0);
 }
 
@@ -1241,14 +1241,21 @@ double xRooNLLVar::xRooHypoPoint::fNullVal() { return dynamic_cast<RooAbsReal*>(
 double xRooNLLVar::xRooHypoPoint::fAltVal()  { return dynamic_cast<RooAbsReal*>(alt_poi().first())->getVal(); }
 
 xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName, int nPoints, double low, double high, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
+    xRooNLLVar::xRooHypoSpace hs = hypoSpace(parName,pllType);
+    hs.poi().first()->setStringAttribute("altVal",std::isnan(alt_value) ? nullptr : TString::Format("%f",alt_value));
+    if(nPoints>0) hs.AddPoints(parName,nPoints,low,high);
+    return hs;
+}
+
+xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName,const xRooFit::Asymptotics::PLLType& pllType) {
     xRooNLLVar::xRooHypoSpace s(parName,parName);
-    if (nPoints==1) {
-        return s;
-    }
-    for(double i = low; i<=high; i+= (high-low)/(nPoints-1)) {
-        s.emplace_back(hypoPoint(parName,i,alt_value,pllType));
-    }
-    // make all hypoPoints use the same NLLVar instance
-    for(auto& p : s) p.nllVar = s.front().nllVar;
+
+    s.AddModel(pdf());
+    auto poi = s.pars()->find(parName);
+    if (!poi) throw std::runtime_error("parameter not found");
+    s.pars()->setAttribAll("poi",false);
+    poi->setAttribute("poi",true);
+    s.fNlls[s.fPdfs.begin()->second] = std::make_shared<xRooNLLVar>(*this);
+    s.fTestStatType = pllType;
     return s;
 }
