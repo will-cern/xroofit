@@ -79,6 +79,9 @@ public:
 
         std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> data;
 
+
+        std::pair<double,double> getVal(const char* what);
+
         // leave nSigma=NaN for observed p-value
         std::pair<double,double> pNull_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
         std::pair<double,double> pAlt_asymp(double nSigma=std::numeric_limits<double>::quiet_NaN());
@@ -88,6 +91,7 @@ public:
         std::pair<double,double> pNull_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
         std::pair<double,double> pAlt_toys(double nSigma=std::numeric_limits<double>::quiet_NaN());
         std::pair<double,double> pCLs_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()) {
+            if (fNullVal()==fAltVal()) return std::pair(1,0); // by construction
             auto null = pNull_toys(nSigma);
             auto alt = pAlt_toys(nSigma);
             double pval = (null.first==0) ? 0 : null.first/alt.first;
@@ -176,7 +180,7 @@ public:
 
         // will evaluate more points until limit is below given relative uncert
 
-        std::pair<double,double> GetLimit(const char* opt, double relUncert = std::numeric_limits<double>::infinity());
+        std::pair<double,double> FindLimit(const char* opt, double relUncert = std::numeric_limits<double>::infinity());
 
         std::shared_ptr<xRooNode> pdf(const RooAbsCollection& parValues) const;
         std::shared_ptr<xRooNode> pdf(const char* parValues="") const;
