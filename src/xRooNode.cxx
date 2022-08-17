@@ -617,7 +617,7 @@ const char* xRooNode::GetNodeType() const {
     return "";
 }
 
-xRooNode xRooNode::coords() const {
+xRooNode xRooNode::coords(bool setVals) const {
     xRooNode out(".coords",nullptr,*this);
     // go up through parents looking for slice obs
     auto _p = std::shared_ptr<xRooNode>(const_cast<xRooNode*>(this),[](xRooNode*){});
@@ -625,10 +625,12 @@ xRooNode xRooNode::coords() const {
         TString pName(_p->GetName());
         if (auto pos = pName.Index('='); pos != -1) {
             if(auto _obs = _p->getObject<RooAbsArg>(pName(0,pos)); _obs) {
-                if(auto _cat = dynamic_cast<RooAbsCategoryLValue*>(_obs.get()); _cat) {
-                    _cat->setLabel(pName(pos+1,pName.Length()));
-                } else if(auto _var = dynamic_cast<RooAbsRealLValue*>(_obs.get()); _var) {
-                    _var->setVal(TString(pName(pos+1,pName.Length())).Atof());
+                if(setVals) {
+                    if (auto _cat = dynamic_cast<RooAbsCategoryLValue *>(_obs.get()); _cat) {
+                        _cat->setLabel(pName(pos + 1, pName.Length()));
+                    } else if (auto _var = dynamic_cast<RooAbsRealLValue *>(_obs.get()); _var) {
+                        _var->setVal(TString(pName(pos + 1, pName.Length())).Atof());
+                    }
                 }
                 out.emplace_back(std::make_shared<xRooNode>(_obs->GetName(),_obs,_p));
             } else {
@@ -790,7 +792,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
             _obs.remove(*_globs);
 
             // include any coords
-            _obs.add( coords().argList(), true );
+            _obs.add( coords(false).argList(), true );
             // include axis var too, provided it's an observable
             if (auto ax = GetXaxis(); ax && dynamic_cast<RooAbsArg*>(ax->GetParent())->getAttribute("obs")) {
                 _obs.add(*dynamic_cast<RooAbsArg*>(ax->GetParent()));
@@ -1220,14 +1222,18 @@ void xRooNode::Print(Option_t *opt) const {
     bool _more = sOpt.Contains("m");
     if (_more) sOpt.Replace(sOpt.Index("m"),1,"");
     if (sOpt!="") _more = true;
+
     if (indent==0) { // only print self if not indenting (will already be printed above if tree traverse)
         std::cout << GetPath();
         if (get() && get() != this) {
             std::cout << ": ";
             if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental() || get<RooConstVar>() || get<RooAbsData>())) ||
                 get<RooProduct>()) {
+                auto _deps = deps().argList(); // want to revert coords after print
+                auto _snap = std::unique_ptr<RooAbsCollection>(_deps.snapshot());
                 coords(); // move to coords before printing (in case this matters)
                 get()->Print(sOpt);
+                _deps.assignValueOnly(*_snap);
                 //std::cout << std::endl;
             } else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
         } else if (!get()) {
@@ -1254,9 +1260,11 @@ void xRooNode::Print(Option_t *opt) const {
             std::cout << i++ << ") " << k->GetName() << " : ";
             if(k->get()){
                 if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>()||k->get<RooAbsData>())) /*|| k->get<RooProduct>()*/) {
+                    auto _deps = k->deps().argList();
+                    auto _snap = std::unique_ptr<RooAbsCollection>(_deps.snapshot());
                     k->coords(); // move to coords before printing (in case this matters)
                     k->get()->Print(sOpt); // assumes finishes with an endl
-                    //std::cout << std::endl;
+                    _deps.assignValueOnly(*_snap);
                 }
                 else std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
                 if(depth!=0) {
@@ -1265,6 +1273,7 @@ void xRooNode::Print(Option_t *opt) const {
             }
             else std::cout << " NULL " << std::endl;
         }
+
     }
 
 }
@@ -3194,17 +3203,17 @@ xRooNode xRooNode::components() const {
     } else if(auto p = get<RooRealSumPdf>(); p) {
         // check for common prefixes and suffixes, will use to define aliases to shorten names
         // if have more than 1 function
-        TString commonPrefix=""; TString commonSuffix="";
-        if (p->funcList().size() > 1) {
-            bool checked=false;
-            for(auto& o : p->funcList()) {
-                if (!checked) {
-                    commonPrefix = o->GetName(); commonSuffix = o->GetName(); checked=true;
-                } else {
-
-                }
-            }
-        }
+//        TString commonPrefix=""; TString commonSuffix="";
+//        if (p->funcList().size() > 1) {
+//            bool checked=false;
+//            for(auto& o : p->funcList()) {
+//                if (!checked) {
+//                    commonPrefix = o->GetName(); commonSuffix = o->GetName(); checked=true;
+//                } else {
+//
+//                }
+//            }
+//        }
         for(auto& o : p->funcList()) {
             out.emplace_back(std::make_shared<xRooNode>(*o,*this));
         }
@@ -3582,7 +3591,7 @@ xRooNode xRooNode::datasets() const {
         if (get<RooAbsPdf>()) {
             // only add datasets that have observables that cover all our observables
             RooArgSet _obs(obs().argList());
-            _obs.add( coords().argList(),true ); // include coord observables too, and current xaxis if there's one
+            _obs.add( coords(false).argList(),true ); // include coord observables too, and current xaxis if there's one
             if (auto ax = GetXaxis(); ax && dynamic_cast<RooAbsArg*>(ax->GetParent())->getAttribute("obs")) {
                 auto a = dynamic_cast<RooAbsArg*>(ax->GetParent());
                 _obs.add(*a,true);
@@ -5483,6 +5492,7 @@ void xRooNode::Draw(Option_t* opt) {
         int count=2;
         std::map<std::string,int> colorByTitle; // TODO: should fill from any existing legend
         std::set<std::string> allTitles;
+        bool titleMatchName = true;
         for(auto& samp : components()) {
             auto hh = samp->BuildHistogram(v);
             auto hhMin = (hh->GetMinimum()==0) ? hh->GetMinimum(1e-9) : hh->GetMinimum();
@@ -5507,38 +5517,41 @@ void xRooNode::Draw(Option_t* opt) {
             //if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ? "" : "LF2";
             stack->Add(hh,thisOpt);
             allTitles.insert(hh->GetTitle());
+            titleMatchName &= (strcmp(samp->GetName(),hh->GetTitle())==0);
         }
         stack->SetBit(kCanDelete); // should delete its sub histograms
         stack->Draw("noclear same");
         h->Draw("axissame"); // overlay axis again
 
-        // get common prefix to strip off
-        int e = std::min(allTitles.begin()->size(),allTitles.rbegin()->size());
-        int ii = 0;
-        while(ii<e && allTitles.begin()->at(ii)==allTitles.rbegin()->at(ii)) {
-            ii++;
-        }
-        // also find how many characters are needed to distinguish all entries (that dont have the same name)
-        // then carry on up to first space or underscore
-        int jj=0;
-        bool someSame=true;
-        std::map<std::string,std::string> reducedTitles;
-        while(reducedTitles.size() != allTitles.size()) {
-            jj++;
-            std::map<std::string,int> titlesMap;
-            for(auto& s : allTitles) {
-                if (reducedTitles.count(s)) continue;
-                titlesMap[s.substr(0,jj)]++;
+        TList *ll = stack->GetHists();
+        if (ll && ll->GetEntries() && titleMatchName) {
+
+            // get common prefix to strip off only if all titles match names and
+            // any title is longer than 10 chars
+            int e = std::min(allTitles.begin()->size(),allTitles.rbegin()->size());
+            int ii = 0;
+            while(ii<e && allTitles.begin()->at(ii)==allTitles.rbegin()->at(ii)) {
+                ii++;
             }
-            for(auto& s : allTitles) {
-                if (titlesMap[s.substr(0,jj)]==1 && (jj>=s.length() || s.at(jj)==' ' || s.at(jj)=='_')) {
-                    reducedTitles[s] = s.substr(0,jj);
+            // also find how many characters are needed to distinguish all entries (that dont have the same name)
+            // then carry on up to first space or underscore
+            int jj=0;
+            bool someSame=true;
+            std::map<std::string,std::string> reducedTitles;
+            while(reducedTitles.size() != allTitles.size()) {
+                jj++;
+                std::map<std::string,int> titlesMap;
+                for(auto& s : allTitles) {
+                    if (reducedTitles.count(s)) continue;
+                    titlesMap[s.substr(0,jj)]++;
+                }
+                for(auto& s : allTitles) {
+                    if (titlesMap[s.substr(0,jj)]==1 && (jj>=s.length() || s.at(jj)==' ' || s.at(jj)=='_')) {
+                        reducedTitles[s] = s.substr(0,jj);
+                    }
                 }
             }
-        }
 
-        TList *ll = stack->GetHists();
-        if (ll && ll->GetEntries()) {
             // strip common prefix and suffix before adding
             for (int i = ll->GetEntries() - 1; i >= 0; i--) { //go in reverse order
                 auto _title = (ll->GetEntries()>5) ? reducedTitles[ll->At(i)->GetTitle()] : ll->At(i)->GetTitle();

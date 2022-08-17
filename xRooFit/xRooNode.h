@@ -133,7 +133,7 @@ public:
     xRooNode factors() const; // multiplicative children
     xRooNode variations() const; // interpolated children (are bins a form of variation?)
     xRooNode coefs() const;
-    xRooNode coords() const; // will move to the coords in the process
+    xRooNode coords(bool setVals=true) const; // will move to the coords in the process if setVals=true
     xRooNode bins() const;
 
     xRooNode constraints() const; // pdfs other than the node's parent pdf where the deps of this node appear
