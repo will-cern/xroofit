@@ -610,6 +610,27 @@ RooConstraintSum* xRooNLLVar::constraintTerm() const {
     return *fFunc;
 }*/
 
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::getVal(const char* what) {
+    TString sWhat(what);
+    sWhat.ToLower();
+    bool doTS = sWhat.Contains("ts");
+    bool doCLs = sWhat.Contains("cls");
+    bool doNull = sWhat.Contains("null");
+    bool doAlt = sWhat.Contains("alt");
+    double nSigma = (sWhat.Contains("exp")) ? (TString(sWhat(sWhat.Index("exp")+3,
+                                                             sWhat.Index(" ",sWhat.Index("exp"))==-1 ? sWhat.Length() : sWhat.Index(" ",sWhat.Index("exp")))).Atof()) : std::numeric_limits<double>::quiet_NaN();
+
+    bool toys = sWhat.Contains("toys");
+    bool asymp = sWhat.Contains("asymp");
+
+    if (doTS) return (toys) ? ts_toys(nSigma) : ts_asymp(nSigma);
+    if (doNull) return (toys) ? pNull_toys(nSigma) : pNull_asymp(nSigma);
+    if (doAlt) return (toys) ? pAlt_toys(nSigma) : pAlt_asymp(nSigma);
+    if (doCLs) return (toys) ? pCLs_toys(nSigma) : pCLs_asymp(nSigma);
+
+    throw std::runtime_error(std::string("Unknown: ") + what);
+}
+
 RooArgList xRooNLLVar::xRooHypoPoint::poi() {
     RooArgList out; out.setName("poi");
     out.add( *std::unique_ptr<RooAbsCollection>(coords->selectByAttrib("poi",true)) );
@@ -732,6 +753,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma) {
 }
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma){
+    if (fNullVal()==fAltVal()) return std::pair(1,0); // by construction
     if(fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma).first==0) return std::pair(1,0);
     auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
     if (!first_poi) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
@@ -792,6 +814,9 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
         nllVar->fFuncVars->assignValueOnly(fGenFit->floatParsFinal());
         // rename nll so if caching fit results will cache into subdir
         nllVar->get()->SetName(TString::Format("%s/%s_%s",nllVar->get()->GetName(),fGenFit->GetName(),(isExpected) ? "asimov" : "toys"));
+    } else if(!std::isnan(fAltVal())) {
+        // guess data given is expected to align with alt value
+        nllVar->fFuncVars->setRealValue(fPOIName(),fAltVal());
     }
     return (fUfit = nllVar->minimize());
 }
