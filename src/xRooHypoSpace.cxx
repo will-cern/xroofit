@@ -579,17 +579,27 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph& pValu
 
 }
 
-std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const char* opt, double relUncert) {
-    auto gr = BuildGraph(opt);
+std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, double relUncert) {
+    auto gr = BuildGraph(TString(opt) + " readonly");
+
     if (!gr || gr->GetN() < 2) {
         auto v = dynamic_cast<RooRealVar*>(poi().first());
         if (!v) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
-        AddPoint(TString::Format("%s=%f",v->GetName(),v->getMin("physical")));
-        AddPoint(TString::Format("%s=%f",v->GetName(),v->getMax("physical")));
-        return GetLimit(opt,relUncert);
+        if (!gr || gr->GetN()<1) {
+            if(std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),v->getMin("physical"))).getVal(opt).first)) {
+                // first point failed ... give up
+                return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+            }
+        }
+        if (std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),v->getMin("physical") + std::min(1.,(v->getMax("physical")-v->getMin("physial"))/50))).getVal(opt).first)) {
+            // second point failed ... give up
+            return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+        }
+        return FindLimit(opt,relUncert);
     }
 
     auto lim = GetLimit(*gr);
+
 
     if (std::isnan(lim.first)) {
         if (gr->GetN() >= 2) {
@@ -602,11 +612,15 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const char* opt, do
 
     // got here need a new point .... evaluate the estimated lim location +/- the relUncert
 
-    Info("GetLimit","Testing new points @ %s=%g +/- %g",poi().first()->GetName(),lim.first,lim.second*relUncert);
-    AddPoint(TString::Format("%s=%f",poi().first()->GetName(),lim.first + lim.second*relUncert));
-    AddPoint(TString::Format("%s=%f",poi().first()->GetName(),lim.first - lim.second*relUncert));
+    Info("GetLimit","Testing new points @ %s=%g +/- %g",poi().first()->GetName(),lim.first,lim.second*relUncert*0.99);
+    if (std::isnan(AddPoint(TString::Format("%s=%f",poi().first()->GetName(),lim.first + lim.second*relUncert*0.99)).getVal(opt).first)) {
+        return lim;
+    }
+    if (std::isnan(AddPoint(TString::Format("%s=%f",poi().first()->GetName(),lim.first - lim.second*relUncert*0.99)).getVal(opt).first)) {
+        return lim;
+    }
 
-    return GetLimit(opt,relUncert);
+    return FindLimit(opt,relUncert);
 
 }
 
