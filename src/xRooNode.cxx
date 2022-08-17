@@ -824,8 +824,9 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                 RooRealVar w("weightVar", "weightVar", 1);
                 _obs.add(w);
                 RooDataSet d(child.GetName(), child.GetTitle(), _obs, "weightVar");
-                d.SetBit(1<<20, _ws->allData().empty()); // sets as selected if is only ds
                 _ws->import(d);
+                // seems have to set bits after importing, not before
+                if(auto _d = _ws->data(child.GetName())) _d->SetBit(1<<20, _ws->allData().size()==1);// sets as selected if is only ds
             }
             /*if(!_ws->data(child.GetName())) {
                 RooRealVar w("weightVar", "weightVar", 1);
