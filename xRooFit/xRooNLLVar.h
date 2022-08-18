@@ -70,11 +70,11 @@ public:
         static std::set<int> allowedStatusCodes;
         void Print();
         void Draw(Option_t* opt="");
-        std::pair<double,double> pll(); // observed test statistic value
-        std::pair<double,double> sigma_mu(); // estimate of sigma_mu parameter
-        std::shared_ptr<const RooFitResult> ufit();
-        std::shared_ptr<const RooFitResult> cfit_null();
-        std::shared_ptr<const RooFitResult> cfit_alt();
+        std::pair<double,double> pll(bool readOnly=false); // observed test statistic value
+        std::pair<double,double> sigma_mu(bool readOnly=false); // estimate of sigma_mu parameter
+        std::shared_ptr<const RooFitResult> ufit(bool readOnly=false);
+        std::shared_ptr<const RooFitResult> cfit_null(bool readOnly=false);
+        std::shared_ptr<const RooFitResult> cfit_alt(bool readOnly=false);
 
 
         std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> data;
@@ -110,7 +110,7 @@ public:
         RooArgList alt_poi(); // values of the poi in the alt hypothesis (will be nans if not defined)
         RooRealVar& mu_hat(); // throws exception if ufit not available
 
-        std::shared_ptr<xRooHypoPoint> asimov(); // a two-sided hypoPoint with the alt hypothesis asimov dataset (used in sigma_mu() calculation)
+        std::shared_ptr<xRooHypoPoint> asimov(bool readOnly=false); // a two-sided hypoPoint with the alt hypothesis asimov dataset (used in sigma_mu() calculation)
 
         //std::string fPOIName;
         const char* fPOIName();

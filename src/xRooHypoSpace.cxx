@@ -458,14 +458,10 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* 
     sOpt.ToLower();
 
     bool doCLs = sOpt.Contains("cls");
-    bool readOnly = sOpt.Contains("readonly");
 
     double nSigma = (sOpt.Contains("exp")) ? (TString(sOpt(sOpt.Index("exp")+3,
                                                            sOpt.Index(" ",sOpt.Index("exp"))==-1 ? sOpt.Length() : sOpt.Index(" ",sOpt.Index("exp")))).Atof()) : std::numeric_limits<double>::quiet_NaN();
-
     bool expBand = !std::isnan(nSigma) && nSigma && !(sOpt(sOpt.Index("exp")+3)=='+' ||  sOpt(sOpt.Index("exp")+3)=='-');
-
-    bool toys = sOpt.Contains("toys");
 
     auto _axes = axes();
     if (_axes.size() != 1) return nullptr;
@@ -488,8 +484,16 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* 
         out->SetLineStyle(2 + int(nSigma));
         if(expBand && nSigma) {
             out->SetFillColor((nSigma==2) ? kYellow : kGreen);
+            //out->SetFillStyle(3005);
             out->SetLineStyle(0);
             out->SetLineWidth(0);
+            auto x = out->Clone("up");x->SetBit(kCanDelete);
+            dynamic_cast<TAttFill*>(x)->SetFillStyle(nSigma==2 ? 3005 : 3004);dynamic_cast<TAttFill*>(x)->SetFillColor(kBlack);
+            out->GetListOfFunctions()->Add ( x , "F" );
+            x = out->Clone("down");x->SetBit(kCanDelete);
+            //dynamic_cast<TAttFill*>(x)->SetFillColor((nSigma==2) ? kYellow : kGreen);
+            //dynamic_cast<TAttFill*>(x)->SetFillStyle(1001);
+            out->GetListOfFunctions()->Add ( x , "F" );
         }
     }
 
@@ -504,13 +508,12 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* 
         }
         return badPoints;
     };
-
+    int nPointsDown = 0;
+    bool above = true;
     for(auto& p : *this) {
-        bool _readOnly = p.nllVar ? p.nllVar->get()->getAttribute("readOnly") : false;
-        if (p.nllVar && readOnly) p.nllVar->get()->setAttribute("readOnly",true);
         double _x = p.coords->getRealValue(_axes.at(0)->GetName(),std::numeric_limits<double>::quiet_NaN());
-        auto pval = (toys) ? ((doCLs) ? p.pCLs_toys(nSigma) : p.pNull_toys(nSigma)) : ( (doCLs) ? p.pCLs_asymp(nSigma) : p.pNull_asymp(nSigma) );
-        auto idx = (expBand&&nSigma) ? out->GetN()/2 : out->GetN();
+        auto pval = p.getVal(sOpt);
+        auto idx = out->GetN()-nPointsDown;
 
         if (std::isnan(pval.first)) {
             badPoints()->SetPoint(badPoints()->GetN(),_x,0);
@@ -520,22 +523,42 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* 
         }
 
         if(expBand && nSigma) {
-            pval = (toys) ? (doCLs) ? p.pCLs_toys(-nSigma) : p.pNull_toys(-nSigma) : ( (doCLs) ? p.pCLs_asymp(-nSigma) : p.pNull_asymp(-nSigma) );
+            TString sOpt2 = sOpt; sOpt2.ReplaceAll("exp","exp-");
+            pval = p.getVal(sOpt2);
             if (std::isnan(pval.first)) {
                 badPoints()->SetPoint(badPoints()->GetN(),_x,0);
             } else {
                 out->InsertPointBefore(idx+1, _x, pval.first);
                 out->SetPointError(idx+1, 0, pval.second);
+                nPointsDown++;
+                if (out->GetPointY(idx) < pval.first) above=false; // the -sigma points are actually above +sigma
             }
         }
-        if (p.nllVar && readOnly) p.nllVar->get()->setAttribute("readOnly",_readOnly);
     }
+
+    if(out->GetN()==0) return out;
 
     if(!expBand) {
         out->Sort();
     } else {
-        out->Sort(&TGraph::CompareX,true,0,out->GetN()/2 - 1); // sort first half
-        out->Sort(&TGraph::CompareX,false,out->GetN()/2,out->GetN()-1); // reverse sort second half
+        out->Sort(&TGraph::CompareX,true,0,out->GetN() - nPointsDown - 1); // sort first half
+        out->Sort(&TGraph::CompareX,false,out->GetN() - nPointsDown,out->GetN()-1); // reverse sort second half
+
+        // now populate the up and down values
+        auto up = dynamic_cast<TGraph*>(out->GetListOfFunctions()->FindObject("up"));
+        auto down = dynamic_cast<TGraph*>(out->GetListOfFunctions()->FindObject("down"));
+
+
+        for(int i=0;i<out->GetN();i++) {
+            if (i < out->GetN()-nPointsDown) {
+                up->AddPoint(out->GetPointX(i),out->GetPointY(i) + out->GetErrorY(i)*(above?1.:-1.));
+                down->AddPoint(out->GetPointX(i),out->GetPointY(i) - out->GetErrorY(i)*(above?1.:-1.));
+            } else {
+                up->AddPoint(out->GetPointX(i),out->GetPointY(i) - out->GetErrorY(i)*(above?1.:-1.));
+                down->AddPoint(out->GetPointX(i),out->GetPointY(i) + out->GetErrorY(i)*(above?1.:-1.));
+            }
+        }
+
     }
 
     return out;
@@ -572,10 +595,14 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph& pValu
             double lim = gr->GetPointX(i-1) + (gr->GetPointX(i)-gr->GetPointX(i-1))*(alpha - gr->GetPointY(i-1))/(gr->GetPointY(i) - gr->GetPointY(i-1));
             // use points either side as error
             double err = std::max( lim - gr->GetPointX(i-1), gr->GetPointX(i) - lim );
+            // give err negative sign to indicate if error due to negative side
+            if ((lim - gr->GetPointX(i-1)) > (gr->GetPointX(i) - lim)) err *= -1;
             return std::pair(lim,err);
         }
     }
-    return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+    return ( (above && gr->GetPointY(gr->GetN()-1) < gr->GetPointY(0)) || (!above && gr->GetPointY(gr->GetN()-1) > gr->GetPointY(0)) )
+        ? std::pair(gr->GetPointX(gr->GetN()-1),std::numeric_limits<double>::infinity()) :
+           std::pair(gr->GetPointX(0),-std::numeric_limits<double>::infinity());
 
 }
 
@@ -591,7 +618,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, d
                 return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
             }
         }
-        if (std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),v->getMin("physical") + std::min(1.,(v->getMax("physical")-v->getMin("physial"))/50))).getVal(opt).first)) {
+        if (std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),v->getMin("physical") + std::min(1.,(v->getMax("physical")-v->getMin("physical"))/50))).getVal(opt).first)) {
             // second point failed ... give up
             return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
         }
@@ -602,21 +629,27 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, d
 
 
     if (std::isnan(lim.first)) {
-        if (gr->GetN() >= 2) {
-            Error("GetLimit","Limit out of HypoSpace bounds: %g - %g",gr->GetPointX(0),gr->GetPointX(gr->GetN()-1));
-            return lim;
-        }
+        return lim;
     }
 
     if (std::abs(lim.second) <= relUncert*std::abs(lim.first)) return lim;
 
-    // got here need a new point .... evaluate the estimated lim location +/- the relUncert
-
-    Info("GetLimit","Testing new points @ %s=%g +/- %g",poi().first()->GetName(),lim.first,lim.second*relUncert*0.99);
-    if (std::isnan(AddPoint(TString::Format("%s=%f",poi().first()->GetName(),lim.first + lim.second*relUncert*0.99)).getVal(opt).first)) {
-        return lim;
+    double nextPoint;
+    auto v = dynamic_cast<RooRealVar*>(poi().first());
+    if (lim.second == std::numeric_limits<double>::infinity()) {
+        nextPoint = gr->GetPointX(gr->GetN()-1) + std::min(1.,(v->getMax("physical")-v->getMin("physical"))/50);
+        if (nextPoint > v->getMax("physical")) return lim;
+    } else if(lim.second == -std::numeric_limits<double>::infinity()) {
+        nextPoint = gr->GetPointX(0) - std::min(1.,(v->getMax("physical")-v->getMin("physical"))/50);
+        if (nextPoint < v->getMin("physical")) return lim;
+    } else {
+        nextPoint = lim.first + lim.second*relUncert*0.99;
     }
-    if (std::isnan(AddPoint(TString::Format("%s=%f",poi().first()->GetName(),lim.first - lim.second*relUncert*0.99)).getVal(opt).first)) {
+
+    // got here need a new point .... evaluate the estimated lim location +/- the relUncert (signed error takes care of direction)
+
+    //Info("GetLimit","Testing new point @ %s=%g",v->GetName(),nextPoint);
+    if (std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),nextPoint)).getVal(opt).first)) {
         return lim;
     }
 
@@ -709,10 +742,22 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
         exp1->DrawClone("F")->SetBit(kCanDelete);
         exp->DrawClone("LP")->SetBit(kCanDelete);
         obs->DrawClone("LP")->SetBit(kCanDelete);
-        gPad->BuildLegend(gPad->GetLeftMargin()+0.05, gPad->GetBottomMargin()+0.05,gPad->GetLeftMargin()+0.35,gPad->GetBottomMargin()+0.25)->SetName("legend");
+        //auto l = gPad->BuildLegend(gPad->GetLeftMargin()+0.05, gPad->GetBottomMargin()+0.05,gPad->GetLeftMargin()+0.35,gPad->GetBottomMargin()+0.25);l->SetName("legend");
+
+        auto leg = new TLegend(1. - gPad->GetRightMargin()-0.3, 1.-gPad->GetTopMargin()-0.3,1.-gPad->GetRightMargin()-0.05,1.-gPad->GetTopMargin()-0.05);
+        leg->SetName("legend");
+        leg->AddEntry(g->GetListOfFunctions()->FindObject("down"),"","F");
+        leg->AddEntry(dynamic_cast<TGraph*>(gPad->GetPrimitive(exp1->GetName()))->GetListOfFunctions()->FindObject("down"),"","F");
+        leg->AddEntry(gPad->GetPrimitive(exp->GetName()),"","LPE");
+        leg->AddEntry(gPad->GetPrimitive(obs->GetName()),"","LPE");
+        leg->Draw();
+        leg->SetBit(kCanDelete);
+
         g->GetHistogram()->Draw("sameaxis"); // redraw axis
 
         if (!sOpt.Contains("same")) {gPad->SetGrid(0,0);gPad->SetLogy(1);}
+
+        gSystem->ProcessEvents();
 
         return;
     }

@@ -623,6 +623,29 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::getVal(const char* what) {
     bool toys = sWhat.Contains("toys");
     bool asymp = sWhat.Contains("asymp");
 
+    bool readOnly = sWhat.Contains("readonly");
+
+    struct RestoreNll {
+        RestoreNll(std::shared_ptr<xRooNLLVar>& v, bool r) : var(v), rr(r) {
+            if (rr && var && var->get()) {
+                _readOnly = var->get()->getAttribute("readOnly");
+            } else {
+                rr=false;
+            }
+        };
+        ~RestoreNll() {
+            if(rr) var->get()->setAttribute("readOnly",_readOnly);
+        };
+
+        bool rr = false;
+        bool _readOnly = false;
+
+        std::shared_ptr<xRooNLLVar>& var;
+    };
+
+    RestoreNll rest(nllVar,readOnly);
+
+
     if (doTS) return (toys) ? ts_toys(nSigma) : ts_asymp(nSigma);
     if (doNull) return (toys) ? pNull_toys(nSigma) : pNull_asymp(nSigma);
     if (doAlt) return (toys) ? pAlt_toys(nSigma) : pAlt_asymp(nSigma);
@@ -704,26 +727,21 @@ RooRealVar& xRooNLLVar::xRooHypoPoint::mu_hat() {
     throw std::runtime_error("Unconditional fit unavailable");
 }
 
-std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov() {
+std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(bool readOnly) {
 
     if (!fAsimov && nllVar) {
         if(!nllVar->fFuncVars) nllVar->reinitialize();
         AutoRestorer snap(*nllVar->fFuncVars);
-        if (!data.first && fGenFit) { // case of no data, can still compute asimov by using the GenFit which is acting as a parameter snapshot
-            *nllVar->fFuncVars = fGenFit->floatParsFinal();
-            *nllVar->fFuncVars = fGenFit->constPars();
-        } else if (!cfit_alt()) { // otherwise must have the alt fit
-            return fAsimov;
-        } else {
-            *nllVar->fFuncVars = cfit_alt()->floatParsFinal();
-            *nllVar->fFuncVars = cfit_alt()->constPars();
-        }
+        auto theFit = (!data.first && fGenFit) ? fGenFit : cfit_alt(readOnly);
+        if (!theFit) return fAsimov;
+        *nllVar->fFuncVars = theFit->floatParsFinal();
+        *nllVar->fFuncVars = theFit->constPars();
         auto asimov = nllVar->generate(true);
         fAsimov = std::make_shared<xRooHypoPoint>(*this);
         fAsimov->fPllType = xRooFit::Asymptotics::TwoSided;
         fAsimov->fUfit.reset();fAsimov->fNull_cfit.reset();fAsimov->fAlt_cfit.reset();
         fAsimov->data = asimov;
-        fAsimov->fGenFit = fAlt_cfit;
+        fAsimov->fGenFit = theFit;
         fAsimov->isExpected = true;
     }
 
@@ -775,7 +793,11 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma){
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma) {
     auto first_poi = dynamic_cast<RooRealVar*>(poi().first());
     if (!first_poi || (!std::isnan(nSigma) && std::isnan(sigma_mu().first))) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
-    return (std::isnan(nSigma)) ? pll() : std::pair<double,double>(xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical")),0);
+    if (std::isnan(nSigma)) return pll();
+    double nom = xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double up = xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first+sigma_mu().second,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    double down = xRooFit::Asymptotics::k(fPllType,ROOT::Math::gaussian_cdf(nSigma),fNullVal(),fAltVal(),sigma_mu().first-sigma_mu().second,first_poi->getMin("physical"),first_poi->getMax("physical"));
+    return std::pair<double,double>(nom, std::max(std::abs(nom-up),std::abs(nom-down)));
 }
 
 std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma) {
@@ -788,19 +810,19 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma) {
 }
 
 
-std::pair<double,double> xRooNLLVar::xRooHypoPoint::pll() {
-    if (!ufit() || allowedStatusCodes.find(ufit()->status())==allowedStatusCodes.end())  return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::pll(bool readOnly) {
+    if (!ufit(readOnly) || allowedStatusCodes.find(ufit(readOnly)->status())==allowedStatusCodes.end())  return std::make_pair(std::numeric_limits<double>::quiet_NaN(),0);
     auto cFactor = xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
     if (cFactor == 0) return std::make_pair(0,0);
-    if (!cfit_null() || allowedStatusCodes.find(cfit_null()->status())==allowedStatusCodes.end()) return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+    if (!cfit_null(readOnly) || allowedStatusCodes.find(cfit_null(readOnly)->status())==allowedStatusCodes.end()) return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
     //std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
-    return std::make_pair(2.*cFactor*(cfit_null()->minNll() - ufit()->minNll()), 2. * cFactor * sqrt(pow(cfit_null()->edm(), 2) + pow(ufit()->edm(), 2)));
+    return std::make_pair(2.*cFactor*(cfit_null(readOnly)->minNll() - ufit(readOnly)->minNll()), 2. * cFactor * sqrt(pow(cfit_null(readOnly)->edm(), 2) + pow(ufit(readOnly)->edm(), 2)));
     //return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
 }
 
-std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit() {
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit(bool readOnly) {
     if (fUfit) return fUfit;
-    if (!nllVar) return nullptr;
+    if (!nllVar || (readOnly && nllVar->get() && !nllVar->get()->getAttribute("readOnly"))) return nullptr;
     if(!nllVar->fFuncVars) nllVar->reinitialize();
     AutoRestorer snap(*nllVar->fFuncVars, nllVar.get());
     nllVar->setData(data);
@@ -834,9 +856,9 @@ std::string collectionContents(const RooAbsCollection& coll) {
     return out;
 }
 
-std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null() {
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null(bool readOnly) {
     if (fNull_cfit) return fNull_cfit;
-    if (!nllVar) return nullptr;
+    if (!nllVar || (readOnly && nllVar->get() && !nllVar->get()->getAttribute("readOnly"))) return nullptr;
     if(!nllVar->fFuncVars) nllVar->reinitialize();
     AutoRestorer snap(*nllVar->fFuncVars, nllVar.get());
     nllVar->setData(data);
@@ -853,10 +875,10 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null() {
     return (fNull_cfit = nllVar->minimize());
 }
 
-std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt() {
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt(bool readOnly) {
     if (std::isnan(fAltVal())) return nullptr;
     if (fAlt_cfit) return fAlt_cfit;
-    if (!nllVar) return nullptr;
+    if (!nllVar || (readOnly && nllVar->get() && !nllVar->get()->getAttribute("readOnly"))) return nullptr;
     if(!nllVar->fFuncVars) nllVar->reinitialize();
     AutoRestorer snap(*nllVar->fFuncVars, nllVar.get());
     nllVar->setData(data);
@@ -873,13 +895,13 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt() {
     return (fAlt_cfit = nllVar->minimize());
 }
 
-std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu() {
+std::pair<double,double> xRooNLLVar::xRooHypoPoint::sigma_mu(bool readOnly) {
 
-    if(!asimov()) {
+    if(!asimov(readOnly)) {
         return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
     }
 
-    auto out = asimov()->pll();
+    auto out = asimov(readOnly)->pll(readOnly);
     return std::make_pair(std::abs(fNullVal() - fAltVal())/sqrt(out.first), out.second*0.5*std::abs(fNullVal() - fAltVal())/(out.first*sqrt(out.first)));
 }
 
