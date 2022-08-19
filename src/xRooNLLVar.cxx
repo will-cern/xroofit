@@ -238,7 +238,10 @@ void xRooNLLVar::reinitialize() {
             }
             for(auto& a : setNames) fPdf->_myws->removeSet(a.c_str());
         }
+        std::set<std::string> attribs;
+        if (std::shared_ptr<RooAbsReal>::get()) attribs = std::shared_ptr<RooAbsReal>::get()->attributes();
         this->reset( fPdf->createNLL(*fData,*fOpts) );
+        for(auto& a : attribs) std::shared_ptr<RooAbsReal>::get()->setAttribute(a.c_str());
         if(fPdf->_myws) { xRooNode(*fPdf->_myws).sterilize(); } // there seems to be a nasty bug somewhere that can make the cache become invalid, so clear it here
         if(oldName!="") std::shared_ptr<RooAbsReal>::get()->SetName(oldName);
         if(!origValues.empty()) {
@@ -308,12 +311,33 @@ class AutoRestorer {
 public:
     AutoRestorer(const RooAbsCollection& s, xRooNLLVar* nll=nullptr) : fSnap(s.snapshot()), fNll(nll) {
         fPars.add(s);
-        if(fNll) {fOldData = fNll->getData(); fOldName = fNll->get()->GetName(); fOldTitle = fNll->get()->getStringAttribute("fitresultTitle"); }
+        if(fNll) {
+            //if (!fNll->kReuseNLL) fOldNll = *fNll;
+            fOldData = fNll->getData(); fOldName = fNll->get()->GetName(); fOldTitle = fNll->get()->getStringAttribute("fitresultTitle");
+        }
     }
-    ~AutoRestorer() { ((RooAbsCollection&)fPars) = *fSnap; if(fNll) {fNll->setData(fOldData); fNll->get()->SetName(fOldName); fNll->get()->setStringAttribute("fitresultTitle",(fOldTitle=="") ? nullptr : fOldTitle); } }
+    ~AutoRestorer() { ((RooAbsCollection&)fPars) = *fSnap;
+        if(fNll) {
+            // commented out code was attempt to speed up things avoid unnecessarily reinitializing things over and over
+//            if (!fNll->kReuseNLL) {
+//                // can be faster just by putting back in old nll
+//                fNll->std::shared_ptr<RooAbsReal>::operator=(fOldNll);
+//                fNll->fData = fOldData.first;
+//                fNll->fGlobs = fOldData.second;
+//            } else {
+//                fNll->setData(fOldData);
+//                fNll->get()->SetName(fOldName);
+//                fNll->get()->setStringAttribute("fitresultTitle", (fOldTitle == "") ? nullptr : fOldTitle);
+//            }
+            fNll->setData(fOldData);
+            fNll->get()->SetName(fOldName);
+            fNll->get()->setStringAttribute("fitresultTitle", (fOldTitle == "") ? nullptr : fOldTitle);
+        }
+    }
     RooArgSet fPars;
     std::unique_ptr<RooAbsCollection> fSnap;
     xRooNLLVar* fNll = nullptr;
+    //std::shared_ptr<RooAbsReal> fOldNll;
     std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> fOldData;
     TString fOldName,fOldTitle;
 };
@@ -629,6 +653,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::getVal(const char* what) {
         RestoreNll(std::shared_ptr<xRooNLLVar>& v, bool r) : var(v), rr(r) {
             if (rr && var && var->get()) {
                 _readOnly = var->get()->getAttribute("readOnly");
+                var->get()->setAttribute("readOnly",rr);
             } else {
                 rr=false;
             }
