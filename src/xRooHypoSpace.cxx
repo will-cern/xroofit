@@ -161,6 +161,8 @@ xRooNLLVar::xRooHypoPoint& xRooNLLVar::xRooHypoSpace::AddPoint(const char* coord
     out.coords.reset( fPars->snapshot() ); // should already have altVal prop on poi, and poi labelled
     // ensure all poi are marked const ... required by xRooHypoPoint behaviour
     out.poi().setAttribAll("Constant");
+    // and now remove anything that's marked floating
+    const_cast<RooAbsCollection*>(out.coords.get())->remove( *std::unique_ptr<RooAbsCollection>(out.coords->selectByAttrib("Constant",false)),true,true );
     double value = out.fNullVal();
     double alt_value = out.fAltVal();
 
@@ -210,7 +212,7 @@ bool xRooNLLVar::xRooHypoSpace::AddModel(const xRooNode& _pdf, const char* valid
 
 }
 
-RooArgList xRooNLLVar::xRooHypoSpace::axes() {
+RooArgList xRooNLLVar::xRooHypoSpace::axes() const {
     // determine which pars are the minimal set to distinguish all points in the space
     RooArgList out; out.setName("axes");
 
@@ -250,6 +252,10 @@ RooArgList xRooNLLVar::xRooHypoSpace::axes() {
         }
 
     } while(clash);
+
+    // ensure poi are at the end
+    std::unique_ptr<RooAbsCollection> poi(out.selectByAttrib("poi",true));
+    out.remove(*poi); out.add(*poi);
 
     return out;
 
@@ -450,6 +456,37 @@ void xRooNLLVar::xRooHypoSpace::LoadFits(const char* apath) {
     }
 }
 
+void xRooNLLVar::xRooHypoSpace::Print(Option_t* opt) const {
+
+    auto _axes = axes();
+
+    size_t badFits = 0;
+
+    for(size_t i=0;i<size();i++) {
+        std::cout << i << ") ";
+        for(auto a : _axes) {
+            if (a != _axes.first()) std::cout << ",";
+            std::cout << a->GetName() << "=" << at(i).coords->getRealValue(a->GetName(),std::numeric_limits<double>::quiet_NaN());
+        }
+        std::cout << " status=[ufit:";
+        auto ufit = const_cast<xRooHypoPoint&>(at(i)).ufit(true);if (!ufit) std::cout << "-";else {std::cout << ufit->status(); badFits += (xRooNLLVar::xRooHypoPoint::allowedStatusCodes.count(ufit->status())==0); }
+        std::cout << ",cfit_null:";
+        auto cfit = const_cast<xRooHypoPoint&>(at(i)).cfit_null(true);if (!cfit) std::cout << "-";else {std::cout << cfit->status(); badFits += (xRooNLLVar::xRooHypoPoint::allowedStatusCodes.count(cfit->status())==0); }
+        std::cout << ",cfit_alt:";
+        auto afit = const_cast<xRooHypoPoint&>(at(i)).cfit_alt(true);if (!afit) std::cout << "-";else {std::cout << afit->status(); badFits += (xRooNLLVar::xRooHypoPoint::allowedStatusCodes.count(afit->status())==0); }
+        std::cout << "]";
+        auto sigma_mu = const_cast<xRooHypoPoint&>(at(i)).sigma_mu(true);
+        if(!std::isnan(sigma_mu.first)) {
+            std::cout << " sigma_mu=" << sigma_mu.first;
+            if (sigma_mu.second) std::cout << " +/- " << sigma_mu.second;
+        }
+        std::cout << std::endl;
+    }
+    std::cout << "--------------------------" << std::endl;
+    std::cout << "Number of bad fits: " << badFits << std::endl;
+
+}
+
 #include "TGraphErrors.h"
 
 std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* opt) {
@@ -478,6 +515,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* 
     if(std::isnan(nSigma)) {
         out->SetNameTitle(TString::Format("obs_p%s",sCL),title);
         out->SetMarkerStyle(20);
+        if (sOpt.Contains("ts")) out->SetNameTitle("obs_ts",TString::Format("Observed;%s;Test Statistic",_axes.at(0)->GetTitle()));
     } else {
         out->SetNameTitle(TString::Format("exp%d_p%s",int(nSigma),sCL),title);
         out->SetMarkerStyle(0);
@@ -495,6 +533,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* 
             //dynamic_cast<TAttFill*>(x)->SetFillStyle(1001);
             out->GetListOfFunctions()->Add ( x , "F" );
         }
+        if (sOpt.Contains("ts")) out->SetNameTitle(TString::Format("exp_ts%d",int(nSigma)),TString::Format("Expected;%s;Test Statistic",_axes.at(0)->GetTitle()));
     }
 
 

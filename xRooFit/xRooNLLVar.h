@@ -155,11 +155,13 @@ public:
         // A points over given parameter, number of points between low and high
         int AddPoints(const char* parName, int nPoints, double low, double high);
 
+        void Print(Option_t* opt="") const override;
+
         void Draw(Option_t* opt="") override;
 
         RooArgList poi();
         std::shared_ptr<RooArgSet> pars() const { return fPars; };
-        RooArgList axes();
+        RooArgList axes() const;
 
         xRooHypoPoint& AddPoint(const char* coords=""); //adds a new point at given coords or returns existing
 
@@ -190,7 +192,6 @@ public:
 
         xRooFit::Asymptotics::PLLType fTestStatType = xRooFit::Asymptotics::Unknown;
         std::shared_ptr<RooArgSet> fPars;
-        std::vector<std::shared_ptr<RooArgList>> fCoords; // points with ufit and cfit defined - altVal attribute for when fits with alt value too
 
         std::map<std::shared_ptr<xRooNode>,std::shared_ptr<xRooNLLVar>> fNlls; // existing NLL functions of added pdfs;
 
@@ -205,24 +206,6 @@ public:
     xRooHypoSpace hypoSpace(const char* parName, int nPoints, double low, double high, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
     xRooHypoSpace hypoSpace(const char* parName,const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
 
-//    class xRooHypoSpace {
-//        void ReadFile(const char* fitsFile);
-//        void SaveAs(const char* output); // saves fit results of the hypospace to given file
-//
-//        void runLimit(const char* parName, double alt_value);
-//
-//        void runMinos(const char* parName) {
-//            // assumes is pll is approximately quadratic: pll =  ( (mu - mu_hat)/sigma_mu )^2
-//            // so to find where pll = X,
-//            //   could simply rearrange to give: mu = mu_hat +/- sqrt(X)*sigma_mu
-//            //   but sigma_mu can have mild dependence on mu, i.e.:
-//            //    sigma_mu(mu) = (mu - mu_hat)/sqrt( pll(mu) )
-//            // use an iterative algorithm:
-//            //   start with some guess for result: mu_guess
-//            //   update mu_guess = mu_guess - d*( mu_guess - (mu_hat +/- X*sigma_mu(mu_guess)) )
-//            //  iterate until change in mu_guess is small enough for desired precision
-//        }
-//    };
 
     std::shared_ptr<RooArgSet> pars(bool stripGlobalObs=true);
 
