@@ -590,11 +590,11 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* 
 
         for(int i=0;i<out->GetN();i++) {
             if (i < out->GetN()-nPointsDown) {
-                up->AddPoint(out->GetPointX(i),out->GetPointY(i) + out->GetErrorY(i)*(above?1.:-1.));
-                down->AddPoint(out->GetPointX(i),out->GetPointY(i) - out->GetErrorY(i)*(above?1.:-1.));
+                up->SetPoint(up->GetN(),out->GetPointX(i),out->GetPointY(i) + out->GetErrorY(i)*(above?1.:-1.));
+                down->SetPoint(down->GetN(),out->GetPointX(i),out->GetPointY(i) - out->GetErrorY(i)*(above?1.:-1.));
             } else {
-                up->AddPoint(out->GetPointX(i),out->GetPointY(i) - out->GetErrorY(i)*(above?1.:-1.));
-                down->AddPoint(out->GetPointX(i),out->GetPointY(i) + out->GetErrorY(i)*(above?1.:-1.));
+                up->SetPoint(up->GetN(),out->GetPointX(i),out->GetPointY(i) - out->GetErrorY(i)*(above?1.:-1.));
+                down->SetPoint(down->GetN(),out->GetPointX(i),out->GetPointY(i) + out->GetErrorY(i)*(above?1.:-1.));
             }
         }
 
