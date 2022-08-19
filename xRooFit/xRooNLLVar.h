@@ -70,6 +70,11 @@ public:
         static std::set<int> allowedStatusCodes;
         void Print();
         void Draw(Option_t* opt="");
+
+        // status bitmask of the available fit results
+        // 0 = all ok
+        int status() const;
+
         std::pair<double,double> pll(bool readOnly=false); // observed test statistic value
         std::pair<double,double> sigma_mu(bool readOnly=false); // estimate of sigma_mu parameter
         std::shared_ptr<const RooFitResult> ufit(bool readOnly=false);

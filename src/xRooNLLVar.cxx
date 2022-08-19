@@ -675,6 +675,16 @@ RooArgList xRooNLLVar::xRooHypoPoint::alt_poi() {
     return out;
 }
 
+int xRooNLLVar::xRooHypoPoint::status() const {
+    auto& me = const_cast<xRooHypoPoint&>(*this);
+    int out = 0;
+    if (me.ufit(true) && !allowedStatusCodes.count(me.ufit(true)->status())) out += 1;
+    if (me.cfit_null(true) && !allowedStatusCodes.count(me.cfit_null(true)->status())) out += 1<<1;
+    if (me.cfit_alt(true) && !allowedStatusCodes.count(me.cfit_alt(true)->status())) out += 1<<2;
+    if (me.asimov(true)) out += me.asimov(true)->status()<<3;
+    return out;
+}
+
 void xRooNLLVar::xRooHypoPoint::Print() {
     std::cout << "POI: " << poi().contentsString() << " , null: " << dynamic_cast<RooAbsReal*>(poi().first())->getVal() << " , alt: " << dynamic_cast<RooAbsReal*>(alt_poi().first())->getVal() << std::endl;
     std::cout << "pllType: " << fPllType << " , ufit: ";
