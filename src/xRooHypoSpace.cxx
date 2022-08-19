@@ -279,7 +279,11 @@ void xRooNLLVar::xRooHypoSpace::LoadFits(const char* apath) {
         // try open file first
         TString s(apath);
         auto f = TFile::Open(s.Contains(":") ? TString(s(0,s.Index(":"))) : s);
-        if(f) dir = gDirectory->GetDirectory(apath);
+        if(f) {
+            if (!s.Contains(":")) s += ":";
+            dir = gDirectory->GetDirectory(s);
+            if (dir) { LoadFits(s); return; }
+        }
         if(!dir) {
             Error("LoadFits","Path not found %s",apath);
             return;
@@ -644,10 +648,10 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph& pValu
 }
 
 std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, double relUncert) {
-    auto gr = BuildGraph(TString(opt) + " readonly");
+    std::shared_ptr<TGraphErrors> gr = BuildGraph(TString(opt) + " readonly");
 
     if (!gr || gr->GetN() < 2) {
-        auto v = dynamic_cast<RooRealVar*>(poi().first());
+        auto v = (poi().empty()) ? nullptr : dynamic_cast<RooRealVar*>(poi().first());
         if (!v) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
         if (!gr || gr->GetN()<1) {
             if(std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),v->getMin("physical"))).getVal(opt).first)) {
