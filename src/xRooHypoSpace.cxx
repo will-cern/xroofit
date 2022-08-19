@@ -278,10 +278,8 @@ void xRooNLLVar::xRooHypoSpace::LoadFits(const char* apath) {
     if (!dir) {
         // try open file first
         TString s(apath);
-        if (s.Contains(":")) {
-            auto f = TFile::Open(TString(s(0,s.Index(":"))));
-            if(f) dir = gDirectory->GetDirectory(apath);
-        }
+        auto f = TFile::Open(s.Contains(":") ? TString(s(0,s.Index(":"))) : s);
+        if(f) dir = gDirectory->GetDirectory(apath);
         if(!dir) {
             Error("LoadFits","Path not found %s",apath);
             return;
