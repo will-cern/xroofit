@@ -1241,7 +1241,7 @@ void xRooNode::Print(Option_t *opt) const {
             std::cout << ": ";
             if (_more || (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental() || get<RooConstVar>() || get<RooAbsData>())) ||
                 get<RooProduct>()) {
-                auto _deps = deps().argList(); // want to revert coords after print
+                auto _deps = coords(false).argList(); // want to revert coords after print
                 auto _snap = std::unique_ptr<RooAbsCollection>(_deps.snapshot());
                 coords(); // move to coords before printing (in case this matters)
                 get()->Print(sOpt);
@@ -1272,7 +1272,7 @@ void xRooNode::Print(Option_t *opt) const {
             std::cout << i++ << ") " << k->GetName() << " : ";
             if(k->get()){
                 if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental()||k->get<RooConstVar>()||k->get<RooAbsData>())) /*|| k->get<RooProduct>()*/) {
-                    auto _deps = k->deps().argList();
+                    auto _deps = k->coords(false).argList();
                     auto _snap = std::unique_ptr<RooAbsCollection>(_deps.snapshot());
                     k->coords(); // move to coords before printing (in case this matters)
                     k->get()->Print(sOpt); // assumes finishes with an endl
