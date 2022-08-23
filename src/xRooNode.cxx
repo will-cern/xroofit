@@ -5797,6 +5797,15 @@ double xRooNode::GetBinError(int bin, const RooFitResult* fr) const {
 std::pair<double,double> xRooNode::IntegralAndError(const RooFitResult* fr) const {
     double out = 1.;
     double err = std::numeric_limits<double>::quiet_NaN();
+
+    std::unique_ptr<RooAbsCollection> _snap;
+    RooArgList _pars;
+    if (fr) {
+        _pars.add(pars().argList());
+        _snap.reset(_pars.snapshot());
+        _pars = fr->floatParsFinal(); _pars = fr->constPars();
+    }
+
     auto _obs = obs().argList();
     auto _coefs = coefs(); // need here to keep alive owned RooProduct
     if(auto c = _coefs.get<RooAbsReal>();c) {
@@ -5822,6 +5831,9 @@ std::pair<double,double> xRooNode::IntegralAndError(const RooFitResult* fr) cons
         err = 0; // should this be sqrt(sum(v^2)) or something similar
     }else {
         out = std::numeric_limits<double>::quiet_NaN();
+    }
+    if (_snap) {
+        _pars = *_snap;
     }
     return std::make_pair(out,err);
 
