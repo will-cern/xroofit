@@ -5548,15 +5548,18 @@ void xRooNode::Draw(Option_t* opt) {
         h->Draw("axissame"); // overlay axis again
 
         TList *ll = stack->GetHists();
-        if (ll && ll->GetEntries() && titleMatchName) {
+        if (ll && ll->GetEntries()) {
 
             // get common prefix to strip off only if all titles match names and
             // any title is longer than 10 chars
             int e = std::min(allTitles.begin()->size(),allTitles.rbegin()->size());
             int ii = 0;
             bool goodPrefix = false;
-            while(ii<e && allTitles.begin()->at(ii)==allTitles.rbegin()->at(ii)) {
-                ii++; if (allTitles.begin()->at(ii)=='_' || allTitles.begin()->at(ii)==' ') goodPrefix=true;
+            if (titleMatchName) {
+                while (ii < e && allTitles.begin()->at(ii) == allTitles.rbegin()->at(ii)) {
+                    ii++;
+                    if (allTitles.begin()->at(ii) == '_' || allTitles.begin()->at(ii) == ' ') goodPrefix = true;
+                }
             }
             if (!goodPrefix) ii=0;
             // also find how many characters are needed to distinguish all entries (that dont have the same name)
