@@ -5556,7 +5556,7 @@ void xRooNode::Draw(Option_t* opt) {
             int ii = 0;
             bool goodPrefix = false;
             if (titleMatchName) {
-                while (ii < e && allTitles.begin()->at(ii) == allTitles.rbegin()->at(ii)) {
+                while (ii < e-1 && allTitles.begin()->at(ii) == allTitles.rbegin()->at(ii)) {
                     ii++;
                     if (allTitles.begin()->at(ii) == '_' || allTitles.begin()->at(ii) == ' ') goodPrefix = true;
                 }
