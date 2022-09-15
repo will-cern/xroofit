@@ -3942,6 +3942,10 @@ const char* xRooNode::GetRange() const {
 
 #include "TRegexp.h"
 
+xRooNLLVar xRooNode::nll(const xRooNode& _data) const {
+    return nll(_data,*xRooFit::createNLLOptions());
+}
+
 xRooNLLVar xRooNode::nll(const xRooNode& _data,std::initializer_list<RooCmdArg> nllOpts) const {
     RooLinkedList l; for(auto& i : nllOpts) l.Add(const_cast<RooCmdArg*>(&i));
     return nll(_data,l);

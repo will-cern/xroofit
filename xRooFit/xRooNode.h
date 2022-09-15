@@ -189,8 +189,10 @@ public:
     std::vector<double> GetBinErrors(int binStart=1, int binEnd=0, const RooFitResult* fr = nullptr) const;
     std::pair<double,double> IntegralAndError(const RooFitResult* fr = nullptr) const;
 
-    xRooNLLVar nll(const xRooNode& _data = "", std::initializer_list<RooCmdArg> nllOpts = {}) const;
+    xRooNLLVar nll(const xRooNode& _data, std::initializer_list<RooCmdArg> nllOpts) const;
     xRooNLLVar nll(const xRooNode& _data, const RooLinkedList& nllOpts) const;
+    xRooNLLVar nll(const xRooNode& _data="") const; // uses xRooFit::createNLLOption for nllOpts
+
     xRooNode fitResult(const char* opt="") const; // todo: make this 'fitResults'
     void SetFitResult(const RooFitResult* fr = nullptr); // null means will load prefit
     void SetFitResult(const std::shared_ptr<const RooFitResult>& fr) { SetFitResult(fr.get()); }
