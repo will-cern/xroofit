@@ -352,14 +352,29 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
 
 class ProgressMonitor : public RooAbsReal {
   public:
+    void (*oldHandlerr)(int) = nullptr;
+    static ProgressMonitor* me;
+    static bool fInterrupt;
+    static void interruptHandler(int signum) {
+        if (signum == SIGINT) {
+            std::cout << "Minimization interrupted ... will exit as soon as possible" << std::endl;
+            // TODO: create a global mutex for this
+            fInterrupt=true;
+        } else {
+            if(me) me->oldHandlerr(signum);
+        }
+    };
     ProgressMonitor(RooAbsReal& f, int interval=30) : RooAbsReal(Form("progress_%s",f.GetName()),""), fFunc("func","func",this,f), fInterval(interval) {
         s.Start();
+        oldHandlerr = signal(SIGINT,interruptHandler);
+        me = this;
     }
-    virtual ~ProgressMonitor() { };
+    virtual ~ProgressMonitor() { if(oldHandlerr) { signal(SIGINT,oldHandlerr); } if(me==this) me=nullptr; };
     ProgressMonitor(const ProgressMonitor& other, const char* name=0) : RooAbsReal(other,name), fFunc("func",this,other.fFunc),fInterval(other.fInterval) { }
     virtual TObject* clone(const char* newname) const override { return new ProgressMonitor(*this,newname); }
 
     double evaluate() const override {
+        if (fInterrupt) return std::numeric_limits<double>::quiet_NaN();
         double out = fFunc;
         if(prevMin == std::numeric_limits<double>::infinity()) prevMin = out;
         if(!std::isnan(out)) minVal = std::min(minVal,out);
@@ -381,6 +396,8 @@ class ProgressMonitor : public RooAbsReal {
     mutable int fInterval=0; // time in seconds before next report
     mutable TStopwatch s;
 };
+bool ProgressMonitor::fInterrupt = false;
+ProgressMonitor* ProgressMonitor::me = nullptr;
 
 std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std::shared_ptr<ROOT::Fit::FitConfig>& _fitConfig) {
 
@@ -506,6 +523,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
 
     if (_progress) {
         _nll = new ProgressMonitor(*_nll, _progress);
+        ProgressMonitor::fInterrupt = false;
     }
 
 
@@ -568,11 +586,16 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
 
         int tries = 0; int maxtries = 4; bool first=true;
         while(tries < maxtries && sIdx != -1) {
-            status = _minimizer.minimize(minim, algo);
+                status = _minimizer.minimize(minim, algo);
             if (first && actualFirstMinimizer != _minimizer.fitter()->Config().MinimizerType())
                 actualFirstMinimizer = _minimizer.fitter()->Config().MinimizerType();
             first=false;
             tries++;
+
+            if (auto fff = dynamic_cast<ProgressMonitor*>(_nll); fff && fff->fInterrupt) {
+                delete _nll;
+                throw std::runtime_error("Keyboard interrupt while minimizing");
+            }
 
             // RooMinimizer loses the useful status code, so here we will override it
             status = _minimizer.fitter()->Result().Status(); // note: Minuit failure is status code 4, minuit2 that is edm above max
@@ -584,6 +607,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
                                    std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy()));
             //int status = _minimizer->migrad();
             if (status % 1000 == 0) break; //fit was good
+
+
 
             if (_minimizer.fitter()->Result().Status() == 4 && minim != "Minuit") {
                 if (printLevel >= -1)
@@ -625,71 +650,10 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
             sIdx++;
         }
 
-        for (int tries = 5, maxtries = 4; tries <= maxtries; ++tries) {
-            minim = _minimizer.fitter()->Config().MinimizerType();
-            algo = _minimizer.fitter()->Config().MinimizerAlgoType();
-            status = _minimizer.minimize(minim, algo);
-            if (tries == 1 && actualFirstMinimizer != _minimizer.fitter()->Config().MinimizerType())
-                actualFirstMinimizer = _minimizer.fitter()->Config().MinimizerType();
-            // RooMinimizer loses the useful status code, so here we will override it
-            status = _minimizer.fitter()->Result().Status(); // note: Minuit failure is status code 4, minuit2 that is edm above max
-            _minimizer._statusHistory.back().second = _minimizer.fitter()->Result().Status();
-            minim = _minimizer.fitter()->Config().MinimizerType(); // may have changed value
-            if (save)
-                algNames.push_back(_minimizer.fitter()->Config().MinimizerType()
-                                   + _minimizer.fitter()->Config().MinimizerAlgoType() +
-                                   std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy()));
-            //int status = _minimizer->migrad();
-            if (status % 1000 == 0) break; //fit was good
-
-            if (_minimizer.fitter()->Result().Status() == 4 && minim != "Minuit") {
-                if (printLevel >= -1)
-                    Warning("fitTo", "%s Hit max function calls of %d", fitName.Data(),
-                            _minimizer.fitter()->Config().MinimizerOptions().MaxFunctionCalls());
-                if (autoMaxCalls) {
-                    if (printLevel >= -1) Warning("fitTo", "will try doubling this");
-                    _minimizer.fitter()->Config().MinimizerOptions().SetMaxFunctionCalls(
-                            _minimizer.fitter()->Config().MinimizerOptions().MaxFunctionCalls() * 2);
-                    _minimizer.fitter()->Config().MinimizerOptions().SetMaxIterations(
-                            _minimizer.fitter()->Config().MinimizerOptions().MaxIterations() * 2);
-                    if (tries == maxtries) tries = maxtries - 1;
-                    continue;
-                }
-            }
-
-            if (tries >= maxtries) break; //giving up
-
-            //NOTE: minuit2 seems to distort the tolerance in a weird way, so that tol becomes 100 times smaller than specified
-            //Also note that if fits are failing because of edm over max, it can be a good idea to activate the Offset option when building nll
-            if (printLevel >= -1)
-                Warning("fitTo", "%s Status=%d (edm=%f, tol=%f, strat=%d), Rescanning #%d...", fitName.Data(), status,
-                        _minimizer.fitter()->Result().Edm(),
-                        _minimizer.fitter()->Config().MinimizerOptions().Tolerance(),
-                        _minimizer.fitter()->Config().MinimizerOptions().Strategy(), tries);
-            if (tries < maxtries) {
-                _minimizer.minimize(minim, "Scan");
-                if (save) algNames.push_back(_minimizer.fitter()->Config().MinimizerType() + "Scan");
-            }
-            if (tries == 2) { //up the strategy (if we can)
-                int idx = m_strategy.Index('0' + strategy);
-                if (idx != -1 && idx != m_strategy.Length() - 1) {
-                    strategy = int(m_strategy(idx + 1) - '0');
-                    _minimizer.setStrategy(strategy);
-                    tries -= 2; // go back to 0 tries so that will do minimize then rescan at that strat and retry
-                } else {
-                    tries++; //move on to next
-                }
-            }
-            if (tries == 3) { _minimizer.fitter()->Config().SetMinimizer("Minuit", "migradImproved"); }
-            else {
-                // put algo back after setting it to 'scan'
-                _minimizer.fitter()->Config().SetMinimizer(minim, algo);
-            }
-        }
 
         /* Minuit2 status codes:
          * status = 0    : OK
-              status = 1    : Covariance was mad  epos defined
+              status = 1    : Covariance was made pos defined
                status = 2    : Hesse is invalid
                status = 3    : Edm is above max
                status = 4    : Reached call limit
@@ -703,11 +667,14 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
             Warning("fitTo", "%s final status is %d", fitName.Data(), status);
         }
 
-        if (hesse) {
+        if (hesse && _minimizer.fitter()->Result().IsValid()) { // only do hesse if was a valid min
             //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? - and also becomes WRONG :-S
-            _minimizer.hesse(); //note: I have seen that you can get 'full covariance quality' without running hesse ... is that expected?
-            _minimizer._statusHistory.back().second = _minimizer.fitter()->Result().Status();
-            auto _status = _minimizer.fitter()->Result().Status();
+            auto _status = _minimizer.hesse(); //note: I have seen that you can get 'full covariance quality' without running hesse ... is that expected?
+
+            if (auto fff = dynamic_cast<ProgressMonitor*>(_nll); fff && fff->fInterrupt) {
+                delete _nll;
+                throw std::runtime_error("Keyboard interrupt while minimizing");
+            }
             if (_status != 0 && status == 0 && printLevel >= -1) {
                 Warning("fitTo", "%s hesse status is %d", fitName.Data(), _status);
             }
