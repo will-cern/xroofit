@@ -4161,21 +4161,21 @@ xRooNode xRooNode::reduced(const std::string& _range) {
             for(auto& c : funcs) out.Remove(*c);
             out.browse();
             return out;
-        } else if (!get()) {
+        } else if (!get() || get<RooArgList>()) {
             // filter the children ....
-            xRooNode out(std::shared_ptr<TObject>(nullptr),fParent);
+            xRooNode out(get<RooArgList>() ? std::make_shared<RooArgList>() : std::shared_ptr<TObject>(nullptr),fParent);
             for(auto c : *this) {
                 bool matchAny = false;
                 for(auto& p : patterns) {
                     if(TString(c->GetName()).Contains(TRegexp(p,true))) { matchAny = true; break; }
                 }
-                if(matchAny) out.push_back(c);
+                if(matchAny) {out.push_back(c); if(auto l = out.get<RooArgList>()) { l->add(*c->get<RooAbsArg>()); } }
             }
             return out;
         }
     }
 
-    return xRooNode();
+    return xRooNode(get<RooArgList>() ? std::make_shared<RooArgList>() : std::shared_ptr<TObject>(nullptr),fParent);
 }
 
 //xRooNode xRooNode::generate(bool expected) const {
