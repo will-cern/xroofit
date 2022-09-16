@@ -124,10 +124,14 @@ public:
 
     xRooNode obs() const; // obs and globs
     xRooNode globs() const; // just the global obs
-    xRooNode pars() const; // vars and args
-    xRooNode deps() const; // obs,globs,vars,args
+    xRooNode pars() const; // floats and args/consts
+    xRooNode floats() const; // floating pars
+    xRooNode deps() const; // obs,globs,floats,args
     xRooNode args() const; // const pars
-    xRooNode vars() const; // unconst pars
+    xRooNode vars() const; // unconst pars - DEPRECATED
+
+    xRooNode poi() const; // parameters of interest
+    xRooNode np() const; // nuisance parameters
 
     xRooNode components() const; // additive children
     xRooNode factors() const; // multiplicative children

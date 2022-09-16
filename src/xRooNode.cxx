@@ -2977,7 +2977,7 @@ void xRooNode::SetName(const char* name) {
 }
 
 xRooNode& xRooNode::browse() {
-    if (!get() && !(strlen(GetName())>0&&(GetName()[0]=='!')) && !fBrowseOperation) return *this; // nothing to browse - 'collection' nodes should already be populated except for folders
+    if (get<RooArgList>() || (!get() && !(strlen(GetName())>0&&(GetName()[0]=='!')) && !fBrowseOperation)) return *this; // nothing to browse - 'collection' nodes should already be populated except for folders
     // alternative could have been to mandate that the 'components' of a collection node are the children it has.
 
     auto findByObj = [&](const std::shared_ptr<xRooNode>& n) {
@@ -3004,7 +3004,7 @@ xRooNode& xRooNode::browse() {
 
     for(auto& c : *this) {
         if (strlen(c->GetName())>0 && (c->GetName()[0]=='.')) {c->fTimes=1; continue;} // never auto-cleanup property children
-        if (strcmp(c->GetName(),"!.vars")==0) {c->fTimes=1; continue;} // special collection, also not cleaned up
+        if (strcmp(c->GetName(),"!.pars")==0) {c->fTimes=1; continue;} // special collection, also not cleaned up
         if (c->get<RooWorkspace>() || c->get<TFile>()) {c->fTimes=1; continue;} // workspaces and files not cleaned up: TODO have a nocleanup flag instead
         c->fTimes = 0;
     }
@@ -3116,75 +3116,94 @@ xRooNode& xRooNode::browse() {
 }
 
 xRooNode xRooNode::obs() const {
-    xRooNode out(".obs",nullptr,*this);
+    xRooNode out(".obs",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".obs").c_str());
     for(auto o : deps()) {
-        if (o->get<RooAbsArg>()->getAttribute("obs")) out.emplace_back(o);
+        if (o->get<RooAbsArg>()->getAttribute("obs")) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o); }
     }
     return out;
 }
 
 xRooNode xRooNode::globs() const {
-    xRooNode out(".globs",nullptr,*this);
+    xRooNode out(".globs",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".globs").c_str());
     for(auto o : obs()) {
-        if (o->get<RooAbsArg>()->getAttribute("global")) out.emplace_back(o);
+        if (o->get<RooAbsArg>()->getAttribute("global")) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
     }
     return out;
 }
 
 xRooNode xRooNode::pars() const {
-    xRooNode out(".pars",nullptr,*this);
+    xRooNode out(".pars",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".pars").c_str());
     for(auto o : deps()) {
-        if (!o->get<RooAbsArg>()->getAttribute("obs")) out.emplace_back(o);
+        if (!o->get<RooAbsArg>()->getAttribute("obs")) {out.get<RooArgList>()->add(*(o->get<RooAbsArg>()));out.emplace_back(o);}
     }
     return out;
 }
 
 xRooNode xRooNode::args() const {
-    xRooNode out(".args",nullptr,*this);
+    xRooNode out(".args",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".args").c_str());
     for(auto o : pars()) {
-        if (o->get<RooConstVar>() || o->get<RooAbsArg>()->getAttribute("Constant")) out.emplace_back(o);
+        if (o->get<RooConstVar>() || o->get<RooAbsArg>()->getAttribute("Constant")) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
     }
     return out;
 }
 
 xRooNode xRooNode::vars() const {
-    xRooNode out(".vars",nullptr,*this);
+    std::cout << "xRooNode: WARNING: vars() method deprecated in favour of floats() ... please update your code" << std::endl;
+    xRooNode out(".vars",std::make_shared<RooArgList>(),*this);
     for(auto o : pars()) {
-        if (!o->get<RooAbsArg>()->getAttribute("Constant")) out.emplace_back(o);
+        if (!o->get<RooAbsArg>()->getAttribute("Constant") && !o->get<RooConstVar>()) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
+    }
+    return out;
+}
+
+xRooNode xRooNode::floats() const {
+    xRooNode out(".floats",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".floats").c_str());
+    for(auto o : pars()) {
+        if (!o->get<RooAbsArg>()->getAttribute("Constant") && !o->get<RooConstVar>()) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
     }
     return out;
 }
 
 xRooNode xRooNode::deps() const {
-    xRooNode out(".deps",nullptr,*this);
+    xRooNode out(".deps",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".deps").c_str());
     if (auto p = get<RooAbsArg>();p) {
         // also need to get all constPars so use leafNodeServerList .. will include self if is fundamental, which is what we want
         RooArgSet allLeafs;
         p->leafNodeServerList(&allLeafs);
         for(auto& c : allLeafs) {
-            if (c->isFundamental() || dynamic_cast<RooConstVar*>(c)) out.emplace_back(std::make_shared<xRooNode>(*c,*this));
+            if (c->isFundamental() || dynamic_cast<RooConstVar*>(c)) {out.get<RooArgList>()->add(*c);out.emplace_back(std::make_shared<xRooNode>(*c,*this));  }
         }
     } else if(auto p = get<RooAbsData>(); p) {
         for(auto a : *p->get()) {
             a->setAttribute("obs");
             out.emplace_back(std::make_shared<xRooNode>(*a,*this));
+            out.get<RooArgList>()->add(*a);
         }
         if (auto _globs = find(".globs"); _globs && _globs->get<RooAbsCollection>()) {
             for(auto& a : *_globs->get<RooAbsCollection>()) {
                 a->setAttribute("obs"); a->setAttribute("global");
                 out.emplace_back(std::make_shared<xRooNode>(*a,*this));
+                out.get<RooArgList>()->add(*a);
             }
         } else if (auto _ws = ws(); _ws) {
             if (auto _globs = dynamic_cast<RooArgSet*>(_ws->_snapshots.find(p->GetName())); _globs) {
                 for(auto a : *_globs) {
                     a->setAttribute("obs");a->setAttribute("global");
                     out.emplace_back(std::make_shared<xRooNode>(*a,*this));
+                    out.get<RooArgList>()->add(*a);
                 }
             } else if (auto _gl = _ws->_namedSets.find("globalObservables"); _gl != _ws->_namedSets.end()) {
                 for(auto& _g : _gl->second) {
                     auto _clone = std::shared_ptr<RooAbsArg>(dynamic_cast<RooAbsArg*>(_g->Clone(_g->GetName())));
                     if (auto v = std::dynamic_pointer_cast<RooAbsRealLValue>(_clone); v && _g->getStringAttribute("nominal")) v->setVal(TString(_g->getStringAttribute("nominal")).Atof());
                     out.emplace_back(std::make_shared<xRooNode>(_clone,*this));
+                    out.get<RooArgList>()->add(*_clone);
                 }
             } else if(fParent) {
                 // note: this is slow in large workspaces ... too many obs to look through?
@@ -3194,17 +3213,19 @@ xRooNode xRooNode::deps() const {
                     auto _clone = std::shared_ptr<RooAbsArg>(dynamic_cast<RooAbsArg*>(_g->Clone(_g->GetName())));
                     if (auto v = std::dynamic_pointer_cast<RooAbsRealLValue>(_clone); v && _g->getStringAttribute("nominal")) v->setVal(TString(_g->getStringAttribute("nominal")).Atof());
                     out.emplace_back(std::make_shared<xRooNode>(_clone,*this));
-                    //out.emplace_back(std::make_shared<Node2>(*_g,*this)); // TODO: Should snapshot with nominal value
+                    out.get<RooArgList>()->add(*_clone);
                 }
             }
         }
     } else if(auto w = get<RooWorkspace>(); w) {
         for(auto a : w->allVars()) {
             out.emplace_back(std::make_shared<xRooNode>(*a,*this));
+            out.get<RooArgList>()->add(*a);
         }
         // add all cats as well
         for(auto a : w->allCats()) {
             out.emplace_back(std::make_shared<xRooNode>(*a,*this));
+            out.get<RooArgList>()->add(*a);
         }
     }
     return out;
@@ -3387,8 +3408,8 @@ xRooNode xRooNode::components() const {
         }
     } else if(strlen(GetName())>0 && GetName()[0]=='!' && fParent) {
         // special case of dynamic property
-        if (TString(GetName())=="!.vars") {
-            for(auto& c : fParent->vars()) {
+        if (TString(GetName())=="!.pars") {
+            for(auto& c : fParent->pars()) {
                 out.emplace_back(c);
             }
         } else {
