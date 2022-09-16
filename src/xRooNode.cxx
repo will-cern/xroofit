@@ -3169,6 +3169,24 @@ xRooNode xRooNode::floats() const {
     return out;
 }
 
+xRooNode  xRooNode::poi() const {
+    xRooNode out(".poi",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".poi").c_str());
+    for(auto o : pars()) {
+        if (o->get<RooAbsArg>()->getAttribute("poi")) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
+    }
+    return out;
+}
+
+xRooNode  xRooNode::np() const {
+    xRooNode out(".np",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".np").c_str());
+    for(auto o : pars()) {
+        if (!o->get<RooAbsArg>()->getAttribute("poi") && !o->get<RooConstVar>()) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
+    }
+    return out;
+}
+
 xRooNode xRooNode::deps() const {
     xRooNode out(".deps",std::make_shared<RooArgList>(),*this);
     out.get<RooArgList>()->setName((GetPath()+".deps").c_str());
