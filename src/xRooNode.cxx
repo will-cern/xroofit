@@ -729,7 +729,7 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
                 throw std::runtime_error(TString::Format("Cannot find %s in %s", child.GetName(), fParent->GetName()));
             }
             return xRooNode(*arg);
-        }
+        } // todo: add support for RooAddPdf and RooAddition
     }
 
     if(auto w = get<RooWorkspace>(); w) {
@@ -748,7 +748,7 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
         return out;
     } else if(get<RooProduct>() || get<RooProdPdf>()) {
         return factors().Remove(child);
-    } else if(get<RooRealSumPdf>() || get<RooAddPdf>()) {
+    } else if(get<RooRealSumPdf>()) {
         return components().Remove(child);
     }
 
@@ -3133,6 +3133,15 @@ xRooNode xRooNode::globs() const {
     return out;
 }
 
+xRooNode xRooNode::robs() const {
+    xRooNode out(".robs",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".robs").c_str());
+    for(auto o : obs()) {
+        if (!o->get<RooAbsArg>()->getAttribute("global")) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
+    }
+    return out;
+}
+
 xRooNode xRooNode::pars() const {
     xRooNode out(".pars",std::make_shared<RooArgList>(),*this);
     out.get<RooArgList>()->setName((GetPath()+".pars").c_str());
@@ -4146,17 +4155,17 @@ xRooNode xRooNode::reduced(const std::string& _range) {
                 }
             }
             return xRooNode(newPdf,fParent);
-        } else if(auto r = get<RooRealSumPdf>(); r) {
-            // create a new sum pdf and add only the components matching the pattern given
-            xRooNode out(std::shared_ptr<TObject>(r->Clone()),fParent);
-            // go through functions and remove any that don't match pattern
-            RooArgList funcs; // to be removed
+        } else if(!components().empty()) {
+            // create a new obj and remove non-matching components
+            xRooNode out(std::shared_ptr<TObject>(get()->Clone(TString::Format("%s_reduced",get()->GetName()))),fParent);
+            // go through components and remove any that don't match pattern
+            std::vector<TObject*> funcs; // to be removed
             for(auto& c : out.components()) {
                 bool matchAny = false;
                 for(auto& p : patterns) {
                     if(TString(c->GetName()).Contains(TRegexp(p,true))) { matchAny = true; break; }
                 }
-                if(!matchAny) funcs.add(*c->get<RooAbsArg>());
+                if(!matchAny) funcs.push_back(c->get());
             }
             for(auto& c : funcs) out.Remove(*c);
             out.browse();
@@ -5505,7 +5514,7 @@ void xRooNode::Draw(Option_t* opt) {
             std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue*>(vv),
                                                                   -std::numeric_limits<double>::infinity(),
                                                                   std::numeric_limits<double>::infinity())))) ? "" : "LF2";
-    if (rar==vv) dOpt="TEXT";
+    if (rar==vv) dOpt+="TEXT";
 
     if (hasSame) dOpt += " same";
     else hAxis = h;
@@ -5560,8 +5569,18 @@ void xRooNode::Draw(Option_t* opt) {
         std::map<std::string,int> colorByTitle; // TODO: should fill from any existing legend
         std::set<std::string> allTitles;
         bool titleMatchName = true;
+        std::map<std::string,TH1*> histGroups;
         for(auto& samp : components()) {
             auto hh = samp->BuildHistogram(v);
+            // automatically group hists that all have the same title
+            if(histGroups.find(hh->GetTitle())==histGroups.end()) {
+                histGroups[hh->GetTitle()] = hh;
+            } else {
+                // add it into this group
+                histGroups[hh->GetTitle()]->Add(hh);
+                delete hh;
+                continue;
+            }
             auto hhMin = (hh->GetMinimum()==0) ? hh->GetMinimum(1e-9) : hh->GetMinimum();
             if (!stack->GetHists() && h->GetMinimum() > hhMin) {
                 auto newMin = hhMin-(h->GetMaximum()-hhMin)*gStyle->GetHistTopMargin();

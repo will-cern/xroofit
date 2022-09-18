@@ -66,15 +66,16 @@ public:
     explicit operator bool() const { return strlen(GetName()) || get(); } // the 'null' Component is the empty string
 
 
+    // at doesn't do an initial browse of the object, unlike [] operator
     const std::shared_ptr<xRooNode>& at(ssize_t idx, bool browseResult=true) const { IsFolder(); auto& out = std::vector<std::shared_ptr<xRooNode>>::at(idx); if(browseResult && out) out->browse(); return out; }
     std::shared_ptr<xRooNode> at(const std::string& name,bool browseResult=true) const;
 
     RooArgList argList() const;
 
     std::shared_ptr<xRooNode> find(const std::string& name) const;
-    bool contains(const std::string& name) const; // doesn't trigger a browse, unlike find
+    bool contains(const std::string& name) const; // doesn't trigger a browse of the found object, unlike find
 
-    //std::shared_ptr<Node2>& operator[](ssize_t idx) { return std::vector<std::shared_ptr<Node2>>::operator[](idx); };
+    // most users should use these methods: will do an initial browse and will browse the returned object too
     std::shared_ptr<xRooNode> operator[](ssize_t idx) { return at(idx); }
     std::shared_ptr<xRooNode> operator[](const std::string& name); // will create a child node if not existing
 
@@ -122,8 +123,9 @@ public:
 
     std::shared_ptr<TObject> convertForAcquisition(xRooNode& acquirer) const;
 
-    xRooNode obs() const; // obs and globs
+    xRooNode obs() const; // robs and globs
     xRooNode globs() const; // just the global obs
+    xRooNode robs() const; // the regular obs
     xRooNode pars() const; // floats and args/consts
     xRooNode floats() const; // floating pars
     xRooNode deps() const; // obs,globs,floats,args
