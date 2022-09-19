@@ -59,6 +59,10 @@
 #include "TEnv.h"
 
 xRooNode::InteractiveObject* xRooNode::gIntObj = nullptr;
+std::map<std::string,std::tuple<std::function<double(double,double,double)>,bool>> xRooNode::auxFunctions;
+void xRooNode::SetAuxFunction(const char* title, const std::function<double(double,double,double)>& func, bool symmetrize) {
+    auxFunctions[title] = std::make_tuple(func,symmetrize);
+}
 
 template<typename T> const T& _or_func(const T& a, const T& b) { if (a) return a; return b; }
 
@@ -4825,25 +4829,57 @@ public:
 void xRooNode::Draw(Option_t* opt) {
     if (!get() && !IsFolder()) return;
 
+    if (auxFunctions.empty()) {
+        // add the defaults: Ratio and Signif
+        SetAuxFunction("Ratio",[](double a,double b,double) { if(a==0) return 0.; if(b==0 && a==0) return 1.; return a/b; },true);
+        SetAuxFunction("Signif",[](double n, double b, double sigma) {
+            double t0 = 0;
+            if(sigma<=0.) {
+                //use simplified expression ...
+                t0 = 2.*( ((n==0)?0:n*log(n/b)) - (n-b) );
+            } else {
+                double sigma2 = sigma*sigma;
+                double b_hathat = 0.5*( b - sigma2 + sqrt( pow(b-sigma2,2) + 4*n*sigma2 ) );
+                //double s_hat = n - m;
+                //double b_hat = m;
+                t0 = 2.*( ((n==0)?0:n*log(n/b_hathat)) + b_hathat - n + pow(b-b_hathat,2)/(2.*sigma2) );
+            }
+            if(t0 < 0) return 0.; // can happen from numerical precision
+            return (n>=b) ? sqrt(t0) : -sqrt(t0);
+        },false);
+    }
+
     TString sOpt(opt);
-    sOpt.ToLower();
-    bool hasRatio = sOpt.Contains("ratio"); sOpt.ReplaceAll("ratio","");
-    bool hasSignificance = sOpt.Contains("significance"); sOpt.ReplaceAll("significance","");
-    bool hasSame = sOpt.Contains("same"); sOpt.ReplaceAll("same","");
-    bool hasGoff = sOpt.Contains("goff"); sOpt.ReplaceAll("goff","");
-    bool hasOverlay = sOpt.Contains("overlay");
+    TString sOpt2(sOpt);sOpt2.ToLower();
+    bool hasOverlay = sOpt2.Contains("overlay");
     TString overlayName = "";
     if (hasOverlay) {
         // whatever follows overlay is the variation name
-        overlayName = sOpt(sOpt.Index("overlay")+7,sOpt.Length());
-        sOpt = sOpt(0,sOpt.Index("overlay"));
+        overlayName = sOpt(sOpt2.Index("overlay")+7,sOpt2.Length());
+        sOpt = sOpt(0,sOpt2.Index("overlay"));
+        sOpt2 = sOpt2(0,sOpt2.Index("overlay"));
     }
+    if(sOpt2.Contains("ratio") && !sOpt2.Contains("auxratio")) sOpt += "auxRatio";
+    if(sOpt2.Contains("significance") && !sOpt2.Contains("auxsignif")) sOpt += "auxSignif";
+
+    std::string auxPlotTitle = "";
+    for(auto& [k,_] : auxFunctions) {
+        if (sOpt.Contains(TString::Format("aux%s",k.c_str()))) {
+            auxPlotTitle = k;
+        }
+        sOpt.ReplaceAll(TString::Format("aux%s",k.c_str()),"");
+    }
+
+    sOpt.ToLower();
+    sOpt.ReplaceAll("ratio","");sOpt.ReplaceAll("significance",""); // remove old option if still given
+    bool hasSame = sOpt.Contains("same"); sOpt.ReplaceAll("same","");
+    bool hasGoff = sOpt.Contains("goff"); sOpt.ReplaceAll("goff","");
     bool hasFR = sOpt.Contains("pull"); sOpt.ReplaceAll("pull","");
     bool hasText = sOpt.Contains("text");
     bool hasErrorOpt = sOpt.Contains("e"); sOpt.ReplaceAll("e","");
     if (hasText) sOpt.ReplaceAll("txt","text");
-    if (hasSignificance) hasErrorOpt = true; // must calculate error to calculate significance
-
+    if (auxPlotTitle=="Signif") hasErrorOpt = true; // must calculate error to calculate significance
+    if (hasOverlay) hasSame=true; // when overlaying must be putting on same
 
     TVirtualPad *pad = gPad;
 
@@ -5402,71 +5438,30 @@ void xRooNode::Draw(Option_t* opt) {
                 TString histName = h->GetTitle(); // split it by | char
                 TString histType = histName(histName.Index('|')+1,histName.Length());
                 histName = histName(0,histName.Index('|'));
-                if(auto mainHist = dynamic_cast<TH1*>( gPad->GetPrimitive(histName) ); mainHist) {
+                if(auto mainHist = dynamic_cast<TH1*>( gPad->GetPrimitive(histName) ); mainHist && auxFunctions.find(h->GetYaxis()->GetTitle())!=auxFunctions.end()) {
                     // decide what to do based on title of auxHist (previously used name of y-axis but that changed axis behaviour)
-                    if (histType=="ratio") {
-                        auto ratioGraph = dynamic_cast<TGraphAsymmErrors*>(dataGraph->Clone(dataGraph->GetName()));
-
-                        auto safeDiv = [](double a, double b) { if(a==0) return 0.; if(b==0 && a==0) return 1.; return a/b; };
-
-                        for(int i=0;i<ratioGraph->GetN();i++) {
-                            auto _div = mainHist->GetBinContent(i+1);
-                            ratioGraph->SetPointY(i,safeDiv(ratioGraph->GetPointY(i),_div));
-                            ratioGraph->SetPointEYhigh(i,safeDiv(ratioGraph->GetErrorYhigh(i),_div));
-                            ratioGraph->SetPointEYlow(i,safeDiv(ratioGraph->GetErrorYlow(i),_div));
-                        }
-
-                        // remove the zero points
-                        int i=0;
-                        while(i < ratioGraph->GetN()) {
-                            if (ratioGraph->GetPointY(i)==0) ratioGraph->RemovePoint(i);
-                            else i++;
-                        }
-
-
-
-                        auto _tmpPad = gPad;
-                        _pad->cd();
-                        ratioGraph->Draw("z0psame");
-                        auto minMax = graphMinMax(ratioGraph);
-                        adjustYRange(minMax.first,minMax.second,h,true);
-                        _tmpPad->cd();
-                    } else if (histType=="significance") {
-                        auto signif = [](double n, double b, double sigma) {
-                            double t0 = 0;
-                            if(sigma<=0.) {
-                                //use simplified expression ...
-                                t0 = 2.*( ((n==0)?0:n*log(n/b)) - (n-b) );
-                            } else {
-                                double sigma2 = sigma*sigma;
-                                double b_hathat = 0.5*( b - sigma2 + sqrt( pow(b-sigma2,2) + 4*n*sigma2 ) );
-                                //double s_hat = n - m;
-                                //double b_hat = m;
-                                t0 = 2.*( ((n==0)?0:n*log(n/b_hathat)) + b_hathat - n + pow(b-b_hathat,2)/(2.*sigma2) );
-                            }
-                            return (n>=b) ? sqrt(t0) : -sqrt(t0);
-                        };
-                        auto hist = dynamic_cast<TH1*>( mainHist->Clone(dataGraph->GetName()) );
-                        hist->SetDirectory(0);
-                        for(int i=1;i<=mainHist->GetNbinsX();i++) {
-                            double dataYield = 0;
-                            // find the points in the data graph
-                            for(int j=0;j<dataGraph->GetN();j++) {
-                                if (dataGraph->GetPointX(j) >= mainHist->GetBinLowEdge(i) && dataGraph->GetPointX(j) < mainHist->GetBinLowEdge(i+1)) {
-                                    dataYield += dataGraph->GetPointY(j);
-                                }
-                            }
-                            hist->SetBinContent(i,signif(dataYield,mainHist->GetBinContent(i),mainHist->GetBinError(i)));
-                        }
-                        hist->SetBit(kCanDelete); // will be be deleted when pad is cleared
-                        hist->SetLineWidth(2); hist->SetFillStyle(0);
-
-                        auto _tmpPad = gPad;
-                        _pad->cd();
-                        hist->Draw("hist same");
-                        adjustYRange(hist->GetMinimum(),hist->GetMaximum(),h,true);
-                        _tmpPad->cd();
+                    // use title instead
+                    auto ratioGraph = dynamic_cast<TGraphAsymmErrors*>(dataGraph->Clone(dataGraph->GetName()));
+                    ratioGraph->SetBit(kCanDelete);
+                    for(int i=0;i<ratioGraph->GetN();i++) {
+                        double val = ratioGraph->GetPointY(i);
+                        double nom = mainHist->GetBinContent(i+1); double nomerr = mainHist->GetBinError(i+1);
+                        ratioGraph->SetPointY(i,std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(ratioGraph->GetPointY(i),nom,nomerr));
+                        ratioGraph->SetPointEYhigh(i,std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(val + ratioGraph->GetErrorYhigh(i),nom,nomerr) - ratioGraph->GetPointY(i));
+                        ratioGraph->SetPointEYlow(i,ratioGraph->GetPointY(i) - std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(val - ratioGraph->GetErrorYlow(i),nom,nomerr));
                     }
+                    // remove the zero points
+                    int i=0;
+                    while(i < ratioGraph->GetN()) {
+                        if (ratioGraph->GetPointY(i)==0 && ratioGraph->GetErrorYhigh(i)==0 && ratioGraph->GetErrorYlow(i)==0) ratioGraph->RemovePoint(i);
+                        else i++;
+                    }
+                    auto _tmpPad = gPad;
+                    _pad->cd();
+                    ratioGraph->Draw("z0psame");
+                    auto minMax = graphMinMax(ratioGraph);
+                    adjustYRange(minMax.first,minMax.second,h,std::get<1>(auxFunctions[h->GetYaxis()->GetTitle()]));
+                    _tmpPad->cd();
                 }
             }
         }
@@ -5552,9 +5547,12 @@ void xRooNode::Draw(Option_t* opt) {
             overlayExisted = true;
         } else {
             h->SetTitle(overlayName);
-            h->SetLineStyle(5);h->SetLineWidth(2);
-            h->SetLineColor(gStyle->GetLineColor());
+            (TAttLine&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
             h->Draw(dOpt);
+            if (errHist) {
+                errHist->SetTitle(overlayName);
+                (TAttLine&)(*errHist) = *h;
+            }
         }
     } else {
         h->Draw(dOpt+sOpt);
@@ -5646,7 +5644,7 @@ void xRooNode::Draw(Option_t* opt) {
             // strip common prefix and suffix before adding
             for (int i = ll->GetEntries() - 1; i >= 0; i--) { //go in reverse order
                 auto _title = (ll->GetEntries()>5) ? reducedTitles[ll->At(i)->GetTitle()] : ll->At(i)->GetTitle();
-                if (_title.size() > 10) _title = _title.substr(ii < _title.size() ? ii : 0);
+                _title = _title.substr(ii < _title.size() ? ii : 0);
                 addLegendEntry(ll->At(i), _title.c_str(), "f");
             }
         }
@@ -5697,7 +5695,7 @@ void xRooNode::Draw(Option_t* opt) {
     }
 
 
-    if ((hasRatio||hasSignificance) && !hasSame) {
+    if ((!auxPlotTitle.empty()) && !hasSame) {
         // create a pad for the ratio ... shift the bottom margin of this pad to make space for it
         double padFrac = 0.3;
         auto _tmpPad = gPad;
@@ -5710,21 +5708,19 @@ void xRooNode::Draw(Option_t* opt) {
         ratioPad->cd();
         TH1* ratioHist = dynamic_cast<TH1*>( (errHist) ? errHist->Clone("auxHist") : h->Clone("auxHist") );
         ratioHist->SetTitle((errHist) ? errHist->GetName() : h->GetName()); // abuse the title string to hold the name of the main hist
-        if (hasSignificance) {
-            ratioHist->Reset();
-        } else {
-            auto safeDiv = [](double a, double b) { if(a==0) return 0.; if(b==0 && a==0) return 1.; return a/b; };
-            for (int i = 1; i <= ratioHist->GetNbinsX(); i++) {
-                ratioHist->SetBinError(i, safeDiv(ratioHist->GetBinError(i) , ratioHist->GetBinContent(i)));
-                ratioHist->SetBinContent(i, 1);
-            }
-        }
-        //ratioHist->SetMaximum(2);ratioHist->SetMinimum(0);
+
         ratioHist->GetYaxis()->SetNdivisions(5,0,0);
-        ratioHist->GetYaxis()->SetTitle(hasSignificance ? "Signif" : "Ratio");
-        ratioHist->SetTitle(TString::Format("%s|%s",ratioHist->GetTitle(),hasSignificance ? "significance" : "ratio")); // used when plotting data (above) to decide what to calculate
-        if (hasSignificance) { ratioHist->SetMaximum(4); ratioHist->SetMinimum(-4); ratioPad->SetGridy(); }
-        else { ratioHist->SetMaximum();ratioHist->SetMinimum(); } // resets min and max
+        ratioHist->GetYaxis()->SetTitle(auxPlotTitle.c_str());
+        ratioHist->SetTitle(TString::Format("%s|%s",ratioHist->GetTitle(),auxPlotTitle.c_str())); // used when plotting data (above) to decide what to calculate
+        ratioHist->SetMaximum();ratioHist->SetMinimum(); // resets min and max
+        ratioPad->SetGridy();
+
+        for (int i = 1; i <= ratioHist->GetNbinsX(); i++) {
+            double val = ratioHist->GetBinContent(i);double err = ratioHist->GetBinError(i);
+            ratioHist->SetBinContent(i, std::get<0>(auxFunctions[auxPlotTitle])(val,val,err));
+            ratioHist->SetBinError(i, std::get<0>(auxFunctions[auxPlotTitle])(val+err, val,err) - ratioHist->GetBinContent(i));
+        }
+
 
 
         double rHeight = (_tmpPad->GetHNDC())/(gPad->GetHNDC());
@@ -5743,7 +5739,7 @@ void xRooNode::Draw(Option_t* opt) {
         ratioHist->GetXaxis()->SetTickLength(ratioHist->GetXaxis()->GetTickLength() * rHeight);
         ratioHist->SetStats(false);ratioHist->SetBit(TH1::kNoTitle);ratioHist->SetBit(kCanDelete);
         ratioHist->Draw((errHist ? "e2" : ""));
-        if (errHist && hasRatio) {
+        if (errHist) {
             auto _h = dynamic_cast<TH1*>(ratioHist->Clone("auxHist_clone"));
             _h->SetFillColor(0);
             _h->Draw("histsame");
@@ -5753,36 +5749,45 @@ void xRooNode::Draw(Option_t* opt) {
     } else if(auto ratioPad = dynamic_cast<TPad*>(gPad->GetPrimitive("auxPad")); hasSame && ratioPad) {
         // need to draw histogram in the ratio pad ...
         // if doing overlay need to update histogram
-        if(auto hr = dynamic_cast<TH1*>( ratioPad->GetPrimitive("auxHist") ); hr) {
+
+        if(auto hr = dynamic_cast<TH1*>( ratioPad->GetPrimitive("auxHist") ); hr && auxFunctions.find(hr->GetYaxis()->GetTitle())!=auxFunctions.end()) {
             TString histName = hr->GetTitle(); // split it by | char
             TString histType = histName(histName.Index('|')+1,histName.Length());
             histName = histName(0,histName.Index('|'));
+
             if (auto hnom = dynamic_cast<TH1 *>(gPad->GetPrimitive(histName)); hnom) {
-                if (histType=="ratio") {
-                    h = dynamic_cast<TH1 *>(h->Clone(h->GetName()));
-                    h->SetBit(kCanDelete);
-                    for (int i = 1; i <= hnom->GetNbinsX(); i++) {
-                        h->SetBinContent(i, h->GetBinContent(i) / hnom->GetBinContent(i));
-                    }
-                    auto _tmpPad = gPad;
-                    ratioPad->cd();
-                    if (hasOverlay) {
-                        if (auto existing = dynamic_cast<TH1 *>(ratioPad->GetPrimitive(h->GetName())); existing) {
-                            existing->Reset();
-                            existing->Add(h);
-                            delete h;
-                            h = existing;
-                            overlayExisted = true;
-                        } else {
-                            h->Draw(dOpt);
-                        }
+                h = dynamic_cast<TH1 *>(h->Clone(h->GetName()));
+                h->SetBit(kCanDelete);
+                for (int i = 1; i <= hnom->GetNbinsX(); i++) {
+                    double val = h->GetBinContent(i);double err = h->GetBinError(i);
+                    h->SetBinContent(i, std::get<0>(auxFunctions[hr->GetYaxis()->GetTitle()])(h->GetBinContent(i), hnom->GetBinContent(i),hnom->GetBinError(i)));
+                    h->SetBinError(i, std::get<0>(auxFunctions[hr->GetYaxis()->GetTitle()])(val+err, hnom->GetBinContent(i),hnom->GetBinError(i)) - h->GetBinContent(i));
+                }
+                auto _tmpPad = gPad;
+                ratioPad->cd();
+                if (hasOverlay) {
+                    if (auto existing = dynamic_cast<TH1 *>(ratioPad->GetPrimitive(h->GetName())); existing) {
+                        existing->Reset();
+                        existing->Add(h);
+                        delete h;
+                        h = existing;
+                        overlayExisted = true;
                     } else {
                         h->Draw(dOpt);
                     }
-                    adjustYRange(h->GetMinimum() * 0.9, h->GetMaximum() * 1.1, hr, true);
-                    gPad->Modified();
-                    _tmpPad->cd();
+                } else {
+                    h->Draw(dOpt);
                 }
+                double ymax = -std::numeric_limits<double>::infinity();
+                double ymin = std::numeric_limits<double>::infinity();
+                for (int i = 1; i <= h->GetNbinsX(); i++) {
+                    ymax = std::max(ymax, h->GetBinContent(i) + h->GetBinError(i));
+                    ymin = std::min(ymin, h->GetBinContent(i) - h->GetBinError(i));
+                }
+                adjustYRange(ymin,ymax,hr,std::get<1>(auxFunctions[hr->GetYaxis()->GetTitle()]));
+                //adjustYRange(h->GetMinimum() * (h->GetMinimum()<0 ? 1.1 : 0.9), h->GetMaximum() * (h->GetMinimum()<0 ? 0.9 : 1.1), hr, std::get<1>(auxFunctions[hr->GetYaxis()->GetTitle()]));
+                gPad->Modified();
+                _tmpPad->cd();
             }
         }
     }

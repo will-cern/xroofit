@@ -85,13 +85,14 @@ void xRooNode::Interactive_Pull() {
                 _pars.setRealValue(parName.c_str(),dynamic_cast<TGraph*>(gPad->GetPrimitive("nominal"))->GetPointY(i-1)*_h->GetBinError(i) + _h->GetBinContent(i));
             }
         }
-        auto _tmp = gStyle->GetLineColor();
+        TAttLine bak = *gStyle;
+        gStyle->SetLineStyle(5);gStyle->SetLineWidth(2);
         gStyle->SetLineColor(select->GetMarkerColor());
         auto _tmpPad = gPad;
         gPad->GetMother()->GetMother()->cd(1);
         _node->Draw(TString::Format("same overlay%s",_varyName.Data()));
         // TODO: find the drawn variation and set its title equal to a _pars value string
-        gStyle->SetLineColor(_tmp);
+        (TAttLine&)(*gStyle) = bak;
         _pars = *snap;
         _tmpPad->GetMother()->GetMother()->cd();
 

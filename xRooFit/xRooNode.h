@@ -33,6 +33,12 @@ class xRooNLLVar;
 class xRooNode : public TNamed, public std::vector<std::shared_ptr<xRooNode>> {
 
 public:
+    // functions of form value = f(orig,nom,nom_err)
+    // e.g. f = ratio would be simply orig/nom
+    // bool indicates if should be symmetrized
+    static std::map<std::string,std::tuple<std::function<double(double,double,double)>,bool>> auxFunctions;
+    static void SetAuxFunction(const char* title, const std::function<double(double,double,double)>& func, bool symmetrize = false );
+
     // this function is here because couldn't figure out how to check a null shared_ptr in pyroot
     static inline bool isNull(const std::shared_ptr<xRooNode>& x) {return x==nullptr; }
 
