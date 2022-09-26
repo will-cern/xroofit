@@ -259,7 +259,7 @@ void xRooNLLVar::reinitialize() {
 
 std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> xRooNLLVar::generate(bool expected,int seed) {
     if(!fPdf) return std::pair(nullptr,nullptr);
-    auto fr = std::make_shared<RooFitResult>();
+    auto fr = std::make_shared<RooFitResult>(TUUID().AsString());
     fr->setFinalParList(RooArgList());
     RooArgList l; l.add((fFuncVars) ? *fFuncVars : *std::unique_ptr<RooAbsCollection>(fPdf->getParameters(*fData)));
     fr->setConstParList(l);
@@ -1002,10 +1002,11 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateNull(int seed) {
     out.coords = coords; out.fPllType = fPllType; //out.fPOIName = fPOIName; out.fNullVal=fNullVal; out.fAltVal = fAltVal;
     out.nllVar = nllVar;
     if (!nllVar) return out;
+    if (!cfit_null()) return out;
     if(!nllVar->fFuncVars) nllVar->reinitialize();
-    *nllVar->fFuncVars = cfit_null()->floatParsFinal();
-    *nllVar->fFuncVars = cfit_null()->constPars();
-    out.data = nllVar->generate(false,seed);
+    //*nllVar->fFuncVars = cfit_null()->floatParsFinal();
+    //*nllVar->fFuncVars = cfit_null()->constPars();
+    out.data = xRooFit::generateFrom(*nllVar->fPdf, cfit_null(),false,seed); //nllVar->generate(false,seed);
     out.fGenFit = cfit_null();
     return out;
 }
@@ -1017,9 +1018,9 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
     if (!nllVar) return out;
     if (!cfit_alt()) return out;
     if(!nllVar->fFuncVars) nllVar->reinitialize();
-    *nllVar->fFuncVars = cfit_alt()->floatParsFinal();
-    *nllVar->fFuncVars = cfit_alt()->constPars();
-    out.data = nllVar->generate(false,seed);
+    //*nllVar->fFuncVars = cfit_alt()->floatParsFinal();
+    //*nllVar->fFuncVars = cfit_alt()->constPars();
+    out.data = xRooFit::generateFrom(*nllVar->fPdf, cfit_alt(),false,seed); //out.data = nllVar->generate(false,seed);
     out.fGenFit = cfit_alt();
     return out;
 }
@@ -1027,6 +1028,9 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
 #include "TDirectory.h"
 
 void xRooNLLVar::xRooHypoPoint::addToys(bool alt,int nToys) {
+    if ( (alt && !cfit_alt()) || (!alt && !cfit_null()) ) {
+        throw std::runtime_error("Cannot add toys, invalid conditional fit");
+    }
     auto& toys = (alt) ? altToys : nullToys;
     int nans=0;
     std::vector<float> times(nToys);
