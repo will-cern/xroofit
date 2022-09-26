@@ -714,20 +714,20 @@ void xRooNLLVar::xRooHypoPoint::Print() {
     std::cout << "POI: " << poi().contentsString() << " , null: " << dynamic_cast<RooAbsReal*>(poi().first())->getVal() << " , alt: " << dynamic_cast<RooAbsReal*>(alt_poi().first())->getVal();
     std::cout << " , pllType: " << fPllType << std::endl;
 
-    std::cout << " -      ufit: ";
+    std::cout << " -        ufit: ";
     if(fUfit) {
         std::cout << fUfit->minNll() << " (status=" << fUfit->status() << ") (" << mu_hat().GetName() << "_hat: " << mu_hat().getVal() << " +/- " << mu_hat().getError() << ")" << std::endl;
     } else {
-        std::cout << " Not calculated" << std::endl;
+        std::cout << "Not calculated" << std::endl;
     }
-    std::cout << " - null cfit: ";
+    std::cout << " -   null cfit: ";
     if(fNull_cfit) {
-        std::cout << fAlt_cfit->GetName() << " " << fNull_cfit->minNll() << " (status=" << fNull_cfit->status() << ")";
+        std::cout << fNull_cfit->GetName() << " " << fNull_cfit->minNll() << " (status=" << fNull_cfit->status() << ")";
     } else {
         std::cout << "Not calculated";
     }
     if (!std::isnan(dynamic_cast<RooAbsReal*>(alt_poi().first())->getVal())) {
-        std::cout << std::endl << " -  alt cfit: ";
+        std::cout << std::endl << " -    alt cfit: ";
         if (fAlt_cfit) {
             std::cout << fAlt_cfit->GetName() << " " << fAlt_cfit->minNll() << " (status=" << fAlt_cfit->status() << ")" << std::endl;
         } else {
@@ -741,7 +741,7 @@ void xRooNLLVar::xRooHypoPoint::Print() {
         }
         if (fAsimov) {
             std::cout << std::endl;
-            std::cout << "   -      asimov ufit: ";
+            std::cout << "   - asimov ufit: ";
             if(fAsimov->fUfit)  std::cout << fAsimov->fUfit->GetName() << " " <<  fAsimov->fUfit->minNll() << " (status=" << fAsimov->fUfit->status() << ")";
             else std::cout << "Not calculated";
             std::cout << std::endl <<  "   - asimov null cfit: ";
@@ -752,9 +752,9 @@ void xRooNLLVar::xRooHypoPoint::Print() {
     } else {
         std::cout << std::endl;
     }
-    if(fGenFit) std::cout << " genFit: " << fGenFit->GetName() << std::endl;
+    if(fGenFit) std::cout << " -      genFit: " << fGenFit->GetName() << std::endl;
     if (!nullToys.empty() || !altToys.empty()) {
-        std::cout << " null toys: " << nullToys.size();
+        std::cout << " *   null toys: " << nullToys.size();
         size_t firstToy = 0; while(firstToy < nullToys.size() && std::isnan(std::get<1>(nullToys[firstToy]))) firstToy++;
         if (firstToy>0) std::cout << " [ of which " << firstToy << " are bad]";
         std::cout << " , alt toys: " << altToys.size();
