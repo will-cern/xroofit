@@ -316,6 +316,11 @@ TEST(test1, testSimpleModel) {
     w["simPdf"]->datasets().Add("expData","asimov");
     ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinData(1,"expData"),w["simPdf/chan1"]->GetBinContent(1));
 
+    w.pars()["mu"]->get<RooRealVar>()->setVal(1);
+    // check can get at fit result representing snapshot of model state
+    ASSERT_DOUBLE_EQ( w["simPdf"]->datasets()["expData"]->fitResult().get<RooFitResult>()->floatParsFinal().getRealValue("mu"),0.);
+    std::cout << w["simPdf"]->datasets()["expData"]->fitResult()->GetName() << " " << w["simPdf"]->datasets()["expData"]->fitResult()->GetTitle() << std::endl;
+
 }
 
 TEST(test1,speedTest) {
