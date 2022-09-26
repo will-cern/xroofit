@@ -614,8 +614,8 @@ const char* xRooNode::GetIconName() const {
 const char* xRooNode::GetNodeType() const {
     if (auto o = get(); o && fParent && (fParent->get<RooProduct>()||fParent->get<RooRealSumPdf>())) {
         if(o->InheritsFrom("RooStats::HistFactory::FlexibleInterpVar")) return "Overall";
-        if(o->InheritsFrom("PiecewiseInterpolation")) return (dynamic_cast<RooAbsArg*>(o)->getAttribute("density")) ? "DensityHistos" : "Histos";
-        if(o->InheritsFrom("RooHistFunc")) return (dynamic_cast<RooAbsArg*>(o)->getAttribute("density")) ? "DensityHisto" : "Histo";
+        if(o->InheritsFrom("PiecewiseInterpolation")) return (dynamic_cast<RooAbsArg*>(o)->getAttribute("density")) ? "DensityHisto" : "Histo";
+        if(o->InheritsFrom("RooHistFunc")) return (dynamic_cast<RooAbsArg*>(o)->getAttribute("density")) ? "ConstDensityHisto" : "ConstHisto";
         if(o->InheritsFrom("ParamHistFunc")) return "Shape";
         if(o->InheritsFrom("RooRealVar")) return "Norm";
         if(o->InheritsFrom("RooConstVar")) return "Const";
@@ -797,9 +797,24 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
     } else if(strcmp(GetName(),".datasets()")==0) {
         // create a dataset - only allowed for pdfs or workspaces
         if (auto _ws = ws(); _ws && fParent) {
-            if (!fParent->get<RooAbsPdf>() && !fParent->get<RooWorkspace>()) {
-                throw std::runtime_error("Datasets can only be created for pdfs or workspaces");
+            sOpt.ToLower();
+            if (!fParent->get<RooAbsPdf>() && (!fParent->get<RooWorkspace>() || sOpt=="asimov")) {
+                throw std::runtime_error("Datasets can only be created for pdfs or workspaces (except if asimov dataset, then must be pdf)");
             }
+
+            if (sOpt=="asimov") {
+                // generate expected dataset - note that globs will be frozen at this time
+                auto asi = xRooFit::generateFrom(*fParent->get<RooAbsPdf>(),std::dynamic_pointer_cast<const RooFitResult>(fParent->fitResult().fComp),true);
+                if (strlen(child.GetName())) asi.first->SetName(child.GetName());
+                if (asi.first) {
+                    _ws->import(*asi.first);
+                }
+                if (asi.second) {
+                    _ws->saveSnapshot(asi.first->GetName(),*asi.second,true); // TODO: Migrate to using globs inside datasets
+                }
+                return xRooNode(*_ws->data(asi.first->GetName()),fParent);
+            }
+
             auto _obs = fParent->obs().argList();
             // put globs in a snapshot
             std::unique_ptr<RooAbsCollection> _globs(_obs.selectByAttrib("global",true));
@@ -3860,7 +3875,7 @@ void xRooNode::SetFitResult(const xRooNode& fr) {
 xRooNode xRooNode::fitResult(const char* opt) const {
 
     if (get<RooFitResult>()) return *this;
-    if (get<RooAbsData>()) return xRooNode();
+    if (get<RooAbsData>()) return find(".fitResult") ? *find(".fitResult") : xRooNode(); // the fit result the dataset was generated from, if it exists
 
     TString sOpt(opt);
     if(sOpt=="prefit") {
@@ -4005,19 +4020,20 @@ xRooNLLVar xRooNode::nll(const xRooNode& _data,std::initializer_list<RooCmdArg> 
 
 xRooNLLVar xRooNode::nll(const xRooNode& _data, const RooLinkedList& opts) const {
 
+    if(!get<RooAbsPdf>()) throw std::runtime_error(TString::Format("%s is not a pdf",GetName()));
+
     if (!_data.get<RooAbsData>()) {
         // use node name to find dataset and recall
-        auto _d = (datasets().empty()) ? nullptr : datasets().find(strlen(_data.GetName()) ? _data.GetName() : datasets().at(0)->GetName());
+        auto _d = strlen(_data.GetName()) ? datasets().find(_data.GetName()) : nullptr;
         if(!_d) {
-            // create a dummy dataset with the observables
-            RooArgSet _obs; _obs.add(obs().argList());
-            _obs.remove(*std::unique_ptr<RooAbsCollection>(_obs.selectByAttrib("global",true)));
-            _d = std::make_shared<xRooNode>(std::make_shared<RooDataSet>("dummy","dummy",_obs),*this);
+            Info("nll","Constructing NLL from Asimov dataset");
+            // create the EXPECTED (asimov) dataset with the observables
+            auto asi = xRooFit::generateFrom(*get<RooAbsPdf>(),std::dynamic_pointer_cast<const RooFitResult>(fitResult().fComp),true);
+            _d = std::make_shared<xRooNode>(asi.first,*this);
+            _d->emplace_back(std::make_shared<xRooNode>(".globs",std::const_pointer_cast<RooAbsCollection>(asi.second),*_d));
         }
         return nll(*_d,opts);
     }
-
-    if(!get<RooAbsPdf>()) throw std::runtime_error(TString::Format("%s is not a pdf",GetName()));
 
     auto _globs = _data.globs(); // keep alive because may own the globs
 
@@ -4894,6 +4910,9 @@ void xRooNode::Draw(Option_t* opt) {
             gPad->SetLeftMargin(gStyle->GetPadLeftMargin());
             gPad->SetRightMargin(gStyle->GetPadRightMargin());
         }
+        //if (gPad == gPad->GetCanvas()) {
+        //    gPad->GetCanvas()->SetCanvasSize( gPad->GetCanvas()->GetWindowWidth() - 4, gPad->GetCanvas()->GetWindowHeight() - 28 );
+        //}
     };
 
     if (!hasSame || !pad) {
@@ -5042,6 +5061,25 @@ void xRooNode::Draw(Option_t* opt) {
         if (!hasSame) {
             clearPad();
             pad->SetBorderSize(0);
+//            if (pad->GetCanvas() == pad) {
+//                if(_size>4) {
+//                    int n = _size;
+//                    Int_t w = 1, h = 1;
+//                    if (pad->GetCanvas()->GetWindowWidth() > pad->GetCanvas()->GetWindowHeight()) {
+//                        w = TMath::Ceil(TMath::Sqrt(n));
+//                        h = TMath::Floor(TMath::Sqrt(n));
+//                        if (w*h < n) w++;
+//                    } else {
+//                        h = TMath::Ceil(TMath::Sqrt(n));
+//                        w = TMath::Floor(TMath::Sqrt(n));
+//                        if (w*h < n) h++;
+//                    }
+//                    // adjust the window size to display only 4 in the window, with scroll bars
+//                    pad->GetCanvas()->SetCanvasSize( w*((pad->GetCanvas()->GetWindowWidth()-4)/2.) -16 ,h*((pad->GetCanvas()->GetWindowHeight()-28)/2.) - 16 );
+//                } else {
+//                    //pad->GetCanvas()->Set( w*(pad->GetCanvas()->GetWindowWidth()/2.),h*(pad->GetCanvas()->GetWindowHeight()/2.))  )
+//                }
+//            }
             dynamic_cast<TPad *>(pad)->DivideSquare(_size);//,0,0);
         }
         int i=0;

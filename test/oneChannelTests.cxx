@@ -7,6 +7,7 @@
 #include "TH1D.h"
 #include "TFile.h"
 #include "RooAbsData.h"
+#include "RooFitResult.h"
 #endif
 
 /**
@@ -251,7 +252,7 @@ TEST(test1,toyHypoTest) {
 
     auto model = buildModel(20,16,0,1,0,0,0);
 
-    auto hp = model["simPdf"]->nll().hypoPoint("mu_Sig",1,0);
+    auto hp = model["simPdf"]->nll("obsData").hypoPoint("mu_Sig",1,0);
 
     hp.addNullToys(30);
 
@@ -277,6 +278,71 @@ TEST(test1, binnedFormulaVarTest) {
 
     for(auto b : w["simPdf/chan1/samp1"]->bins()) b->Multiply("myFactor");
     w.SaveAs("binnedFormularVarTest.root");
+
+}
+
+TEST(test1, testSimpleModel) {
+
+    RooWorkspace ws("w","w"); // create workspace
+    xRooNode w(ws); // wrap it with an xRooNode to interact with
+
+    w["simPdf/chan1"]->SetXaxis("myObs","dummy obs",5,0,5); // creates a channel with 5 uniform bins between 0 and 5
+    w["simPdf/chan1/samp1"]->SetBinContent(1,3);
+    w["simPdf/chan1/samp1"]->SetBinError(1,0.5);
+
+
+    w["simPdf/chan1/samp2"]->SetBinContent(1,1);
+    w["simPdf/chan1/samp2"]->SetBinContent(1,1.5,"alpha",1); // creates variation called alpha, assigning value 1.5 to +1sigma
+    w["simPdf/chan1/samp2"]->SetBinContent(1,0.5,"alpha",-1); // -1 sigma variation (optional because is symmetric)
+
+    w["simPdf"]->pars()["alpha"]->Constrain("normal"); // adds normal (gaussian(1,0)) constraint on alpha parameter
+    w["simPdf/chan1/samp2"]->Multiply("mu","norm"); // creates a normalization factor that multiplies samp2
+    w.pars()["mu"]->get<RooRealVar>()->setRange(0,10); // can access the parameter to change the range like this
+
+    w["simPdf/chan1"]->SetBinData(1,6);
+
+    // check the total error on the bin is what we expect (MC statistical + systematic in quadrature)
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinError(1),sqrt(0.5*0.5 + 0.5*0.5));
+
+
+    auto fr = w["simPdf"]->nll("obsData").minimize();
+    fr->Print();
+
+    ASSERT_LT(dynamic_cast<RooRealVar*>(fr->floatParsFinal().find("alpha"))->getError(),1.01);
+    ASSERT_GT(dynamic_cast<RooRealVar*>(fr->floatParsFinal().find("alpha"))->getError(),0.99);
+
+    // test creation of asimov datasets
+    w.pars()["mu"]->get<RooRealVar>()->setVal(0);
+    w["simPdf"]->datasets().Add("expData","asimov");
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinData(1,"expData"),w["simPdf/chan1"]->GetBinContent(1));
+
+}
+
+TEST(test1,speedTest) {
+
+    xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-sa_install2/ttHws/hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
+    w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange("physical",0,std::numeric_limits<double>::infinity());
+    w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange(-1,10);
+
+    auto nll = w["simPdf"]->nll("asimovData",{xRooFit::ReuseNLL(false)});
+    w.pars()["sqrt_mu"]->get<RooRealVar>()->setVal(0);
+    nll.setData(nll.generate(true));
+    nll->SetName("nll_hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
+
+    w["simPdf"]->pars().reduced("alpha_*,gamma_*").argList().setAttribAll("Constant",true);
+
+    nll.fitConfig()->MinimizerOptions().SetStrategy(1);
+    nll.fitConfig()->MinimizerOptions().SetTolerance(1);
+
+    TFile f("hypoSpace400.root","UPDATE");
+
+    nll.pars()->find("sqrt_mu")->setStringAttribute("altVal","0");
+    auto hs = nll.hypoSpace("sqrt_mu");
+
+    auto lim = hs.FindLimit("cls exp0 readonly",0.05);
+    std::cout << lim.first << " +/- " << lim.second << std::endl;
+
+    f.Close();
 
 }
 
