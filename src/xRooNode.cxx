@@ -804,11 +804,14 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
 
             if (sOpt=="asimov") {
                 // generate expected dataset - note that globs will be frozen at this time
-                auto asi = xRooFit::generateFrom(*fParent->get<RooAbsPdf>(),std::dynamic_pointer_cast<const RooFitResult>(fParent->fitResult().fComp),true);
+                auto _fr = std::dynamic_pointer_cast<const RooFitResult>(fParent->fitResult().fComp);
+                if (strlen(_fr->GetName())==0) std::const_pointer_cast<RooFitResult>(_fr)->SetName(TUUID().AsString());
+                auto asi = xRooFit::generateFrom(*fParent->get<RooAbsPdf>(),_fr,true);
                 if (strlen(child.GetName())) asi.first->SetName(child.GetName());
                 if (asi.first) {
                     _ws->import(*asi.first);
                 }
+                if (!_ws->obj(_fr->GetName())) { _ws->import(const_cast<RooFitResult&>(*_fr)); } // save fr to workspace, for later retrieval
                 if (asi.second) {
                     _ws->saveSnapshot(asi.first->GetName(),*asi.second,true); // TODO: Migrate to using globs inside datasets
                 }
@@ -3875,7 +3878,14 @@ void xRooNode::SetFitResult(const xRooNode& fr) {
 xRooNode xRooNode::fitResult(const char* opt) const {
 
     if (get<RooFitResult>()) return *this;
-    if (get<RooAbsData>()) return find(".fitResult") ? *find(".fitResult") : xRooNode(); // the fit result the dataset was generated from, if it exists
+    if (get<RooAbsData>()) {
+        if(auto  _fr = find(".fitResult"); _fr) return _fr;
+        // check if weightVar of RooAbsData has fitResult attribute on it, will be the generation fit result
+        if (get<RooDataSet>() && get<RooDataSet>()->weightVar() && get<RooDataSet>()->weightVar()->getStringAttribute("fitResult")) {
+            return xRooNode(getObject<const RooFitResult>(get<RooDataSet>()->weightVar()->getStringAttribute("fitResult")),*this);
+        }
+        return xRooNode();
+    }
 
     TString sOpt(opt);
     if(sOpt=="prefit") {
@@ -3928,7 +3938,8 @@ xRooNode xRooNode::fitResult(const char* opt) const {
         }
         auto _args = args().argList();
         // global obs are added to constPars list too
-        _args.add( globs().argList() );
+        auto _globs = globs(); // keep alive as may own glob
+        _args.add( _globs.argList() );
         fr->setConstParList(_args);
         std::unique_ptr<RooArgList> _snap(dynamic_cast<RooArgList*>(_pars->snapshot()));
         for(auto& p : *_snap) {
@@ -3942,28 +3953,83 @@ xRooNode xRooNode::fitResult(const char* opt) const {
     // return first checked fit result present in the workspace
     if (auto _w = ws(); _w) {
         for(auto o : _w->allGenericObjects()) {
-            if (auto fr = dynamic_cast<RooFitResult*>(o); fr && fr->TestBit(1<<20)) {
-                return xRooNode(*fr,*_w);
+            if (auto _fr = dynamic_cast<RooFitResult*>(o); _fr && _fr->TestBit(1<<20)) {
+                // check all pars match final/const values ... if mismatch need to create a new RooFitResult
+                bool match = true;
+                for(auto p : pars()) {
+                    if (!p->get<RooAbsReal>()) continue;
+                    if (p->get<RooAbsArg>()->getAttribute("Constant")) {
+                        if(_fr->floatParsFinal().find(p->GetName()) || std::abs(_fr->constPars().getRealValue(p->GetName(),std::numeric_limits<double>::quiet_NaN())-p->get<RooAbsReal>()->getVal())>1e-15) {
+                            match = false;break;
+                        }
+                    } else {
+                        if(_fr->constPars().find(p->GetName()) || std::abs(_fr->floatParsFinal().getRealValue(p->GetName(),std::numeric_limits<double>::quiet_NaN())-p->get<RooAbsReal>()->getVal())>1e-15) {
+                            match = false;break;
+                        }
+                    }
+                }
+                if (!match) {
+                    // create new fit result using covariances from this fit result
+                    std::unique_ptr<RooArgList> _pars(dynamic_cast<RooArgList*>(pars().argList().selectByAttrib("Constant",false)));
+                    auto fr = std::make_shared<RooFitResult>(""); fr->SetTitle(TString::Format("%s parameter snapshot",GetName()));
+                    fr->setFinalParList(*_pars);
+                    if (fr->_VM) {
+                        auto cov = _fr->reducedCovarianceMatrix(*_pars);
+                        fr->setCovarianceMatrix(cov);
+                    }
+
+                    auto _args = args().argList();
+                    // global obs are added to constPars list too
+                    auto _globs = globs(); // keep alive as may own glob
+                    _args.add( _globs.argList() );
+                    fr->setConstParList(_args);
+                    std::unique_ptr<RooArgList> _snap(dynamic_cast<RooArgList*>(_pars->snapshot()));
+                    for(auto& p : *_snap) {
+                        if (auto atr = p->getStringAttribute("initVal");atr && dynamic_cast<RooRealVar*>(p)) dynamic_cast<RooRealVar*>(p)->setVal(TString(atr).Atof());
+                    }
+                    fr->setInitParList(*_snap);
+                    return xRooNode(fr,*this);
+                }
+                return xRooNode(*_fr,*_w);
             }
         }
     } else {
         // objects not in workspaces are allowed to have a fitResult set in their memory
         // use getObject to get it
-        if (auto fr = getObject<RooFitResult>("fitResult"); fr) {
+        if (auto fr = getObject<RooFitResult>(".fitResult"); fr) {
             return xRooNode(fr,*this);
         }
     }
 
     std::unique_ptr<RooArgList> _pars(dynamic_cast<RooArgList*>(pars().argList().selectByAttrib("Constant",false)));
-    auto fr = std::make_shared<RooFitResult>("uncorrelated");
+    auto fr = std::make_shared<RooFitResult>(""); fr->SetTitle(TString::Format("%s uncorrelated parameter snapshot",GetName()));
     fr->setFinalParList(*_pars);
 
-    // go through pars looking existence of any covariances
+    TMatrixDSym cov(fr->floatParsFinal().getSize());
+    auto prevCov = fr->_VM;
+    if (prevCov) {
+        for(int i =0;i<prevCov->GetNcols();i++) {
+            for(int j=0;j<prevCov->GetNrows();j++) {
+                cov(i,j) = (*prevCov)(i,j);
+            }
+        }
+    }
+    int i = 0;
+    for(auto& p : fr->floatParsFinal()) {
+        if (!prevCov || i>=prevCov->GetNcols()) {
+            cov(i, i) = pow(dynamic_cast<RooRealVar *>(p)->getError(), 2);
+        }
+        i++;
+    }
+    int covQualBackup = fr->_covQual;
+    fr->setCovarianceMatrix(cov);
+    fr->_covQual = covQualBackup;
 
 
     auto _args = args().argList();
     // global obs are added to constPars list too
-    _args.add( globs().argList() );
+    auto _globs = globs(); // keep alive as may own glob
+    _args.add( _globs.argList() );
     fr->setConstParList(_args);
     std::unique_ptr<RooArgList> _snap(dynamic_cast<RooArgList*>(_pars->snapshot()));
     for(auto& p : *_snap) {
@@ -4025,12 +4091,13 @@ xRooNLLVar xRooNode::nll(const xRooNode& _data, const RooLinkedList& opts) const
     if (!_data.get<RooAbsData>()) {
         // use node name to find dataset and recall
         auto _d = strlen(_data.GetName()) ? datasets().find(_data.GetName()) : nullptr;
-        if(!_d) {
-            Info("nll","Constructing NLL from Asimov dataset");
+        if(strlen(_data.GetName())==0) {
             // create the EXPECTED (asimov) dataset with the observables
             auto asi = xRooFit::generateFrom(*get<RooAbsPdf>(),std::dynamic_pointer_cast<const RooFitResult>(fitResult().fComp),true);
             _d = std::make_shared<xRooNode>(asi.first,*this);
             _d->emplace_back(std::make_shared<xRooNode>(".globs",std::const_pointer_cast<RooAbsCollection>(asi.second),*_d));
+        } else if(!_d) {
+            throw std::runtime_error(TString::Format("Cannot find dataset %s",_data.GetName()));
         }
         return nll(*_d,opts);
     }
