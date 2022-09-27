@@ -57,6 +57,7 @@
 #include "TSystem.h"
 #include "TKey.h"
 #include "TEnv.h"
+#include "TStyle.h"
 
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6,26,00)
 #include "RooFitHS3/RooJSONFactoryWSTool.h"
@@ -2760,7 +2761,7 @@ void xRooNode::SetFillColor(Color_t fcolor) {
 
 std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject>& arg, bool checkFactory, bool mustBeNew) {
     if (!arg) return nullptr;
-    if (!fAcquirer && !get<RooWorkspace>() && fParent) return fParent->acquire(arg,checkFactory);
+    if (!fAcquirer && !get<RooWorkspace>() && fParent) return fParent->acquire(arg,checkFactory,mustBeNew);
 
     // if has a workspace and our object is the workspace or is in the workspace then add this object to workspace
     auto _ws = (fAcquirer) ? nullptr : ws();
@@ -2806,7 +2807,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject>& arg, 
             }
             RooMsgService::instance().setGlobalKillBelow(msglevel);
             return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject*){});
-        } else if(arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree")) {
+        } else if(arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA()==TStyle::Class()) {
             if (_ws->import(*arg.get(),true/*replace existing*/)) {
                 RooMsgService::instance().setGlobalKillBelow(msglevel);
                 return nullptr;
@@ -4817,7 +4818,7 @@ xRooNode xRooNode::mainChild() const {
 void xRooNode::Inspect() const { if(auto o = get();o) o->Inspect(); else TNamed::Inspect(); }
 
 #include "TSystem.h"
-#include "TStyle.h"
+
 #include "TCanvas.h"
 #include "THStack.h"
 
@@ -4888,7 +4889,7 @@ TLegend* getLegend(bool create=true, bool doPaint=false) {
                         gPad->GetBottomMargin());
     } else {
         if (!create) return nullptr;
-        l = new TLegend(0.5, 1. - gPad->GetTopMargin() - 0.08, 1. - gPad->GetRightMargin(),
+        l = new TLegend(0.6, 1. - gPad->GetTopMargin() - 0.08, 1. - gPad->GetRightMargin(),
                         1. - gPad->GetTopMargin() - 0.03);
         l->SetBorderSize(0);
     }
@@ -4916,7 +4917,7 @@ void addLegendEntry(TObject* o, const char* title, const char* opt) {
         // each entry takes up 0.05 ... maximum of 9 before next column
         if ((nObj % 9)==1) {l->SetNColumns(l->GetNColumns()+1);}
         else if(nObj<=9) {
-            l->SetY1NDC(l->GetY2NDC()-0.05*nObj);
+            l->SetY1NDC(l->GetY2NDC()-0.025*nObj);
         }
     }
 
@@ -5026,6 +5027,11 @@ void xRooNode::Draw(Option_t* opt) {
         if (hAxis) {
             v = getObject<RooAbsLValue>(hAxis->GetXaxis()->GetName()).get();
         }
+    }
+
+    if (!hasSame) {
+        gPad->SetName(GetName());
+        gPad->SetTitle(GetTitle());
     }
 
     PadRefresher padRefresh((!hasSame && !hasGoff) ? gPad : nullptr);
@@ -5679,6 +5685,11 @@ void xRooNode::Draw(Option_t* opt) {
             overlayExisted = true;
         } else {
             h->SetTitle(overlayName);
+            if (!gROOT->GetStyle(h->GetTitle())) {
+                // create new style - gets put in style list automatically so don't have to delete
+                auto style = new TStyle(h->GetTitle(),TString::Format("Style for %s component",h->GetTitle()));
+                *style = *gStyle;
+            }
             (TAttLine&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
             h->Draw(dOpt);
             if (errHist) {
@@ -5777,6 +5788,28 @@ void xRooNode::Draw(Option_t* opt) {
             for (int i = ll->GetEntries() - 1; i >= 0; i--) { //go in reverse order
                 auto _title = (ll->GetEntries()>5) ? reducedTitles[ll->At(i)->GetTitle()] : ll->At(i)->GetTitle();
                 _title = _title.substr(ii < _title.size() ? ii : 0);
+
+                // style hists according to availble styles ... creating if necessary
+                std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
+                if (!gROOT->GetStyle(_title.c_str())) {
+                    if ( (style = getObject<TStyle>(_title)) ) {
+                        // loaded style (from workspace?) so put in list and use that
+                        gROOT->GetListOfStyles()->Add(style.get());
+                    } else {
+                        // create new style - gets put in style list automatically so don't have to delete
+                        // acquire them so saved to workspaces for auto reload ...
+                        style = acquireNew<TStyle>(_title.c_str(),
+                                                        TString::Format("Style for %s component", _title.c_str()));
+                        (TAttLine &) (*style) = *dynamic_cast<TAttLine *>(ll->At(i));
+                        (TAttFill &) (*style) = *dynamic_cast<TAttFill *>(ll->At(i));
+                        (TAttMarker &) (*style) = *dynamic_cast<TAttMarker *>(ll->At(i));
+                        gROOT->GetListOfStyles()->Add(style.get());
+                    }
+                }
+                *dynamic_cast<TAttLine*>(ll->At(i)) = *gROOT->GetStyle(_title.c_str());
+                *dynamic_cast<TAttFill*>(ll->At(i)) = *gROOT->GetStyle(_title.c_str());
+                *dynamic_cast<TAttMarker*>(ll->At(i)) = *gROOT->GetStyle(_title.c_str());
+
                 addLegendEntry(ll->At(i), _title.c_str(), "f");
             }
         }
@@ -5855,18 +5888,17 @@ void xRooNode::Draw(Option_t* opt) {
 
 
 
-        double rHeight = (_tmpPad->GetHNDC())/(gPad->GetHNDC());
+        double rHeight = 1./padFrac; //(_tmpPad->GetWNDC())/(gPad->GetHNDC());
         if (ratioHist->GetYaxis()->GetTitleFont()%10 == 2) {
             ratioHist->GetYaxis()->SetTitleSize(ratioHist->GetYaxis()->GetTitleSize() * rHeight);
             ratioHist->GetYaxis()->SetLabelSize(ratioHist->GetYaxis()->GetLabelSize() * rHeight);
             ratioHist->GetXaxis()->SetTitleSize(ratioHist->GetXaxis()->GetTitleSize() * rHeight);
             ratioHist->GetXaxis()->SetLabelSize(ratioHist->GetXaxis()->GetLabelSize() * rHeight);
-            ratioHist->GetYaxis()->SetTitleOffset( h->GetYaxis()->GetTitleOffset() / rHeight);
+            ratioHist->GetYaxis()->SetTitleOffset( ratioHist->GetYaxis()->GetTitleOffset() / rHeight);
         } else {
-#if ROOT_VERSION_CODE < ROOT_VERSION(6,26,00)
-            ratioHist->GetXaxis()->SetTitleOffset( ratioHist->GetXaxis()->GetTitleOffset() / gPad->GetHNDC());
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 26, 00)
+            ratioHist->GetYaxis()->SetTitleOffset( ratioHist->GetYaxis()->GetTitleOffset() / rHeight);
 #endif
-            ratioHist->GetYaxis()->SetTitleOffset( h->GetYaxis()->GetTitleOffset() );
         }
         ratioHist->GetXaxis()->SetTickLength(ratioHist->GetXaxis()->GetTickLength() * rHeight);
         ratioHist->SetStats(false);ratioHist->SetBit(TH1::kNoTitle);ratioHist->SetBit(kCanDelete);
@@ -5924,10 +5956,7 @@ void xRooNode::Draw(Option_t* opt) {
         }
     }
 
-    if (!hasSame) {
-        gPad->SetName(GetName());
-        gPad->SetTitle(GetTitle());
-    }
+
 
     // see if it's in a simultaneous so need to select a cat
     /*auto _parent = fParent;
