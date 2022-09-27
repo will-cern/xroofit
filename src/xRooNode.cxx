@@ -58,6 +58,10 @@
 #include "TKey.h"
 #include "TEnv.h"
 
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,26,00)
+#include "RooFitHS3/RooJSONFactoryWSTool.h"
+#endif
+
 xRooNode::InteractiveObject* xRooNode::gIntObj = nullptr;
 std::map<std::string,std::tuple<std::function<double(double,double,double)>,bool>> xRooNode::auxFunctions;
 void xRooNode::SetAuxFunction(const char* title, const std::function<double(double,double,double)>& func, bool symmetrize) {
@@ -85,29 +89,50 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
     TNamed(name,""), fComp(comp), fParent(parent) {
 
     if (!fComp && !fParent && !gSystem->AccessPathName(gSystem->ExpandPathName(name)) ) {
-        // using acquire in the constructor seems to cause a mem leak according to valgrind ... possibly because
-        // (*this) gets called on it before the node is fully constructed
-        auto _file = std::make_shared<TFile>(gSystem->ExpandPathName(name)); //acquire<TFile>(name); // acquire file to ensure stays open while we have the workspace
-        // actually it appears we don't need to keep the file open once we've loaded the workspace, but should be
-        // no harm doing so
-        // otherwise the workspace doesn't saveas
-        auto keys = _file->GetListOfKeys();
-        if (keys) {
-            for (auto &&k : *keys) {
-                auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
-                if (cl == RooWorkspace::Class() || cl->InheritsFrom("RooWorkspace")) {
-                    fComp.reset( _file->Get<RooWorkspace>(k->GetName()), [](TObject* ws) {
-                        // memory leak in workspace, some RooLinkedLists aren't cleared
-                        if (ws) {
-                            dynamic_cast<RooWorkspace *>(ws)->_embeddedDataList.Delete();
-                            xRooNode(*ws).sterilize();
-                            delete ws;
+
+        // if file is json can try to read
+        if(TString(gSystem->ExpandPathName(name)).EndsWith(".json")) {
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,26,00)
+            fComp = std::make_shared<RooWorkspace>("workspace",name);
+            RooJSONFactoryWSTool tool(*get<RooWorkspace>());
+            RooFit::MsgLevel msglevel = RooMsgService::instance().globalKillBelow();
+            RooMsgService::instance().setGlobalKillBelow(RooFit::WARNING);
+            if (!tool.importJSON(gSystem->ExpandPathName(name))) {
+                Error("xRooNode","Error reading json workspace %s",name);
+                fComp.reset();
+            }
+            RooMsgService::instance().setGlobalKillBelow(msglevel);
+#else
+            Error("xRooNode","json format workspaces available only in ROOT 6.26 onwards");
+#endif
+        } else {
+
+            // using acquire in the constructor seems to cause a mem leak according to valgrind ... possibly because
+            // (*this) gets called on it before the node is fully constructed
+            auto _file = std::make_shared<TFile>(gSystem->ExpandPathName(
+                    name)); //acquire<TFile>(name); // acquire file to ensure stays open while we have the workspace
+            // actually it appears we don't need to keep the file open once we've loaded the workspace, but should be
+            // no harm doing so
+            // otherwise the workspace doesn't saveas
+            auto keys = _file->GetListOfKeys();
+            if (keys) {
+                for (auto &&k: *keys) {
+                    auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
+                    if (cl == RooWorkspace::Class() || cl->InheritsFrom("RooWorkspace")) {
+                        fComp.reset(_file->Get<RooWorkspace>(k->GetName()), [](TObject *ws) {
+                            // memory leak in workspace, some RooLinkedLists aren't cleared
+                            if (ws) {
+                                dynamic_cast<RooWorkspace *>(ws)->_embeddedDataList.Delete();
+                                xRooNode(*ws).sterilize();
+                                delete ws;
+                            }
+                        });
+                        if (fComp) {
+                            TNamed::SetNameTitle(fComp->GetName(), fComp->GetTitle());
+                            fParent = std::make_shared<xRooNode>(
+                                    _file); // keep file alive - seems necessary to save workspace again in some cases
+                            break;
                         }
-                    });
-                    if (fComp) {
-                        TNamed::SetNameTitle(fComp->GetName(),fComp->GetTitle());
-                        fParent = std::make_shared<xRooNode>(_file); // keep file alive - seems necessary to save workspace again in some cases
-                        break;
                     }
                 }
             }
@@ -401,7 +426,7 @@ public:
     Double_t GetBinLowEdge(Int_t bin) const override { if(auto v = rvar(); v)return v->getBinning(GetName()).binLow(bin-1); return bin-1; }
     Double_t GetBinUpEdge(Int_t bin) const override { if(auto v = rvar(); v)return v->getBinning(GetName()).binHigh(bin-1); return bin; }
 
-    const char* GetTitle() const override { return (binning()) ? binning()->GetTitle() : GetParent()->GetTitle();  }
+    const char* GetTitle() const override { return (binning() && strlen(binning()->GetTitle())) ? binning()->GetTitle() : GetParent()->GetTitle();  }
     void SetTitle(const char* title) override { if(binning()) const_cast<RooAbsBinning*>(binning())->SetTitle(title); else dynamic_cast<TNamed*>(GetParent())->SetTitle(title); }
 
     const RooAbsBinning* binning() const { return var()->getBinningPtr(GetName()); }
@@ -546,7 +571,8 @@ TAxis* xRooNode::GetXaxis() const {
                 // add this binning to the var to avoid recalling ...
                 if(auto _v = dynamic_cast<RooRealVar*>(x); _v) {
                     _v->setBinning(RooBinning(_bins.size() - 1,&_bins[0],o->GetName()) , o->GetName());
-                    _v->getBinning(o->GetName()).SetTitle(strlen(dynamic_cast<TObject*>(x)->GetTitle()) ? dynamic_cast<TObject*>(x)->GetTitle() : dynamic_cast<TObject*>(x)->GetName());
+                    _v->getBinning(o->GetName()).SetTitle(""); // indicates to use the current var title when building histograms etc
+                    //_v->getBinning(o->GetName()).SetTitle(strlen(dynamic_cast<TObject*>(x)->GetTitle()) ? dynamic_cast<TObject*>(x)->GetTitle() : dynamic_cast<TObject*>(x)->GetName());
                 }
                 binningName = o->GetName();
                 delete bins;
@@ -616,6 +642,7 @@ const char* xRooNode::GetNodeType() const {
         if(o->InheritsFrom("RooStats::HistFactory::FlexibleInterpVar")) return "Overall";
         if(o->InheritsFrom("PiecewiseInterpolation")) return (dynamic_cast<RooAbsArg*>(o)->getAttribute("density")) ? "DensityHisto" : "Histo";
         if(o->InheritsFrom("RooHistFunc")) return (dynamic_cast<RooAbsArg*>(o)->getAttribute("density")) ? "ConstDensityHisto" : "ConstHisto";
+        if(o->InheritsFrom("RooBinWidthFunction")) return "Density";
         if(o->InheritsFrom("ParamHistFunc")) return "Shape";
         if(o->InheritsFrom("RooRealVar")) return "Norm";
         if(o->InheritsFrom("RooConstVar")) return "Const";
@@ -5706,7 +5733,7 @@ void xRooNode::Draw(Option_t* opt) {
             //if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ? "" : "LF2";
             stack->Add(hh,thisOpt);
             allTitles.insert(hh->GetTitle());
-            titleMatchName &= (strcmp(samp->GetName(),hh->GetTitle())==0);
+            titleMatchName &= (TString(hh->GetTitle()).BeginsWith(samp->GetName()));
         }
         stack->SetBit(kCanDelete); // should delete its sub histograms
         stack->Draw("noclear same");
@@ -5940,9 +5967,27 @@ void xRooNode::Draw(Option_t* opt) {
 
 }
 
+
+
 void xRooNode::SaveAs(const char* filename, Option_t* option) const {
     TString sOpt(option);sOpt.ToLower();
     if (auto w = get<RooWorkspace>(); w) {
+
+        if(TString(filename).EndsWith(".json")) {
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,26,00)
+            // stream with json tool
+            RooJSONFactoryWSTool tool(*w);
+            if(tool.exportJSON(filename)) {
+                Info("SaveAs","%s saved to %s",w->GetName(),filename);
+            } else {
+                Error("SaveAs","Unable to save to %s",filename);
+            }
+#else
+            Error("SaveAs","json format workspaces only in ROOT 6.26 onwards");
+#endif
+            return;
+        }
+
         // before saving, clear the eocache of all owned nodes
         // because causes memory leak when read back in (workspace streamer immediately overwrites the caches)
         for(auto& c : w->_allOwnedNodes) {
