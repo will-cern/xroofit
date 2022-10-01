@@ -42,7 +42,7 @@ std::shared_ptr<xRooNode> xRooNLLVar::xRooHypoSpace::pdf(const char* parValues) 
 }
 
 std::shared_ptr<xRooNode> xRooNLLVar::xRooHypoSpace::pdf(const RooAbsCollection& parValues) const {
-    RooArgList rhs(parValues);
+    RooArgList rhs; rhs.add(parValues);
     rhs.sort();
 
     std::shared_ptr<xRooNode> out = nullptr;
@@ -711,10 +711,10 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
     auto _axes = axes();
     if (_axes.empty()) return;
 
-    if (sOpt=="") {
+    if (sOpt=="status") {
         // draw the points in the space
         if (_axes.size()<=2) {
-            TGraph* out = new TGraph; out->SetBit(kCanDelete); out->SetName("points");out->SetMarkerSize(0.5);
+            TGraphErrors* out = new TGraphErrors; out->SetBit(kCanDelete); out->SetName("points");out->SetMarkerSize(0.5);
             TGraph* tsAvail = new TGraph; tsAvail->SetName("ts"); tsAvail->SetBit(kCanDelete);tsAvail->SetMarkerStyle(20);
             TGraph* expAvail = new TGraph; expAvail->SetName("exp"); expAvail->SetBit(kCanDelete);expAvail->SetMarkerStyle(25);expAvail->SetMarkerSize(out->GetMarkerSize()*1.5);
             TGraph* badPoints = new TGraph; badPoints->SetName("bad_ufit"); badPoints->SetBit(kCanDelete); badPoints->SetMarkerStyle(5); badPoints->SetMarkerColor(kRed); badPoints->SetMarkerSize(out->GetMarkerSize());
@@ -725,9 +725,10 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
                 bool _readOnly = p.nllVar ? p.nllVar->get()->getAttribute("readOnly") : false;
                 if (p.nllVar) p.nllVar->get()->setAttribute("readOnly",true);
                 double x = p.coords->getRealValue(_axes.at(0)->GetName());
-                double y= _axes.size()==1 ? 0.5 : p.coords->getRealValue(_axes.at(1)->GetName());
+                double y= _axes.size()==1 ? p.ts_asymp().first : p.coords->getRealValue(_axes.at(1)->GetName());
                 out->SetPoint(out->GetN(),x,y);
                 if(!std::isnan(p.ts_asymp().first)) {
+                    if (_axes.size()==1) out->SetPointError(out->GetN()-1,0,p.ts_asymp().second);
                     tsAvail->SetPoint(tsAvail->GetN(),x,y);
                 } else if( p.fUfit && (std::isnan(p.fUfit->minNll()) || xRooNLLVar::xRooHypoPoint::allowedStatusCodes.find(p.fUfit->status())==xRooNLLVar::xRooHypoPoint::allowedStatusCodes.end())) {
                     badPoints->SetPoint(badPoints->GetN(),x,y);
@@ -742,8 +743,21 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
                 }
                 if (p.nllVar) p.nllVar->get()->setAttribute("readOnly",_readOnly);
-
             }
+
+            if (_axes.size()==1) {
+                TGraph tmp;
+                for(int i=0;i<out->GetN();i++) {
+                    if(!std::isnan(out->GetPointY(i))) tmp.SetPoint(tmp.GetN(),out->GetPointX(i),out->GetPointY(i));
+                }
+                auto fixPoints = [&](TGraph* g) {
+                    for(int i=0;i<g->GetN();i++) {
+                        if(std::isnan(g->GetPointY(i))) g->SetPointY(i,std::isnan(tmp.Eval(g->GetPointX(i))) ? 0. : tmp.Eval(g->GetPointX(i)));
+                    }
+                };
+                fixPoints(out); fixPoints(tsAvail); fixPoints(expAvail); fixPoints(badPoints); fixPoints(badPoints2);
+            }
+
             out->SetMarkerStyle(4);
             out->Draw("AP");
             auto leg = new TLegend(1. - gPad->GetRightMargin()-0.3, 1.-gPad->GetTopMargin()-0.3,1.-gPad->GetRightMargin()-0.05,1.-gPad->GetTopMargin()-0.05);
