@@ -6089,7 +6089,7 @@ std::pair<double,double> xRooNode::IntegralAndError(const RooFitResult* fr) cons
         out = std::numeric_limits<double>::quiet_NaN();
     }
     if (_snap) {
-        _pars = *_snap;
+        _pars.RooAbsCollection::operator=(*_snap);
     }
     return std::make_pair(out,err);
 
