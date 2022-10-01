@@ -303,10 +303,12 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
     out = genSubPdf(&pdf);
     out.first->SetName(uuid);
 
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
     // store fitResult name on the weightVar
     if(auto w = dynamic_cast<RooDataSet*>(out.first.get())->weightVar()) {
         w->setStringAttribute("fitResult",fr->GetName());
     }
+#endif
 
     *_allVars = *_snap;
 
