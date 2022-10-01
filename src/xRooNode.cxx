@@ -841,7 +841,12 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                 }
                 if (!_ws->obj(_fr->GetName())) { _ws->import(const_cast<RooFitResult&>(*_fr)); } // save fr to workspace, for later retrieval
                 if (asi.second) {
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
                     _ws->saveSnapshot(asi.first->GetName(),*asi.second,true); // TODO: Migrate to using globs inside datasets
+#else
+                    RooArgSet _tmp; _tmp.add(*asi.second);
+                    _ws->saveSnapshot(asi.first->GetName(),_tmp,true);
+#endif
                 }
                 return xRooNode(*_ws->data(asi.first->GetName()),fParent);
             }
