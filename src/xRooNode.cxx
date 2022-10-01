@@ -3908,10 +3908,12 @@ xRooNode xRooNode::fitResult(const char* opt) const {
     if (get<RooFitResult>()) return *this;
     if (get<RooAbsData>()) {
         if(auto  _fr = find(".fitResult"); _fr) return _fr;
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
         // check if weightVar of RooAbsData has fitResult attribute on it, will be the generation fit result
         if (get<RooDataSet>() && get<RooDataSet>()->weightVar() && get<RooDataSet>()->weightVar()->getStringAttribute("fitResult")) {
             return xRooNode(getObject<const RooFitResult>(get<RooDataSet>()->weightVar()->getStringAttribute("fitResult")),*this);
         }
+#endif
         return xRooNode();
     }
 
