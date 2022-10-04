@@ -92,9 +92,13 @@ The methods of `xRooNode` can be split into the following categories:
 <br><br>
     * `GetBinContent(bin)`: return the bin value of this node
     * `GetBinData(bin[,dsName])`: return bin value of dataset of this node (equivalent to `datasets()[dsName].GetBinContent(bin)`)
-    * `GetBinError(bin[,fitResult])`: get the error in given bin, using the covariances in the optionally provided fit result (returns uncorrelated error calculation otherwise using the currently loaded parameter errors).
-    * `IntegralAndError([fitResult])`: return the integral and error (as a pair) of the current node, calculating the error with the given fitResult covariance matrix if provided (returns uncorrelated error calculation otherwise).
+    * `GetBinError(bin[,fitResult])`: get the error in given bin, using the covariances in the optionally provided fit result (returns uncorrelated error calculation otherwise using the currently loaded parameter errors, unless `SetFitResult` has been called).
+    * `IntegralAndError([fitResult])`: return the integral and error (as a pair) of the current node, calculating the error with the given fitResult covariance matrix if provided (returns uncorrelated error calculation otherwise, unless `SetFitResult` has been called).
     * `GetXaxis()` : returns a `TAxis` for the x-axis observable of this node, if relevant.
+    <br><br>
+  * Fitting:
+    * `nll("dataset" [, {options}])`: create NLL using the given dataset
+    * `SetFitResult(fitResult)`: load a fit result into a model: all parameter values are set to final values and covariance matrix will be used for calculating errors. 
 
 ### Workspace Inspection
 
