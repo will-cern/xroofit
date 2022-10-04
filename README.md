@@ -19,12 +19,12 @@ docker run –it gitlab-registry.cern.ch/atlas/statanalysis:0-0-2
 or for ATLAS users:
 
 ```bash
-asetup StatAnalysis,0.0.2
+asetup StatAnalysis,0.1.0
 ```
 
 ### Compiling from source
 
-Ensure you have a recent ROOT release setup (e.g. 6.22 or 6.24). Also ensure you have cmake available. 
+Ensure you have a recent ROOT release setup (6.22 minimum requirement). Also ensure you have cmake available. 
 
 checkout the project (using your favourite git clone method), and then compile it like this:
 
@@ -46,31 +46,38 @@ The `xRooNode` class is designed to wrap over an existing TObject and provide fu
 The methods of `xRooNode` can be split into the following categories:
 
   * Graph Modifiers: Methods that alter the 'graph' representing the likelihood function
-    * Add(...)
-    * Multiply(...)
-    * Vary(...)
-    * Constrain(...)
-    * Remove(...)
-    * Combine(...)
+    * `Add(...)`
+    * `Multiply(...)`
+    * `Vary(...)`
+    * `Constrain(...)`
+    * `Remove(...)`
+    * `Combine(...)`
+    <br><br>
   * Object Modifiers: Modify the object that the node wraps (or potentially one of the objects of the child nodes)
-    * SetBinContent(bin, value [,parName, parVal] )
-    * SetBinError(bin, value)
-    * SetBinData(bin, value [,dsName])
-    * SetXaxis(...)
+    * `SetBinContent(bin, value [,parName, parVal] )`
+    * `SetBinError(bin, value)`
+    * `SetBinData(bin, value [,dsName])`
+    * `SetXaxis(name,title,nBins,low,high)`: fixed bin widths
+    * `SetXaxis(name,title,nBins,bins)`: variable bin widths
+    <br><br>
   * Related nodes: these methods return the collection of nodes related to this node in some way:
-    * components(): the nodes that "add" together to make this node
-    * factors(): the nodes that "multiply" together to make this node
-    * variations(): the nodes that are "varied" (interpolated) between to make this node
-    * constraints(): the nodes that "constrain" this node (relevant for parameter nodes)
-    * datasets(): the nodes that represent data corresponding to this node (relevant for pdf nodes)
+    * `components()`: the nodes that "add" together to make this node
+    * `factors()`: the nodes that "multiply" together to make this node
+    * `variations()`: the nodes that are "varied" (interpolated) between to make this node
+    * `constraints()`: the nodes that "constrain" this node (relevant for parameter nodes)
+    * `datasets()`: the nodes that represent data corresponding to this node (relevant for pdf nodes)
       <br><br>
-    * deps(): the fundmanental (leaf) nodes that this node depends on (=obs()+pars())
-    * obs(): the leaf nodes that are observables
-    * globs(): the leaf nodes that are global observables (subset of observables)
-    * pars(): the leaf nodes that are parameters (i.e. not observables)
-    * vars(): the parameters that are not constant and so would float in a fit
-    * args(): the parameters that are currently constant
-    * coefs(): Return the coefficients (if any) that multiply this node given its inclusion in its parent (these are distinct from factors because coefs are not children of this node - they are a bit like a context-dependent factor).
+    * `deps()`: the fundmanental (leaf) nodes that this node depends on (=obs+pars) [note: will replace this with `vars()` in future]
+    * `obs()`: the leaf nodes that are observables (robs+globs)
+    * `globs()`: the leaf nodes that are global observables (subset of observables)
+    * `robs()`: the leaf nodes that are regular observables
+    * `pars()`: the leaf nodes that are parameters (i.e. not observables)
+    * `floats()`: the parameters that are not constant and so would float in a fit
+    * `args()`: the parameters that are currently constant [note: may replace this with `consts()` in future]
+    <br><br>
+    * `coefs()`: Return the coefficients (if any) that multiply this node given its inclusion in its parent (these are distinct from factors because coefs are not children of this node - they are a bit like a context-dependent factor).
+    * `coords()`: Return the observables with their values that this node corresponds to (e.g. if the node is a channel, the coords() will be the channelCat with its value set to this channel)
+    <br><br>
   * Inspection methods: tell you about the node and move to related nodes
     * `Print([option])`: lists the child nodes (components/factors/variations) of a node. Use "depth=X" where X is a number as the option to control depth
     * `Draw([option])`: Visualize the node. Option can control what is visualized depending on the type of node. Some examples:
@@ -79,8 +86,8 @@ The methods of `xRooNode` can be split into the following categories:
       * SIGNIFICANCE : adds a significance pad
       * PULL : adds an interactive pull plot (to investigate parameter dependencies)
     * `Browse()`: open the node in an Browser window for interactive exploration.<br><br>
-    * `find("name")` (or `operator[]("name")`): return child with given name. 
-    Name can be in the form of a path to navigate quickly e.g. "modelName/channelName/sampleName".
+    * `find("name")` or `operator[]("name")`: return child with given name.
+      Name can be in the form of a path to navigate quickly e.g. "modelName/channelName/sampleName".
     * `reduced("list,of,regex")`: for certain nodes this can return a subset shallow-copy of the node e.g. a node with some of the samples of a channel.
 <br><br>
     * `GetBinContent(bin)`: return the bin value of this node
