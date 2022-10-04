@@ -86,7 +86,7 @@ The methods of `xRooNode` can be split into the following categories:
       * SIGNIFICANCE : adds a significance pad
       * PULL : adds an interactive pull plot (to investigate parameter dependencies)
     * `Browse()`: open the node in an Browser window for interactive exploration.<br><br>
-    * `find("name")` or `operator[]("name")`: return child with given name.
+    * `find("name")` or `operator[]("name")`: return child with given name. By default, children will be all the components, factors, and variations of the node (normally only one of these types will be relevant for the node).
       Name can be in the form of a path to navigate quickly e.g. "modelName/channelName/sampleName".
     * `reduced("list,of,regex")`: for certain nodes this can return a subset shallow-copy of the node e.g. a node with some of the samples of a channel.
 <br><br>
@@ -97,7 +97,9 @@ The methods of `xRooNode` can be split into the following categories:
     * `GetXaxis()` : returns a `TAxis` for the x-axis observable of this node, if relevant.
     <br><br>
   * Fitting:
-    * `nll("dataset" [, {options}])`: create NLL using the given dataset
+    * `nll("dataset" [, {options}])`: create NLL using the given dataset. This `xRooNLLVar` object has several special methods:
+      * `minimize()`: returns a FitResult (results can be cached to a TFile).
+      * `generate([expected])`: generate a toy or asimov dataset.
     * `SetFitResult(fitResult)`: load a fit result into a model: all parameter values are set to final values and covariance matrix will be used for calculating errors. 
 
 ### Workspace Inspection
