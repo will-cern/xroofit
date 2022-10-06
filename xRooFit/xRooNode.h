@@ -129,14 +129,14 @@ public:
 
     std::shared_ptr<TObject> convertForAcquisition(xRooNode& acquirer) const;
 
+    xRooNode vars() const; // obs,globs,floats,args
     xRooNode obs() const; // robs and globs
+    xRooNode robs() const; // just the regular obs
     xRooNode globs() const; // just the global obs
-    xRooNode robs() const; // the regular obs
     xRooNode pars() const; // floats and args/consts
-    xRooNode floats() const; // floating pars
-    xRooNode deps() const; // obs,globs,floats,args
-    xRooNode args() const; // const pars
-    xRooNode vars() const; // unconst pars - DEPRECATED
+    xRooNode floats() const; // just floating pars
+    xRooNode args() const; // just const pars
+    xRooNode consts() const { return args(); }
 
     xRooNode poi() const; // parameters of interest
     xRooNode np() const; // nuisance parameters

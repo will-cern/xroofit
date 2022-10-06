@@ -508,7 +508,7 @@ TAxis* xRooNode::GetXaxis() const {
         // need to choose from dependent fundamentals, in following order:
         // parentX, obs, globs, vars, args
 
-        if (_parentX && (o->dependsOn(*dynamic_cast<RooAbsArg*>(_parentX->GetParent())) || deps().size()==0)) {
+        if (_parentX && (o->dependsOn(*dynamic_cast<RooAbsArg*>(_parentX->GetParent())) || vars().size() == 0)) {
             x = dynamic_cast<RooAbsLValue*>(_parentX->GetParent());
         } else if(auto _obs = obs(); !_obs.empty()) {
             for(auto& v : _obs) {
@@ -1017,7 +1017,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
 
             // promote the axis vars to observables
             // can't use original child as might refer to unacquired deps
-            for(auto& x : xRooNode("tmp",_f).deps()) {
+            for(auto& x : xRooNode("tmp", _f).vars()) {
                 x->get<RooAbsArg>()->setAttribute("obs");
             }
             if(isConverted) Info("Add","Created %s factor RooHistFunc::%s for %s",_f->getAttribute("density") ? "densityhisto" : "histo",_f->GetName(),p->GetName());
@@ -1627,7 +1627,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
 
 
                 // promote the axis vars to observables
-                for (auto &x: xRooNode("tmp", _f).deps()) {
+                for (auto &x: xRooNode("tmp", _f).vars()) {
                     x->get<RooAbsArg>()->setAttribute("obs");
                 }
             }
@@ -2404,7 +2404,7 @@ bool xRooNode::SetBinError(int bin, double value) {
         if (!f_stat) {
             if (value==0) return true;
             TString parNames;
-            for(auto& p : xRooNode("tmp",*f,std::shared_ptr<xRooNode>(nullptr)).deps()) {
+            for(auto& p : xRooNode("tmp", *f, std::shared_ptr<xRooNode>(nullptr)).vars()) {
                 if (parNames!="") parNames += ",";
                 parNames += p->get()->GetName();
             }
@@ -2565,7 +2565,7 @@ xRooNode xRooNode::constraints() const {
         return (RooAbsPdf*)nullptr;
     };
 
-    for(auto& p : deps()) {
+    for(auto& p : vars()) {
         auto v = dynamic_cast<RooAbsReal*>(p->get());
         if (!v) continue;
         if(v->getAttribute("Constant")) continue; // skip constants ?
@@ -2879,7 +2879,7 @@ bool xRooNode::SetXaxis(const RooAbsBinning& binning) {
     auto title = binning.GetTitle();
 
     // if have any dependents and name isn't one of them then stop
-    auto _deps = deps();
+    auto _deps = vars();
     /*if(!_deps.empty() && !_deps.find(name)) {
         throw std::runtime_error(TString::Format("%s Does not depend on %s",GetName(),name));
     }*/
@@ -3173,7 +3173,7 @@ xRooNode& xRooNode::browse() {
 xRooNode xRooNode::obs() const {
     xRooNode out(".obs",std::make_shared<RooArgList>(),*this);
     out.get<RooArgList>()->setName((GetPath()+".obs").c_str());
-    for(auto o : deps()) {
+    for(auto o : vars()) {
         if (o->get<RooAbsArg>()->getAttribute("obs")) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o); }
     }
     return out;
@@ -3200,7 +3200,7 @@ xRooNode xRooNode::robs() const {
 xRooNode xRooNode::pars() const {
     xRooNode out(".pars",std::make_shared<RooArgList>(),*this);
     out.get<RooArgList>()->setName((GetPath()+".pars").c_str());
-    for(auto o : deps()) {
+    for(auto o : vars()) {
         if (!o->get<RooAbsArg>()->getAttribute("obs")) {out.get<RooArgList>()->add(*(o->get<RooAbsArg>()));out.emplace_back(o);}
     }
     return out;
@@ -3211,15 +3211,6 @@ xRooNode xRooNode::args() const {
     out.get<RooArgList>()->setName((GetPath()+".args").c_str());
     for(auto o : pars()) {
         if (o->get<RooConstVar>() || o->get<RooAbsArg>()->getAttribute("Constant")) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
-    }
-    return out;
-}
-
-xRooNode xRooNode::vars() const {
-    std::cout << "xRooNode: WARNING: vars() method deprecated in favour of floats() ... please update your code" << std::endl;
-    xRooNode out(".vars",std::make_shared<RooArgList>(),*this);
-    for(auto o : pars()) {
-        if (!o->get<RooAbsArg>()->getAttribute("Constant") && !o->get<RooConstVar>()) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
     }
     return out;
 }
@@ -3251,9 +3242,9 @@ xRooNode  xRooNode::np() const {
     return out;
 }
 
-xRooNode xRooNode::deps() const {
-    xRooNode out(".deps",std::make_shared<RooArgList>(),*this);
-    out.get<RooArgList>()->setName((GetPath()+".deps").c_str());
+xRooNode xRooNode::vars() const {
+    xRooNode out(".vars",std::make_shared<RooArgList>(),*this);
+    out.get<RooArgList>()->setName((GetPath()+".vars").c_str());
     if (auto p = get<RooAbsArg>();p) {
         // also need to get all constPars so use leafNodeServerList .. will include self if is fundamental, which is what we want
         RooArgSet allLeafs;
@@ -3944,7 +3935,7 @@ xRooNode xRooNode::fitResult(const char* opt) const {
                 // there will be 3 deps, one will be this par, the other two are the mean and error (or error^2 in case of poisson
                 // use the one that's a ConstVar as the error to break a tie ...
                 double prefitVal=0,prefitError=0;
-                for(auto& _d : pConstr->deps()) {
+                for(auto& _d : pConstr->vars()) {
                     if (strcmp(p->GetName(),_d->get()->GetName())==0) continue;
                     if (auto _c = _d->get<RooConstVar>(); _c && _c->getVal()!=0) {
                         if(prefitError) prefitVal = prefitError; // loading val into error already, so move it over
@@ -5376,7 +5367,7 @@ void xRooNode::Draw(Option_t* opt) {
                 if (pConstr->get<RooPoisson>() && pConstr->find(".x")) {
                     std::string xName = pConstr->find(".x")->get()->GetName();
                     prefitVal = pConstr->find(".x")->get<RooAbsReal>()->getVal();
-                    for(auto& _d : pConstr->deps()) {
+                    for(auto& _d : pConstr->vars()) {
                         if (strcmp(p->GetName(),_d->get()->GetName())==0) continue;
                         if (xName==_d->get()->GetName()) continue;
                         prefitError = _d->get<RooAbsReal>()->getVal();
