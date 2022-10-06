@@ -162,10 +162,10 @@ public:
     xRooNode reduced(const std::string& range = ""); // return a node representing reduced version of this node, will use the SetRange to reduce if blank
 
     // following versions are for the menu in the GUI
-    void Add_(const char* name, const char* opt); // *MENU*
-    xRooNode Multiply_(const char* what) {return Multiply(what); } // *MENU*
-    void Vary_(const char* what); // *MENU*
-    xRooNode Constrain_(const char* what) {return Constrain(what); } // *MENU*
+    void _Add_(const char* name, const char* opt); // *MENU*
+    xRooNode _Multiply_(const char* what) {return Multiply(what); } // *MENU*
+    void _Vary_(const char* what); // *MENU*
+    xRooNode _Constrain_(const char* what) {return Constrain(what); } // *MENU*
 
     void SetHidden(Bool_t set = kTRUE); // *TOGGLE* *GETTER=IsHidden
     bool IsHidden() const;
@@ -178,8 +178,8 @@ public:
     bool SetBinContent(int bin, double value, const char* par=nullptr, double parVal=1);
     bool SetBinData(int bin, double value, const char* dataName="obsData"); // only valid for pdf nodes
 
-    void SetContents_(double value); // *MENU*
-    void SetBinContent_(int bin, double value, const char* par="", double parVal=1); // *MENU*
+    void _SetContents_(double value); // *MENU*
+    void _SetBinContent_(int bin, double value, const char* par="", double parVal=1); // *MENU*
 
 
     bool SetXaxis(const RooAbsBinning& binning);
@@ -210,7 +210,8 @@ public:
     void SetFitResult(const std::shared_ptr<const RooFitResult>& fr) { SetFitResult(fr.get()); }
     void SetFitResult(const xRooNode& fr);
 
-//    xRooNode fitTo_(const char* datasetName) const; // *MENU*
+    void _fitTo_(const char* datasetName=""); // *MENU*
+    void _generate_(const char* name="", bool expected=false); // *MENU*
 //    xRooNode fitTo(const char* datasetName) const;
 //    xRooNode fitTo(const xRooNode& _data) const;
 //    xRooNode generate(bool expected=false) const;

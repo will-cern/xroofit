@@ -267,8 +267,25 @@ void xRooNode::Checked(TObject* obj, bool val) {
                         auto v = dynamic_cast<RooRealVar*>(_allVars.find(i->GetName()));
                         if (v) v->setStringAttribute("initVal",TString::Format("%f",dynamic_cast<RooRealVar*>(i)->getVal()));
                     }
+                    // uncheck all other fit results
+                    for (auto oo : _ws->allGenericObjects()) {
+                        if (auto ffr = dynamic_cast<RooFitResult *>(oo); ffr != fr) {
+                            ffr->ResetBit(1<<20);
+                        }
+                    }
                 }
                 else _ws->allVars() = fr->floatParsInit();
+            }
+            if(auto item = GetTreeItem(nullptr); item) {
+                // update check marks on siblings
+                if (auto first = item->GetParent()->GetFirstChild()) {
+                    do {
+                        if (first->HasCheckBox()) {
+                            auto _obj = static_cast<xRooNode *>(first->GetUserData());
+                            first->CheckItem(_obj->get() && _obj->get()->TestBit(1 << 20));
+                        }
+                    } while( (first = first->GetNextSibling()) );
+                }
             }
         }
 
@@ -313,7 +330,18 @@ void xRooNode::Browse(TBrowser* b) {
 
     if(auto item = GetTreeItem(b); item) {
         if(!item->IsOpen() && IsFolder()) return; // no need to rebrowse if closing
+        // update check marks on any child items
+        if (auto first = item->GetFirstChild()) {
+            do {
+                if (first->HasCheckBox()) {
+                    auto _obj = static_cast<xRooNode *>(first->GetUserData());
+                    first->CheckItem(_obj->get() && _obj->get()->TestBit(1 << 20));
+                }
+            } while( (first = first->GetNextSibling()) );
+        }
     }
+
+
 
     browse();
     if (empty()) {
@@ -676,14 +704,14 @@ xRooNode xRooNode::coords(bool setVals) const {
     return out;
 }
 
-void xRooNode::Add_(const char* name, const char* opt) {
+void xRooNode::_Add_(const char* name, const char* opt) {
     try {
         Add(name,opt);
     } catch(const std::exception& e) {
         new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
     }
 }
-void xRooNode::Vary_(const char* what) {
+void xRooNode::_Vary_(const char* what) {
     try {
         Vary(what);
     } catch(const std::exception& e) {
@@ -830,11 +858,11 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                 throw std::runtime_error("Datasets can only be created for pdfs or workspaces (except if asimov dataset, then must be pdf)");
             }
 
-            if (sOpt=="asimov") {
+            if (sOpt=="asimov" || sOpt=="toy") {
                 // generate expected dataset - note that globs will be frozen at this time
                 auto _fr = std::dynamic_pointer_cast<const RooFitResult>(fParent->fitResult().fComp);
                 if (strlen(_fr->GetName())==0) std::const_pointer_cast<RooFitResult>(_fr)->SetName(TUUID().AsString());
-                auto asi = xRooFit::generateFrom(*fParent->get<RooAbsPdf>(),_fr,true);
+                auto asi = xRooFit::generateFrom(*fParent->get<RooAbsPdf>(),_fr,sOpt=="asimov");
                 if (strlen(child.GetName())) asi.first->SetName(child.GetName());
                 if (asi.first) {
                     _ws->import(*asi.first);
@@ -2115,7 +2143,25 @@ xRooNode& xRooNode::operator=(const TObject& o) {
 
 #include "RooFormulaVar.h"
 
-void xRooNode::SetBinContent_(int bin, double value, const char* par, double parVal) {
+void xRooNode::_fitTo_(const char* datasetName) {
+    try {
+        auto fr = nll(datasetName).minimize();
+        if (!fr.get()) throw std::runtime_error("Fit Failed");
+        SetFitResult(fr.get());
+    } catch(const std::exception& e) {
+        new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
+    }
+}
+
+void xRooNode::_generate_(const char* datasetName, bool expected) {
+    try {
+        datasets().Add(datasetName,expected ? "asimov" : "toy");
+    } catch(const std::exception& e) {
+        new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
+    }
+}
+
+void xRooNode::_SetBinContent_(int bin, double value, const char* par, double parVal) {
     try {
         SetBinContent(bin,value, strlen(par)>0 ? par : nullptr, parVal);
     } catch(const std::exception& e) {
@@ -2123,7 +2169,7 @@ void xRooNode::SetBinContent_(int bin, double value, const char* par, double par
     }
 }
 
-void xRooNode::SetContents_(double value) {
+void xRooNode::_SetContents_(double value) {
     try {
         if(!SetContents(value)) throw std::runtime_error("Failed to SetContent");
     } catch(const std::exception& e) {
