@@ -290,6 +290,8 @@ TEST(test1, testSimpleModel) {
     w["simPdf/chan1/samp1"]->SetBinContent(1,3);
     w["simPdf/chan1/samp1"]->SetBinError(1,0.5);
 
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinError(1),0.5);
+
 
     w["simPdf/chan1/samp2"]->SetBinContent(1,1);
     w["simPdf/chan1/samp2"]->SetBinContent(1,1.5,"alpha",1); // creates variation called alpha, assigning value 1.5 to +1sigma
@@ -301,9 +303,18 @@ TEST(test1, testSimpleModel) {
 
     w["simPdf/chan1"]->SetBinData(1,6);
 
+    w["simPdf/chan1"]->datasets()["obsData"]->get()->Print();
+
     // check the total error on the bin is what we expect (MC statistical + systematic in quadrature)
     ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinError(1),sqrt(0.5*0.5 + 0.5*0.5));
+    // should also still be able to get the individual component errors using comma separated wildcards to select pars
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinError(1,"stat*"),0.5);
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinError(1,"alpha*"),0.5);
 
+    // check integral and error functionality working as well
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->IntegralAndError().first,4);
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->IntegralAndError().second,sqrt(0.5*0.5 + 0.5*0.5));
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->datasets()["obsData"]->IntegralAndError().first,6);
 
     auto fr = w["simPdf"]->nll("obsData").minimize();
     fr->Print();
