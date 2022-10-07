@@ -855,7 +855,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
         if (auto _ws = ws(); _ws && fParent) {
             sOpt.ToLower();
             if (!fParent->get<RooAbsPdf>() && (!fParent->get<RooWorkspace>() || sOpt=="asimov")) {
-                throw std::runtime_error("Datasets can only be created for pdfs or workspaces (except if asimov dataset, then must be pdf)");
+                throw std::runtime_error("Datasets can only be created for pdfs or workspaces (except if generated dataset, then must be pdf)");
             }
 
             if (sOpt=="asimov" || sOpt=="toy") {
@@ -4316,19 +4316,45 @@ xRooNode xRooNode::reduced(const std::string& _range) {
             return xRooNode(newPdf,fParent);
         } else if(!components().empty()) {
             // create a new obj and remove non-matching components
-            xRooNode out(std::shared_ptr<TObject>(get()->Clone(TString::Format("%s_reduced",get()->GetName()))),fParent);
+            xRooNode out(std::shared_ptr<TObject>(get()->Clone(TString::Format("%s_reduced", get()->GetName()))),
+                         fParent);
             // go through components and remove any that don't match pattern
-            std::vector<TObject*> funcs; // to be removed
-            for(auto& c : out.components()) {
+            std::vector<TObject *> funcs; // to be removed
+            for (auto &c: out.components()) {
+                bool matchAny = false;
+                for (auto &p: patterns) {
+                    if (TString(c->GetName()).Contains(TRegexp(p, true))) {
+                        matchAny = true;
+                        break;
+                    }
+                }
+                if (!matchAny) funcs.push_back(c->get());
+            }
+            for (auto &c: funcs) out.Remove(*c);
+            out.browse();
+            return out;
+        } else if(auto fr = get<RooFitResult>()) {
+            // reduce the fit result by moving unselected float pars into the constPars list and dropping their covariances
+            xRooNode out(std::shared_ptr<TObject>(fr->Clone(TString::Format("%s_reduced", fr->GetName()))),fParent);
+            fr = out.get<RooFitResult>();
+            RooArgList _pars = fr->floatParsFinal();
+            RooArgList _remPars;
+            for(auto c : _pars) {
                 bool matchAny = false;
                 for(auto& p : patterns) {
                     if(TString(c->GetName()).Contains(TRegexp(p,true))) { matchAny = true; break; }
                 }
-                if(!matchAny) funcs.push_back(c->get());
+                if(!matchAny) { _remPars.add(*c); }
             }
-            for(auto& c : funcs) out.Remove(*c);
-            out.browse();
+            _pars.remove(_remPars,true);
+
+            auto _tmp = fr->reducedCovarianceMatrix(_pars);
+            int covQualBackup = fr->_covQual;
+            fr->setCovarianceMatrix(_tmp);
+            fr->_covQual = covQualBackup;
+            fr->_finalPars->remove(_remPars,true);
             return out;
+
         } else if (!get() || get<RooArgList>()) {
             // filter the children ....
             xRooNode out(get<RooArgList>() ? std::make_shared<RooArgList>() : std::shared_ptr<TObject>(nullptr),fParent);
@@ -4343,7 +4369,7 @@ xRooNode xRooNode::reduced(const std::string& _range) {
         }
     }
 
-    return xRooNode(get<RooArgList>() ? std::make_shared<RooArgList>() : std::shared_ptr<TObject>(nullptr),fParent);
+    return get<RooArgList>() ? xRooNode(std::make_shared<RooArgList>(),fParent) : *this;
 }
 
 //xRooNode xRooNode::generate(bool expected) const {
@@ -4671,23 +4697,24 @@ TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binS
         fr = dynamic_cast<RooFitResult*>(fitResult().get()->Clone());
         if (!fr->_finalPars) fr->setFinalParList(RooArgList());
 
-        // need to add any floating parameters not included somewhere already in the fit result ...
-        RooArgList l;
-        for(auto& p : pars()) {
-            auto vv = p->get<RooRealVar>();
-            if (!vv) continue;
-            if (vv == dynamic_cast<RooRealVar*>(v)) continue;
-            if (vv->isConstant()) continue;
-            if (fr->floatParsFinal().find(vv->GetName())) continue;
-            if (fr->_constPars && fr->_constPars->find(vv->GetName())) continue;
-            l.add(*vv);
-        }
-
-        if (!l.empty()) {
-            RooArgList l2; l2.addClone(fr->floatParsFinal());
-            l2.addClone(l);
-            fr->setFinalParList(l2);
-        }
+        /// Oct2022: No longer doing this because want to allow fitResult to be used to get partial error
+//        // need to add any floating parameters not included somewhere already in the fit result ...
+//        RooArgList l;
+//        for(auto& p : pars()) {
+//            auto vv = p->get<RooRealVar>();
+//            if (!vv) continue;
+//            if (vv == dynamic_cast<RooRealVar*>(v)) continue;
+//            if (vv->isConstant()) continue;
+//            if (fr->floatParsFinal().find(vv->GetName())) continue;
+//            if (fr->_constPars && fr->_constPars->find(vv->GetName())) continue;
+//            l.add(*vv);
+//        }
+//
+//        if (!l.empty()) {
+//            RooArgList l2; l2.addClone(fr->floatParsFinal());
+//            l2.addClone(l);
+//            fr->setFinalParList(l2);
+//        }
 
 
         if (!fr->_VM || fr->_VM->GetNcols() < fr->floatParsFinal().size()) {
@@ -6081,22 +6108,22 @@ void xRooNode::SaveAs(const char* filename, Option_t* option) const {
 
 
 
-double xRooNode::GetBinError(int bin, const RooFitResult* fr) const {
+double xRooNode::GetBinError(int bin, const xRooNode& fr) const {
     auto res = GetBinErrors(bin,bin,fr);
     if (res.empty()) return std::numeric_limits<double>::quiet_NaN();
     return res.at(0);
 }
 
-std::pair<double,double> xRooNode::IntegralAndError(const RooFitResult* fr) const {
+std::pair<double,double> xRooNode::IntegralAndError(const xRooNode& fr, const char* rangeName) const {
     double out = 1.;
     double err = std::numeric_limits<double>::quiet_NaN();
 
     std::unique_ptr<RooAbsCollection> _snap;
     RooArgList _pars;
-    if (fr) {
+    if (auto _fr = fr.get<RooFitResult>()) {
         _pars.add(pars().argList());
         _snap.reset(_pars.snapshot());
-        _pars = fr->floatParsFinal(); _pars = fr->constPars();
+        _pars = _fr->floatParsFinal(); _pars = _fr->constPars();
     }
 
     auto _obs = obs().argList();
@@ -6109,18 +6136,32 @@ std::pair<double,double> xRooNode::IntegralAndError(const RooFitResult* fr) cons
 
     if (auto p = dynamic_cast<RooAbsPdf*>(get()); p) {
         // prefer to use expectedEvents for integrals of RooAbsPdf e.g. for RooProdPdf wont include constraint terms
+        if (rangeName) p->setNormRange(rangeName);
         out *= p->expectedEvents(_obs);
         p->_normSet = nullptr;
         err = GetBinError(-1,fr);
+        if (rangeName) p->setNormRange(nullptr);
     } else if( auto p = dynamic_cast<RooAbsReal*>(get()); p) {
         // only integrate over observables we actually depend on
-        auto f = std::shared_ptr<RooAbsReal>(p->createIntegral(*std::unique_ptr<RooArgSet>( p->getObservables(_obs)))); // did use x here before using obs
+        auto f = std::shared_ptr<RooAbsReal>(p->createIntegral(*std::unique_ptr<RooArgSet>( p->getObservables(_obs)),rangeName)); // did use x here before using obs
         double tmp = out; // coef value ... not included in Error of integral we just created (doesn't have coefs() return)
         out *= f->getVal();
         err = tmp * xRooNode(f,*this).GetBinError(-1,fr);
     } else if (auto d = get<RooAbsData>()) {
+        out = 0;
         auto vals = GetBinContents(1,0); // returns all bins
-        for(auto& v : vals) out += v;
+        auto ax = (rangeName) ? GetXaxis() : nullptr;
+        auto rv = (ax) ? dynamic_cast<RooRealVar*>(ax->GetParent()) : nullptr;
+        auto cv = (ax && !rv) ? dynamic_cast<RooCategory*>(ax->GetParent()) : nullptr;
+        int i=0;
+        for(auto& v : vals) {
+            i++;
+            if (rangeName) {
+                if(rv && !rv->inRange(ax->GetBinCenter(i),rangeName)) continue;
+                if(cv && !cv->isStateInRange(rangeName,ax->GetBinLabel(i))) continue;
+            }
+            out += v;
+        }
         err = 0; // should this be sqrt(sum(v^2)) or something similar
     }else {
         out = std::numeric_limits<double>::quiet_NaN();
@@ -6132,36 +6173,41 @@ std::pair<double,double> xRooNode::IntegralAndError(const RooFitResult* fr) cons
 
 }
 
-std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const RooFitResult* _fr) const {
+std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooNode& _fr) const {
     std::vector<double> out;
 
     auto o = dynamic_cast<RooAbsReal*>(get());
     if (!o) return out;
 
-    RooFitResult* fr = dynamic_cast<RooFitResult*>( _fr ? _fr->Clone() : fitResult()->Clone());
+    std::shared_ptr<RooFitResult> fr = std::dynamic_pointer_cast<RooFitResult>(_fr.fComp);
+    //= dynamic_cast<RooFitResult*>( _fr.get<RooFitResult>() ? _fr->Clone() : fitResult()->Clone());
 
+    if (!fr) {
+        // use name to reduce the fit result, if one given
+        fr = std::dynamic_pointer_cast<RooFitResult>(strlen(_fr.GetName()) ? fitResult().reduced(_fr.GetName()).fComp : fitResult().fComp);
+    }
 
     if (!fr->_finalPars) {
         fr->setFinalParList(RooArgList());
     }
 
-
-    // need to add any floating parameters not included somewhere already in the fit result ...
-    RooArgList l;
-    for(auto& p : pars()) {
-        auto v = p->get<RooRealVar>();
-        if (!v) continue;
-        if (v->isConstant()) continue;
-        if (fr->floatParsFinal().find(v->GetName())) continue;
-        if (fr->_constPars && fr->_constPars->find(v->GetName())) continue;
-        l.add(*v);
-    }
-
-    if (!l.empty()) {
-        RooArgList l2; l2.addClone(fr->floatParsFinal());
-        l2.addClone(l);
-        fr->setFinalParList(l2);
-    }
+    /// Oct2022: No longer doing this because want to allow fitResult to be used to get partial error
+//    // need to add any floating parameters not included somewhere already in the fit result ...
+//    RooArgList l;
+//    for(auto& p : pars()) {
+//        auto v = p->get<RooRealVar>();
+//        if (!v) continue;
+//        if (v->isConstant()) continue;
+//        if (fr->floatParsFinal().find(v->GetName())) continue;
+//        if (fr->_constPars && fr->_constPars->find(v->GetName())) continue;
+//        l.add(*v);
+//    }
+//
+//    if (!l.empty()) {
+//        RooArgList l2; l2.addClone(fr->floatParsFinal());
+//        l2.addClone(l);
+//        fr->setFinalParList(l2);
+//    }
 
     if (!fr->_VM || fr->_VM->GetNcols() < fr->floatParsFinal().size()) {
         TMatrixDSym cov(fr->floatParsFinal().getSize());
@@ -6225,7 +6271,6 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const RooFi
         out.push_back(res);
     }
 
-    delete fr;
     return out;
 
 }
