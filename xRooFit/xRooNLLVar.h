@@ -189,6 +189,9 @@ public:
 
         std::pair<double,double> FindLimit(const char* opt, double relUncert = std::numeric_limits<double>::infinity());
 
+        // key is nSigma or "obs" for observed
+        std::map<std::string,std::pair<double,double>> limits(const char* opt = "cls", double relUncert = 0.1);
+
         std::shared_ptr<xRooNode> pdf(const RooAbsCollection& parValues) const;
         std::shared_ptr<xRooNode> pdf(const char* parValues="") const;
 

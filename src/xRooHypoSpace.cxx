@@ -137,6 +137,21 @@ int xRooNLLVar::xRooHypoSpace::AddPoints(const char* parName, int nPoints, doubl
     return nPoints;
 }
 
+#include "TMemFile.h"
+
+std::map<std::string,std::pair<double,double>> xRooNLLVar::xRooHypoSpace::limits(const char* opt, double relUncert) {
+    std::map<std::string,std::pair<double,double>> out;
+    std::shared_ptr<TMemFile> memFile;
+    if (!gDirectory->IsWritable()) {
+        memFile = std::make_shared<TMemFile>("memory","RECREATE");
+    }
+    for(int nSigma : {0,1,2,-1,-2}) {
+        out[TString::Format("%d",nSigma).Data()] = FindLimit(TString::Format("%s exp%s%d",opt,nSigma>0 ? "+" : "",nSigma),relUncert);
+    }
+    out["obs"] = FindLimit(TString::Format("%s obs",opt),relUncert);
+    return out;
+}
+
 xRooNLLVar::xRooHypoPoint& xRooNLLVar::xRooHypoSpace::AddPoint(const char* coords) {
     // move to given coords, if any
     fPars->assignValueOnly(toArgs(coords));
@@ -175,6 +190,9 @@ xRooNLLVar::xRooHypoPoint& xRooNLLVar::xRooHypoSpace::AddPoint(const char* coord
     }
 
     out.fPllType = _type;
+
+    // TODO: Check for equivalent point before adding
+
 
     return emplace_back(out);
 
@@ -231,9 +249,13 @@ RooArgList xRooNLLVar::xRooHypoSpace::axes() const {
 
         std::string bestVar;
         size_t maxDiff = 0;
+        bool isPOI = false;
         for(auto& [k,v] : values) {
-            maxDiff = std::max(maxDiff,v.size());
-            if (v.size()==maxDiff) bestVar = k;
+            if (v.size()>maxDiff || (v.size()==maxDiff && !isPOI && pars()->find(k.c_str())->getAttribute("poi"))) {
+                bestVar = k;
+                isPOI = pars()->find(k.c_str())->getAttribute("poi");
+                maxDiff = std::max(maxDiff,v.size());
+            }
         }
 
         if(bestVar.empty()) {break;}
@@ -641,9 +663,22 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph& pValu
             return std::pair(lim,err);
         }
     }
-    return ( (above && gr->GetPointY(gr->GetN()-1) < gr->GetPointY(0)) || (!above && gr->GetPointY(gr->GetN()-1) > gr->GetPointY(0)) )
-        ? std::pair(gr->GetPointX(gr->GetN()-1),std::numeric_limits<double>::infinity()) :
-           std::pair(gr->GetPointX(0),-std::numeric_limits<double>::infinity());
+    // if reach here need to extrapolate ...
+    if( (above && gr->GetPointY(gr->GetN()-1) <= gr->GetPointY(0)) || (!above && gr->GetPointY(gr->GetN()-1) >= gr->GetPointY(0)) ) {
+        // extrapolating above based on last two points
+        double x1 = gr->GetPointX(gr->GetN()-2);
+        double y1 = gr->GetPointY(gr->GetN()-2);
+        double m = (gr->GetPointY(gr->GetN()-1) - y1)/(gr->GetPointX(gr->GetN()-1) - x1);
+        if (m==0.) return std::pair(2.*gr->GetPointX(gr->GetN()-1)-x1,std::numeric_limits<double>::infinity());
+        return std::pair((alpha - y1)/m + x1, std::numeric_limits<double>::infinity());
+    } else {
+        // extrapolating below based on first two points
+        double x1 = gr->GetPointX(0);
+        double y1 = gr->GetPointY(0);
+        double m = (gr->GetPointY(1) - y1)/(gr->GetPointX(1) - x1);
+        if (m==0.) return std::pair(2.*x1-gr->GetPointX(1),std::numeric_limits<double>::infinity());
+        return std::pair((alpha - y1)/m + x1, std::numeric_limits<double>::infinity());
+    }
 
 }
 
@@ -653,13 +688,15 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, d
     if (!gr || gr->GetN() < 2) {
         auto v = (poi().empty()) ? nullptr : dynamic_cast<RooRealVar*>(poi().first());
         if (!v) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
+        double muMax = std::min(v->getMax(),v->getMax("physical"));
+        double muMin = std::max(v->getMin("physical"),v->getMin());
         if (!gr || gr->GetN()<1) {
-            if(std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),v->getMin("physical"))).getVal(opt).first)) {
+            if(std::isnan(AddPoint(TString::Format("%s=%g",v->GetName(),muMin)).getVal(opt).first)) {
                 // first point failed ... give up
                 return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
             }
         }
-        if (std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),v->getMin("physical") + std::min(1.,(v->getMax("physical")-v->getMin("physical"))/50))).getVal(opt).first)) {
+        if (std::isnan(AddPoint(TString::Format("%s=%g",v->GetName(), muMin + (muMax-muMin)/50)).getVal(opt).first)) {
             // second point failed ... give up
             return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
         }
@@ -677,11 +714,17 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, d
 
     double nextPoint;
     auto v = dynamic_cast<RooRealVar*>(poi().first());
+    double maxMu = std::min(v->getMax("physical"),v->getMax());
+    double minMu = std::max(v->getMin("physical"),v->getMin());
     if (lim.second == std::numeric_limits<double>::infinity()) {
-        nextPoint = gr->GetPointX(gr->GetN()-1) + std::min(1.,(v->getMax("physical")-v->getMin("physical"))/50);
+        // limit was found by extrapolating to right
+        nextPoint = lim.first;
+        if (nextPoint > v->getMax("physical")) nextPoint = gr->GetPointX(gr->GetN()-1) + (maxMu-minMu)/50;
         if (nextPoint > v->getMax("physical")) return lim;
     } else if(lim.second == -std::numeric_limits<double>::infinity()) {
-        nextPoint = gr->GetPointX(0) - std::min(1.,(v->getMax("physical")-v->getMin("physical"))/50);
+        // limit from extrapolating to left
+        nextPoint = lim.first;
+        if (nextPoint < v->getMin("physical")) nextPoint = gr->GetPointX(0) - (maxMu-minMu)/50;
         if (nextPoint < v->getMin("physical")) return lim;
     } else {
         nextPoint = lim.first + lim.second*relUncert*0.99;
@@ -689,8 +732,8 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, d
 
     // got here need a new point .... evaluate the estimated lim location +/- the relUncert (signed error takes care of direction)
 
-    //Info("GetLimit","Testing new point @ %s=%g",v->GetName(),nextPoint);
-    if (std::isnan(AddPoint(TString::Format("%s=%f",v->GetName(),nextPoint)).getVal(opt).first)) {
+    Info("FindLimit","%s -- Testing new point @ %s=%g",opt,v->GetName(),nextPoint);
+    if (std::isnan(AddPoint(TString::Format("%s=%g",v->GetName(),nextPoint)).getVal(opt).first)) {
         return lim;
     }
 
@@ -701,6 +744,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, d
 #include "TH1F.h"
 #include "TStyle.h"
 #include "TLegend.h"
+#include "TLine.h"
 
 void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
@@ -792,11 +836,13 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
         if (!sOpt.Contains("same") && gPad) {gPad->Clear();}
         auto g = dynamic_cast<TGraphErrors*>(exp2->DrawClone("AF"));
         g->SetBit(kCanDelete);
-        g->GetHistogram()->SetName(".axis");
+        g->GetHistogram()->SetName(".axis");g->GetHistogram()->SetTitle("");
         g->GetHistogram()->SetBit(TH1::kNoTitle);
+        exp2->DrawClone("F")->SetBit(kCanDelete);
         exp1->DrawClone("F")->SetBit(kCanDelete);
         exp->DrawClone("LP")->SetBit(kCanDelete);
         obs->DrawClone("LP")->SetBit(kCanDelete);
+        TLine l; l.SetLineStyle(2); l.DrawLine(g->GetHistogram()->GetXaxis()->GetXmin(),0.05,g->GetHistogram()->GetXaxis()->GetXmax(),0.05);
         //auto l = gPad->BuildLegend(gPad->GetLeftMargin()+0.05, gPad->GetBottomMargin()+0.05,gPad->GetLeftMargin()+0.35,gPad->GetBottomMargin()+0.25);l->SetName("legend");
 
         auto leg = new TLegend(1. - gPad->GetRightMargin()-0.3, 1.-gPad->GetTopMargin()-0.3,1.-gPad->GetRightMargin()-0.05,1.-gPad->GetTopMargin()-0.05);
