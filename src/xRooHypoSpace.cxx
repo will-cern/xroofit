@@ -139,16 +139,77 @@ int xRooNLLVar::xRooHypoSpace::AddPoints(const char* parName, int nPoints, doubl
 
 #include "TMemFile.h"
 
+double round_to_digits(double value, int digits) {
+    if (value == 0.0) return 0.0;
+    double factor = pow(10.0, digits - ceil(log10(fabs(value))));
+    return std::round(value * factor) / factor;
+};
+double round_to_decimal(double value, int decimal_places) {
+    const double multiplier = std::pow(10.0, decimal_places);
+    return std::round(value * multiplier) / multiplier;
+}
+
+// rounds error to 1 or 2 sig fig and round value to match that precision
+std::pair<double,double> matchPrecision(const std::pair<double,double>& in) {
+    auto out = in;
+    if (!std::isinf(out.second)) {
+        out.second = round_to_digits(out.second, 2);
+        int expo = (out.second == 0) ? 0 : (int)std::floor(std::log10(std::fabs(out.second) ) );
+        if (TString::Format("%e", out.second)(0) != '1') {
+            out.second = round_to_digits(out.second, 1);
+            out.first = (expo>=0) ? round(out.first) : round_to_decimal(out.first,-expo);
+        } else if(out.second!=0) {
+            out.first = (expo>=0) ? round(out.first) : round_to_decimal(out.first,-expo+1);
+        }
+    }
+    return out;
+}
+
+#include "RooDataSet.h"
+
 std::map<std::string,std::pair<double,double>> xRooNLLVar::xRooHypoSpace::limits(const char* opt, double relUncert) {
+    TString sOpt(opt);
+    if (sOpt.Contains("cls")) {
+        for(auto p : poi()) {
+            if (!p->hasRange("physical")) {
+                Info("limits","No physical range set for %s, setting to [0,inf]",p->GetName());
+                dynamic_cast<RooRealVar*>(p)->setRange("physical",0,std::numeric_limits<double>::infinity());
+            }
+            if (!p->getStringAttribute("altVal")) {
+                Info("limits","No altVal set for %s, setting to 0",p->GetName());
+                p->setStringAttribute("altVal","0");
+            }
+        }
+    }
+
     std::map<std::string,std::pair<double,double>> out;
     std::shared_ptr<TMemFile> memFile;
     if (!gDirectory->IsWritable()) {
         memFile = std::make_shared<TMemFile>("memory","RECREATE");
     }
     for(int nSigma : {0,1,2,-1,-2}) {
-        out[TString::Format("%d",nSigma).Data()] = FindLimit(TString::Format("%s exp%s%d",opt,nSigma>0 ? "+" : "",nSigma),relUncert);
+        auto lim = FindLimit(TString::Format("%s exp%s%d",opt,nSigma>0 ? "+" : "",nSigma),relUncert);
+        if (lim.second<0) lim.second = -lim.second; // make errors positive for this method
+        out[TString::Format("%d",nSigma).Data()] = matchPrecision(lim);
     }
-    out["obs"] = FindLimit(TString::Format("%s obs",opt),relUncert);
+
+    // don't do the observed limit if all the NLL datas are generated
+    bool doObs = true;
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
+    bool allGen=true;
+    for(auto& [pdf,nll] : fNlls) {
+        auto _d = dynamic_cast<RooDataSet*>(nll->data());
+        if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult")) {
+            allGen=false; break;
+        }
+    }
+    if (allGen) doObs = false;
+#endif
+    if (doObs) {
+        auto lim = FindLimit(TString::Format("%s obs", opt), relUncert);
+        if (lim.second < 0) lim.second = -lim.second;
+        out["obs"] = matchPrecision(lim);
+    }
     return out;
 }
 
@@ -631,11 +692,15 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* 
 std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph& pValues, double target) {
 
     auto gr = std::make_shared<TGraph>(pValues);
-    // remove any nan points
+    // remove any nan points and duplicates
     int i=0;
+    std::set<double> existingX;
     while(i < gr->GetN()) {
         if (std::isnan(gr->GetPointY(i))) gr->RemovePoint(i);
-        else {
+        else if (existingX.find(gr->GetPointX(i))!=existingX.end()) {
+            gr->RemovePoint(i);
+        } else {
+            existingX.insert(gr->GetPointX(i));
             // convert to log ....
             gr->SetPointY(i,log(std::max(gr->GetPointY(i),1e-10)));
             i++;
