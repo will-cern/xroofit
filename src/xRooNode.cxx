@@ -645,11 +645,16 @@ const char* xRooNode::GetIconName() const {
         if(o->InheritsFrom("RooWorkspace")) return "TFile";
         if(o->InheritsFrom("RooAbsData")) return "TProfile";
         if(o->InheritsFrom("RooSimultaneous")) return "TH3D";
-        if(o->InheritsFrom("RooFitResult")) return "blah";
+
         if(o->InheritsFrom("RooProdPdf")) return "a.C"; // or nullptr for folder
         if(o->InheritsFrom("RooRealSumPdf") || o->InheritsFrom("RooAddPdf")) return "TH2D";
         //if(o->InheritsFrom("RooProduct")) return "TH1D";
-        if(o->InheritsFrom("RooFitResultTree") || o->InheritsFrom("RooDataTree")) return "TTree";
+        if(o->InheritsFrom("RooFitResult")) {
+            if (!gClient->GetMimeTypeList()->GetIcon("xRooFitRooFitResult",true)) {
+                gClient->GetMimeTypeList()->AddType("xRooFitRooFitResult", "xRooFitRooFitResult", "package.xpm", "package.xpm", "->Browse()");
+            }
+            return "xRooFitRooFitResult";
+        }
         if(o->InheritsFrom("RooRealVar") || o->InheritsFrom("RooCategory")) {
             if (get<RooAbsArg>()->getAttribute("obs")) {
                 if (!gClient->GetMimeTypeList()->GetIcon("xRooFitObs",true)) {
