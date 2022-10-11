@@ -241,8 +241,13 @@ void xRooNLLVar::reinitialize() {
         std::set<std::string> attribs;
         if (std::shared_ptr<RooAbsReal>::get()) attribs = std::shared_ptr<RooAbsReal>::get()->attributes();
         this->reset( fPdf->createNLL(*fData,*fOpts) );
+        // RooFit only swaps in what it calls parameters, this misses out the RooConstVars which we treat as pars as well
+        // so swap those in ... question: is recursiveRedirectServers usage in RooAbsOptTestStatic (and here) a memory leak??
+        // where do the replaced servers get deleted??
+        
         for(auto& a : attribs) std::shared_ptr<RooAbsReal>::get()->setAttribute(a.c_str());
-        if(fPdf->_myws) { xRooNode(*fPdf->_myws).sterilize(); } // there seems to be a nasty bug somewhere that can make the cache become invalid, so clear it here
+        // create parent on next line to avoid triggering workspace initialization code in constructor of xRooNode
+        if(fPdf->_myws) { xRooNode(*fPdf->_myws,std::make_shared<xRooNode>()).sterilize(); } // there seems to be a nasty bug somewhere that can make the cache become invalid, so clear it here
         if(oldName!="") std::shared_ptr<RooAbsReal>::get()->SetName(oldName);
         if(!origValues.empty()) {
             // need to evaluate NOW so that slaves are created while the BinnedLikelihood settings are in place
@@ -1349,10 +1354,14 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName,const xRooFi
     xRooNLLVar::xRooHypoSpace s(parName,parName);
 
     s.AddModel(pdf());
-    auto poi = s.pars()->find(parName);
-    if (!poi) throw std::runtime_error("parameter not found");
-    s.pars()->setAttribAll("poi",false);
-    poi->setAttribute("poi",true);
+    if (strlen(parName)) {
+        auto poi = s.pars()->find(parName);
+        if (!poi) throw std::runtime_error("parameter not found");
+        s.pars()->setAttribAll("poi", false);
+        poi->setAttribute("poi", true);
+    } else if(std::unique_ptr<RooAbsCollection>(s.pars()->selectByAttrib("poi",true))->empty()) {
+        throw std::runtime_error("You must specify a POI for the hypoSpace");
+    }
     s.fNlls[s.fPdfs.begin()->second] = std::make_shared<xRooNLLVar>(*this);
     s.fTestStatType = pllType;
     return s;

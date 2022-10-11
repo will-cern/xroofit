@@ -153,10 +153,11 @@ double round_to_decimal(double value, int decimal_places) {
 std::pair<double,double> matchPrecision(const std::pair<double,double>& in) {
     auto out = in;
     if (!std::isinf(out.second)) {
+        auto tmp = out.second;
         out.second = round_to_digits(out.second, 2);
         int expo = (out.second == 0) ? 0 : (int)std::floor(std::log10(std::fabs(out.second) ) );
         if (TString::Format("%e", out.second)(0) != '1') {
-            out.second = round_to_digits(out.second, 1);
+            out.second = round_to_digits(tmp, 1);
             out.first = (expo>=0) ? round(out.first) : round_to_decimal(out.first,-expo);
         } else if(out.second!=0) {
             out.first = (expo>=0) ? round(out.first) : round_to_decimal(out.first,-expo+1);
@@ -178,6 +179,22 @@ std::map<std::string,std::pair<double,double>> xRooNLLVar::xRooHypoSpace::limits
             if (!p->getStringAttribute("altVal")) {
                 Info("limits","No altVal set for %s, setting to 0",p->GetName());
                 p->setStringAttribute("altVal","0");
+            }
+            // ensure range straddles altVal
+            double altVal = TString(p->getStringAttribute("altVal")).Atof();
+            auto v = dynamic_cast<RooRealVar*>(p);
+            if (v->getMin() >= altVal) {
+                Info("limits","range of POI does not straddle alt value, adjusting minimum to %g",altVal-1e-5);
+                v->setMin(altVal - 1e-5);
+            }
+            if (v->getMax() <= altVal) {
+                Info("limits","range of POI does not straddle alt value, adjusting minimum to %g",altVal+1e-5);
+                v->setMax(altVal + 1e-5);
+            }
+            for(auto& [pdf,nll] : fNlls) {
+                if( auto _v = dynamic_cast<RooRealVar*>(nll->pars()->find(*p)) ) {
+                    _v->setRange(v->getMin(),v->getMax());
+                }
             }
         }
     }
@@ -750,6 +767,15 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph& pValu
 std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, double relUncert) {
     std::shared_ptr<TGraphErrors> gr = BuildGraph(TString(opt) + " readonly");
 
+    // resync parameter boundaries from nlls (may have been modified by fits)
+    for(auto p : poi()) {
+        for(auto& [pdf,nll] : fNlls) {
+            if( auto _v = dynamic_cast<RooRealVar*>(nll->pars()->find(*p)) ) {
+                dynamic_cast<RooRealVar*>(p)->setRange(_v->getMin(),_v->getMax());
+            }
+        }
+    }
+
     if (!gr || gr->GetN() < 2) {
         auto v = (poi().empty()) ? nullptr : dynamic_cast<RooRealVar*>(poi().first());
         if (!v) return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
@@ -760,7 +786,9 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, d
                 // first point failed ... give up
                 return std::pair(std::numeric_limits<double>::quiet_NaN(),0);
             }
+            return FindLimit(opt,relUncert); // do this to resync parameter limits
         }
+
         if (std::isnan(AddPoint(TString::Format("%s=%g",v->GetName(), muMin + (muMax-muMin)/50)).getVal(opt).first)) {
             // second point failed ... give up
             return std::pair(std::numeric_limits<double>::quiet_NaN(),0);

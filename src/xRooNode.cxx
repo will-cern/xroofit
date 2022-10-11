@@ -47,6 +47,7 @@
 #include "TGraphAsymmErrors.h"
 #include "TMath.h"
 #include "TPRegexp.h"
+#include "TRegexp.h"
 
 #include "TGListTree.h"
 #include "TGMsgBox.h"
@@ -77,7 +78,7 @@ xRooNode::xRooNode(const char* classname, const char* name, const char* title) :
             [](TObject* o) {
         if (auto w = dynamic_cast<RooWorkspace*>(o); w) {
             w->_embeddedDataList.Delete();
-            xRooNode(*w).sterilize();
+            xRooNode(*w,std::make_shared<xRooNode>()).sterilize();
         }
         if(o) delete o;})) {
     if (auto a = get<TNamed>(); a) a->SetName(name);
@@ -124,7 +125,7 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
                             // memory leak in workspace, some RooLinkedLists aren't cleared
                             if (ws) {
                                 dynamic_cast<RooWorkspace *>(ws)->_embeddedDataList.Delete();
-                                xRooNode(*ws).sterilize();
+                                xRooNode(*ws,std::make_shared<xRooNode>()).sterilize();
                                 delete ws;
                             }
                         });
@@ -162,6 +163,7 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
             // count how many ds are checked ... if none are checked will check the first
             checkCount += d->TestBit(1<<20);
         }
+
         if(checkCount==0 && !_ws->allData().empty()) _ws->allData().back()->SetBit(1<<20,true);
 
         if (auto _set = dynamic_cast<RooArgSet*>(_ws->_snapshots.find("NominalParamValues")); _set) {
@@ -636,6 +638,8 @@ TAxis* xRooNode::GetXaxis() const {
     return fXAxis.get();
 }
 
+#include "TGMimeTypes.h"
+
 const char* xRooNode::GetIconName() const {
     if (auto o = get(); o) {
         if(o->InheritsFrom("RooWorkspace")) return "TFile";
@@ -646,8 +650,27 @@ const char* xRooNode::GetIconName() const {
         if(o->InheritsFrom("RooRealSumPdf") || o->InheritsFrom("RooAddPdf")) return "TH2D";
         //if(o->InheritsFrom("RooProduct")) return "TH1D";
         if(o->InheritsFrom("RooFitResultTree") || o->InheritsFrom("RooDataTree")) return "TTree";
-        if(o->InheritsFrom("RooRealVar") || o->InheritsFrom("RooCategory")) return "TLeaf";
-        if(o->InheritsFrom("RooConstVar")) return nullptr;
+        if(o->InheritsFrom("RooRealVar") || o->InheritsFrom("RooCategory")) {
+            if (get<RooAbsArg>()->getAttribute("obs")) {
+                if (!gClient->GetMimeTypeList()->GetIcon("xRooFitObs",true)) {
+                    gClient->GetMimeTypeList()->AddType("xRooFitObs", "xRooFitObs", "x_pic.xpm", "x_pic.xpm", "->Browse()");
+                }
+                return "xRooFitObs";
+            }
+            return "TLeaf";
+        }
+        if(o->InheritsFrom("TStyle")) {
+            if (!gClient->GetMimeTypeList()->GetIcon("xRooFitTStyle",true)) {
+                gClient->GetMimeTypeList()->AddType("xRooFitTStyle", "xRooFitTStyle", "bld_colorselect.xpm", "bld_colorselect.xpm", "->Browse()");
+            }
+            return "xRooFitTStyle";
+        }
+        if(o->InheritsFrom("RooConstVar")) {
+            if (!gClient->GetMimeTypeList()->GetIcon("xRooFitRooConstVar",true)) {
+                gClient->GetMimeTypeList()->AddType("xRooFitRooConstVar", "xRooFitRooConstVar", "stop_t.xpm", "stop_t.xpm", "->Browse()");
+            }
+            return "xRooFitRooConstVar";
+        }
         if(o->InheritsFrom("RooStats::HistFactory::FlexibleInterpVar")) return "TMethodBrowsable-leaf";
         if(auto a = dynamic_cast<RooAbsReal*>(o); a) {
             if (auto _ax = GetXaxis(); _ax && (a->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(_ax->GetParent())) ||
@@ -2143,11 +2166,29 @@ xRooNode& xRooNode::operator=(const TObject& o) {
 
 #include "RooFormulaVar.h"
 
-void xRooNode::_fitTo_(const char* datasetName) {
+void xRooNode::_fitTo_(const char* datasetName,const char* constParValues) {
     try {
+        auto _pars = pars();
+        //std::unique_ptr<RooAbsCollection> snap(_pars.argList().snapshot());
+        TStringToken pattern(constParValues, ",");
+        while (pattern.NextToken()) {
+            auto idx = pattern.Index('=');
+            TString pat = (idx == -1) ? TString(pattern) : TString(pattern(0, idx));
+            double val = (idx == -1) ? std::numeric_limits<double>::quiet_NaN() : TString(
+                    pattern(idx + 1, pattern.Length())).Atof();
+            for (auto p: _pars.argList()) {
+                if (TString(p->GetName()).Contains(TRegexp(pat, true))) {
+                    p->setAttribute("Constant", true);
+                    if (std::isnan(val)) dynamic_cast<RooAbsRealLValue *>(p)->setVal(val);
+                }
+            }
+        }
         auto fr = nll(datasetName).minimize();
+        //_pars.argList() = *snap; // restore values - irrelevant as SetFitResult will restore values
         if (!fr.get()) throw std::runtime_error("Fit Failed");
         SetFitResult(fr.get());
+        if(fr->status()!=0) new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Fit Finished", TString::Format("Fit Status Code = %d",fr->status()),kMBIconExclamation);
+        else new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Fit Finished", TString::Format("Fit Status Code = %d",fr->status()));
     } catch(const std::exception& e) {
         new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
     }
@@ -4062,7 +4103,7 @@ xRooNode xRooNode::fitResult(const char* opt) const {
                     fr->setInitParList(*_snap);
                     return xRooNode(fr,*this);
                 }
-                return xRooNode(*_fr,*_w);
+                return xRooNode(*_fr,std::make_shared<xRooNode>(*_w,std::make_shared<xRooNode>()));
             }
         }
     } else {
@@ -4145,7 +4186,7 @@ const char* xRooNode::GetRange() const {
     return out.c_str();
 }
 
-#include "TRegexp.h"
+
 
 xRooNLLVar xRooNode::nll(const xRooNode& _data) const {
     return nll(_data,*xRooFit::createNLLOptions());
@@ -4961,7 +5002,7 @@ TLegend* getLegend(bool create=true, bool doPaint=false) {
     } else {
         if (!create) return nullptr;
         l = new TLegend(0.6, 1. - gPad->GetTopMargin() - 0.08, 1. - gPad->GetRightMargin(),
-                        1. - gPad->GetTopMargin() - 0.03);
+                        1. - gPad->GetTopMargin() - 0.08);
         l->SetBorderSize(0);
     }
     l->SetBit(kCanDelete);
@@ -4988,7 +5029,7 @@ void addLegendEntry(TObject* o, const char* title, const char* opt) {
         // each entry takes up 0.05 ... maximum of 9 before next column
         if ((nObj % 9)==1) {l->SetNColumns(l->GetNColumns()+1);}
         else if(nObj<=9) {
-            l->SetY1NDC(l->GetY2NDC()-0.025*nObj);
+            l->SetY1NDC(l->GetY2NDC()-0.05*nObj);
         }
     }
 
@@ -5829,11 +5870,27 @@ void xRooNode::Draw(Option_t* opt) {
             int e = std::min(allTitles.begin()->size(),allTitles.rbegin()->size());
             int ii = 0;
             bool goodPrefix = false;
+            std::string commonSuffix;
             if (titleMatchName) {
                 while (ii < e-1 && allTitles.begin()->at(ii) == allTitles.rbegin()->at(ii)) {
                     ii++;
                     if (allTitles.begin()->at(ii) == '_' || allTitles.begin()->at(ii) == ' ') goodPrefix = true;
                 }
+
+                // find common suffix if there is one .. must start with a "_"
+                bool stop=false;
+                while(!stop && commonSuffix.size() < e-1) {
+                    commonSuffix = allTitles.begin()->substr(allTitles.begin()->length()-commonSuffix.length()-1);
+                    for(auto& t : allTitles) {
+                        if (!TString(t).EndsWith(commonSuffix.c_str())) {
+                            commonSuffix = commonSuffix.substr(1);
+                            stop = true;
+                            break;
+                        }
+                    }
+                }
+                if (commonSuffix.find('_') == std::string::npos) commonSuffix="";
+                else commonSuffix = commonSuffix.substr(commonSuffix.find('_'));
             }
             if (!goodPrefix) ii=0;
             // also find how many characters are needed to distinguish all entries (that dont have the same name)
@@ -5859,6 +5916,7 @@ void xRooNode::Draw(Option_t* opt) {
             for (int i = ll->GetEntries() - 1; i >= 0; i--) { //go in reverse order
                 auto _title = (ll->GetEntries()>5) ? reducedTitles[ll->At(i)->GetTitle()] : ll->At(i)->GetTitle();
                 _title = _title.substr(ii < _title.size() ? ii : 0);
+                if(!commonSuffix.empty() && TString(_title).EndsWith(commonSuffix.c_str())) _title = _title.substr(0,_title.length()-commonSuffix.length());
 
                 // style hists according to availble styles ... creating if necessary
                 std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)

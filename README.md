@@ -67,7 +67,7 @@ The methods of `xRooNode` can be split into the following categories:
     * `constraints()`: the nodes that "constrain" this node (relevant for parameter nodes)
     * `datasets()`: the nodes that represent data corresponding to this node (relevant for pdf nodes)
       <br><br>
-    * `deps()`: the fundmanental (leaf) nodes that this node depends on (=obs+pars) [note: will replace this with `vars()` in future]
+    * `vars()`: the fundmanental (leaf) nodes that this node depends on (=obs+pars) [note: will replace this with `vars()` in future]
     * `obs()`: the leaf nodes that are observables (robs+globs)
     * `globs()`: the leaf nodes that are global observables (subset of observables)
     * `robs()`: the leaf nodes that are regular observables
@@ -315,5 +315,5 @@ The types of constraint you can have are:
 We can see all the dependents we have created so far with:
 
 ```python
-w["simPdf"].deps().Print()
+w["simPdf"].vars().Print()
 ```

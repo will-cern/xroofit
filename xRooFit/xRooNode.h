@@ -210,7 +210,7 @@ public:
     void SetFitResult(const std::shared_ptr<const RooFitResult>& fr) { SetFitResult(fr.get()); }
     void SetFitResult(const xRooNode& fr);
 
-    void _fitTo_(const char* datasetName=""); // *MENU*
+    void _fitTo_(const char* datasetName="", const char* constParValues=""); // *MENU*
     void _generate_(const char* name="", bool expected=false); // *MENU*
 //    xRooNode fitTo(const char* datasetName) const;
 //    xRooNode fitTo(const xRooNode& _data) const;
