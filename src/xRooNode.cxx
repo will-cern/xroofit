@@ -269,7 +269,7 @@ void xRooNode::Checked(TObject* obj, bool val) {
                     }
                     // uncheck all other fit results
                     for (auto oo : _ws->allGenericObjects()) {
-                        if (auto ffr = dynamic_cast<RooFitResult *>(oo); ffr != fr) {
+                        if (auto ffr = dynamic_cast<RooFitResult *>(oo); ffr && ffr != fr) {
                             ffr->ResetBit(1<<20);
                         }
                     }
