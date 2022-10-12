@@ -21,7 +21,7 @@ class TGraph;
 class RooFitResult;
 class TGListTreeItem;
 class TVirtualPad;
-
+class TStyle;
 
 #include "xRooFit/xRooFit.h"
 #include "RooLinkedList.h"
@@ -29,6 +29,7 @@ class TVirtualPad;
 #include "TQObject.h"
 
 class xRooNLLVar;
+
 
 class xRooNode : public TNamed, public std::vector<std::shared_ptr<xRooNode>> {
 
@@ -190,7 +191,7 @@ public:
     bool SetXaxis(int nbins, double low, double high) { return SetXaxis("xaxis","",nbins,low,high); }
     bool SetXaxis(int nbins, double* bins) { return SetXaxis("xaxis","",nbins,bins); }
 
-    void SetFillColor(Color_t fcolor);
+    std::shared_ptr<TStyle> style(TObject* initObject = nullptr) const;
 
     TAxis* GetXaxis() const;
 

@@ -51,6 +51,7 @@
 
 #include "TGListTree.h"
 #include "TGMsgBox.h"
+#include "TGedEditor.h"
 
 //#include "RooFitTrees/RooFitResultTree.h"
 //#include "RooFitTrees/RooDataTree.h"
@@ -348,7 +349,13 @@ void xRooNode::Browse(TBrowser* b) {
     browse();
     if (empty()) {
         try {
-            Draw(b->GetDrawOption());
+            if (auto s = get<TStyle>()) {
+                s->SetFillAttributes();
+                if (auto ed = dynamic_cast<TGedEditor*>(TVirtualPadEditor::GetPadEditor())) {
+                    ed->SetModel(gPad,s,kButton1Down,true);
+                }
+            }
+            else Draw(b->GetDrawOption());
         } catch(const std::exception& e) {
             new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),kMBIconExclamation); // deletes self on dismiss?
         }
@@ -390,6 +397,9 @@ void xRooNode::Browse(TBrowser* b) {
         if (strcmp(v->GetName(),".folders")==0) continue; // never 'browse' the folders property
         int _checked = (v->get<RooAbsData>() || v->get<RooFitResult>()) ? v->get()->TestBit(1<<20) : -1;
         TString _name = v->GetName();
+        if (v->get() && _name.BeginsWith(TString(v->get()->ClassName())+"::")) {
+            _name = _name(strlen(v->get()->ClassName())+2,_name.Length());
+        }
         if (_name.BeginsWith(".")) {
             // property node -- display the  name of the contained object
             if (v->get()) _name = TString::Format("%s: %s::%s",_name.Data(),v->get()->ClassName(),
@@ -2852,8 +2862,35 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
 
 }
 
-void xRooNode::SetFillColor(Color_t fcolor) {
-    if(auto a = get<RooAbsArg>(); a) a->setStringAttribute("FillColor",TString::Format("%d",fcolor));
+std::shared_ptr<TStyle> xRooNode::style(TObject* initObject) const {
+
+    TString t = GetTitle();
+    if (initObject) {
+        t = (strlen(initObject->GetTitle())) ? initObject->GetTitle() : initObject->GetName();
+    }
+
+
+    std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
+    if (!gROOT->GetStyle(t)) {
+        if ( (style = getObject<TStyle>(t.Data())) ) {
+            // loaded style (from workspace?) so put in list and use that
+            gROOT->GetListOfStyles()->Add(style.get());
+        } else {
+            // create new style - gets put in style list automatically so don't have to delete
+            // acquire them so saved to workspaces for auto reload ...
+            style = const_cast<xRooNode&>(*this).acquireNew<TStyle>(t.Data(),
+                                                                    TString::Format("Style for %s component", t.Data()));
+            if (auto x = dynamic_cast<TAttLine*>(initObject)) ((TAttLine&)*style) = *x;
+            if (auto x = dynamic_cast<TAttFill*>(initObject)) ((TAttFill&)*style) = *x;
+            if (auto x = dynamic_cast<TAttMarker*>(initObject)) ((TAttMarker&)*style) = *x;
+            gROOT->GetListOfStyles()->Add(style.get());
+        }
+    } else {
+        style = std::shared_ptr<TStyle>(gROOT->GetStyle(t),[](TStyle*){});
+    }
+
+    return style;
+
 }
 
 std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject>& arg, bool checkFactory, bool mustBeNew) {
@@ -3953,6 +3990,29 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros, TVirtualPad* fr
         delete xPos;
         delete xPos2;
         delete theHist;
+
+//        std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
+//        std::string _title = strlen(dataGraph->GetTitle()) ? dataGraph->GetTitle() : GetName();
+//        if (!gROOT->GetStyle(_title.c_str())) {
+//            if ( (style = getObject<TStyle>(_title)) ) {
+//                // loaded style (from workspace?) so put in list and use that
+//                gROOT->GetListOfStyles()->Add(style.get());
+//            } else {
+//                // create new style - gets put in style list automatically so don't have to delete
+//                // acquire them so saved to workspaces for auto reload ...
+//                style = const_cast<xRooNode&>(*this).acquireNew<TStyle>(_title.c_str(),
+//                                           TString::Format("Style for %s component", _title.c_str()));
+//                (TAttLine &) (*style) = *dynamic_cast<TAttLine *>(dataGraph);
+//                (TAttFill &) (*style) = *dynamic_cast<TAttFill *>(dataGraph);
+//                (TAttMarker &) (*style) = *dynamic_cast<TAttMarker *>(dataGraph);
+//                gROOT->GetListOfStyles()->Add(style.get());
+//            }
+//        }
+        auto _style = style(dataGraph);
+        *dynamic_cast<TAttLine*>(dataGraph) = *_style;
+        *dynamic_cast<TAttFill*>(dataGraph) = *_style;
+        *dynamic_cast<TAttMarker*>(dataGraph) = *_style;
+
 
         return dataGraph;
 
@@ -5151,7 +5211,7 @@ void xRooNode::Draw(Option_t* opt) {
         gPad->SetTitle(GetTitle());
     }
 
-    PadRefresher padRefresh((!hasSame && !hasGoff) ? gPad : nullptr);
+    PadRefresher padRefresh(((!hasSame || hasOverlay) && !hasGoff) ? gPad : nullptr);
 
     // TODO: Figure out way to adjust range for error hist so show at least 3x smallest error
     auto adjustYRange = [&](double min, double max, TH1* hh = nullptr, bool symmetrize=false) {
@@ -5802,16 +5862,34 @@ void xRooNode::Draw(Option_t* opt) {
             overlayExisted = true;
         } else {
             h->SetTitle(overlayName);
-            if (!gROOT->GetStyle(h->GetTitle())) {
-                // create new style - gets put in style list automatically so don't have to delete
-                auto style = new TStyle(h->GetTitle(),TString::Format("Style for %s component",h->GetTitle()));
-                *style = *gStyle;
-            }
-            (TAttLine&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
+
+//            std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
+//            if (!gROOT->GetStyle(h->GetTitle())) {
+//                if ( (style = getObject<TStyle>(h->GetTitle())) ) {
+//                    // loaded style (from workspace?) so put in list and use that
+//                    gROOT->GetListOfStyles()->Add(style.get());
+//                } else {
+//                    // create new style - gets put in style list automatically so don't have to delete
+//                    // acquire them so saved to workspaces for auto reload ...
+//                    style = acquireNew<TStyle>(h->GetTitle(),
+//                                               TString::Format("Style for %s component", h->GetTitle()));
+//                    (TAttLine &) (*style) = *dynamic_cast<TAttLine *>(h);
+//                    (TAttFill &) (*style) = *dynamic_cast<TAttFill *>(h);
+//                    (TAttMarker &) (*style) = *dynamic_cast<TAttMarker *>(h);
+//                    gROOT->GetListOfStyles()->Add(style.get());
+//                }
+//            }
+//            (TAttLine&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
+//            (TAttFill&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
+//            (TAttMarker&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
+            auto _style = style(h);
+            (TAttLine&)(*h) = *_style; (TAttFill&)(*h) = *_style; (TAttMarker&)(*h) = *_style;
+
             h->Draw(dOpt);
             if (errHist) {
                 errHist->SetTitle(overlayName);
                 (TAttLine&)(*errHist) = *h;
+                errHist->SetFillColor(h->GetLineColor());
             }
         }
     } else {
@@ -5924,25 +6002,27 @@ void xRooNode::Draw(Option_t* opt) {
                 if(!commonSuffix.empty() && TString(_title).EndsWith(commonSuffix.c_str())) _title = _title.substr(0,_title.length()-commonSuffix.length());
 
                 // style hists according to availble styles ... creating if necessary
-                std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
-                if (!gROOT->GetStyle(_title.c_str())) {
-                    if ( (style = getObject<TStyle>(_title)) ) {
-                        // loaded style (from workspace?) so put in list and use that
-                        gROOT->GetListOfStyles()->Add(style.get());
-                    } else {
-                        // create new style - gets put in style list automatically so don't have to delete
-                        // acquire them so saved to workspaces for auto reload ...
-                        style = acquireNew<TStyle>(_title.c_str(),
-                                                        TString::Format("Style for %s component", _title.c_str()));
-                        (TAttLine &) (*style) = *dynamic_cast<TAttLine *>(ll->At(i));
-                        (TAttFill &) (*style) = *dynamic_cast<TAttFill *>(ll->At(i));
-                        (TAttMarker &) (*style) = *dynamic_cast<TAttMarker *>(ll->At(i));
-                        gROOT->GetListOfStyles()->Add(style.get());
-                    }
-                }
-                *dynamic_cast<TAttLine*>(ll->At(i)) = *gROOT->GetStyle(_title.c_str());
-                *dynamic_cast<TAttFill*>(ll->At(i)) = *gROOT->GetStyle(_title.c_str());
-                *dynamic_cast<TAttMarker*>(ll->At(i)) = *gROOT->GetStyle(_title.c_str());
+//                std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
+//                if (!gROOT->GetStyle(_title.c_str())) {
+//                    if ( (style = getObject<TStyle>(_title)) ) {
+//                        // loaded style (from workspace?) so put in list and use that
+//                        gROOT->GetListOfStyles()->Add(style.get());
+//                    } else {
+//                        // create new style - gets put in style list automatically so don't have to delete
+//                        // acquire them so saved to workspaces for auto reload ...
+//                        style = acquireNew<TStyle>(_title.c_str(),
+//                                                        TString::Format("Style for %s component", _title.c_str()));
+//                        (TAttLine &) (*style) = *dynamic_cast<TAttLine *>(ll->At(i));
+//                        (TAttFill &) (*style) = *dynamic_cast<TAttFill *>(ll->At(i));
+//                        (TAttMarker &) (*style) = *dynamic_cast<TAttMarker *>(ll->At(i));
+//                        gROOT->GetListOfStyles()->Add(style.get());
+//                    }
+//                }
+                dynamic_cast<TNamed*>(ll->At(i))->SetTitle(_title.c_str());
+                auto _style = style(ll->At(i));
+                *dynamic_cast<TAttLine*>(ll->At(i)) = *_style;
+                *dynamic_cast<TAttFill*>(ll->At(i)) = *_style;
+                *dynamic_cast<TAttMarker*>(ll->At(i)) = *_style;
 
                 addLegendEntry(ll->At(i), _title.c_str(), "f");
             }
