@@ -2847,7 +2847,7 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
 
         _f->setStringAttribute("xvar",x->GetName());
         _f->setStringAttribute("binning",binningName.c_str());
-        if (h->GetFillColor()) _f->setStringAttribute("FillColor",TString::Format("%d",h->GetFillColor()));
+        //style(h); // will transfer styling to object if necessary - not doing because this method used with plane hists frequently
         if(strcmp(_f->GetName(),origName.Data()) && !_f->getStringAttribute("alias")) _f->setStringAttribute("alias",origName);
 
         fComp = _f;
@@ -2864,11 +2864,16 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode& acquirer) con
 
 std::shared_ptr<TStyle> xRooNode::style(TObject* initObject) const {
 
+    auto arg = get<RooAbsArg>();
+    if (!initObject && !arg) { return nullptr; }
+
     TString t = GetTitle();
     if (initObject) {
         t = (strlen(initObject->GetTitle())) ? initObject->GetTitle() : initObject->GetName();
+    } else if(arg) {
+        if (arg->getStringAttribute("style")) t = arg->getStringAttribute("style");
+        else return nullptr;
     }
-
 
     std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
     if (!gROOT->GetStyle(t)) {
@@ -2887,6 +2892,10 @@ std::shared_ptr<TStyle> xRooNode::style(TObject* initObject) const {
         }
     } else {
         style = std::shared_ptr<TStyle>(gROOT->GetStyle(t),[](TStyle*){});
+    }
+
+    if (arg && !arg->getStringAttribute("style")) {
+        arg->setStringAttribute("style",style->GetName());
     }
 
     return style;
@@ -4794,7 +4803,11 @@ TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binS
     TH1::AddDirectory(t);
     h->Sumw2();
     if(v) h->GetXaxis()->SetName(dynamic_cast<TObject*>(v)->GetName()); // WARNING: messes up display of bin labels
-    if (auto f = rar->getStringAttribute("FillColor");f) h->SetFillColor(TString(f).Atoi());
+    if (auto s = style(); s) {
+        static_cast<TAttLine&>(*h) = *s;
+        static_cast<TAttFill&>(*h) = *s;
+        static_cast<TAttMarker&>(*h) = *s;
+    }
     if(strlen(h->GetXaxis()->GetTitle())==0) h->GetXaxis()->SetTitle(vv->GetTitle());
     auto p = dynamic_cast<RooAbsPdf*>(rar);
 
@@ -5090,9 +5103,9 @@ void addLegendEntry(TObject* o, const char* title, const char* opt) {
     if(l->GetListOfPrimitives()->GetEntries()>20) return; // todo: create an 'other' entry?
 
     l->AddEntry(o,title,opt);
-    if(auto nObj = l->GetListOfPrimitives()->GetEntries();nObj>1) {
+    if(auto nObj = l->GetListOfPrimitives()->GetEntries();nObj>0) {
         // each entry takes up 0.05 ... maximum of 9 before next column
-        if ((nObj % 9)==1) {l->SetNColumns(l->GetNColumns()+1);}
+        if (nObj>1 && (nObj % 9)==1) {l->SetNColumns(l->GetNColumns()+1);}
         else if(nObj<=9) {
             l->SetY1NDC(l->GetY2NDC()-0.05*nObj);
         }
@@ -5926,7 +5939,9 @@ void xRooNode::Draw(Option_t* opt) {
             if (auto it = colorByTitle.find(hh->GetTitle()); it != colorByTitle.end()) {
                 hh->SetFillColor(it->second);
             } else {
-                if (hh->GetFillColor()==0) hh->SetFillColor((count++) % 100);
+                if (hh->GetFillColor()==0) {
+                    hh->SetFillColor((count++) % 100);
+                }
                 colorByTitle[hh->GetTitle()] = hh->GetFillColor();
             }
             /*if(stack->GetHists() && stack->GetHists()->GetEntries()>0) {
@@ -5939,7 +5954,7 @@ void xRooNode::Draw(Option_t* opt) {
             //if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ? "" : "LF2";
             stack->Add(hh,thisOpt);
             allTitles.insert(hh->GetTitle());
-            titleMatchName &= (TString(hh->GetTitle()).BeginsWith(samp->GetName()));
+            titleMatchName &= (TString(samp->GetName())==hh->GetTitle() || TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
         }
         stack->SetBit(kCanDelete); // should delete its sub histograms
         stack->Draw("noclear same");
@@ -5976,6 +5991,7 @@ void xRooNode::Draw(Option_t* opt) {
                 else commonSuffix = commonSuffix.substr(commonSuffix.find('_'));
             }
             if (!goodPrefix) ii=0;
+
             // also find how many characters are needed to distinguish all entries (that dont have the same name)
             // then carry on up to first space or underscore
             int jj=0;
@@ -6002,24 +6018,28 @@ void xRooNode::Draw(Option_t* opt) {
                 if(!commonSuffix.empty() && TString(_title).EndsWith(commonSuffix.c_str())) _title = _title.substr(0,_title.length()-commonSuffix.length());
 
                 // style hists according to availble styles ... creating if necessary
-//                std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
-//                if (!gROOT->GetStyle(_title.c_str())) {
-//                    if ( (style = getObject<TStyle>(_title)) ) {
-//                        // loaded style (from workspace?) so put in list and use that
-//                        gROOT->GetListOfStyles()->Add(style.get());
-//                    } else {
-//                        // create new style - gets put in style list automatically so don't have to delete
-//                        // acquire them so saved to workspaces for auto reload ...
-//                        style = acquireNew<TStyle>(_title.c_str(),
-//                                                        TString::Format("Style for %s component", _title.c_str()));
-//                        (TAttLine &) (*style) = *dynamic_cast<TAttLine *>(ll->At(i));
-//                        (TAttFill &) (*style) = *dynamic_cast<TAttFill *>(ll->At(i));
-//                        (TAttMarker &) (*style) = *dynamic_cast<TAttMarker *>(ll->At(i));
-//                        gROOT->GetListOfStyles()->Add(style.get());
-//                    }
-//                }
+                // keeping this code here because style() method would be for the stack instead of
+                // for the components
+                std::shared_ptr<TStyle> _style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
+                if (!gROOT->GetStyle(_title.c_str())) {
+                    if ( (_style = getObject<TStyle>(_title)) ) {
+                        // loaded style (from workspace?) so put in list and use that
+                        gROOT->GetListOfStyles()->Add(_style.get());
+                    } else {
+                        // create new style - gets put in style list automatically so don't have to delete
+                        // acquire them so saved to workspaces for auto reload ...
+                        _style = acquireNew<TStyle>(_title.c_str(),
+                                                        TString::Format("Style for %s component", _title.c_str()));
+                        (TAttLine &) (*_style) = *dynamic_cast<TAttLine *>(ll->At(i));
+                        (TAttFill &) (*_style) = *dynamic_cast<TAttFill *>(ll->At(i));
+                        (TAttMarker &) (*_style) = *dynamic_cast<TAttMarker *>(ll->At(i));
+                        gROOT->GetListOfStyles()->Add(_style.get());
+                    }
+                } else {
+                    _style = std::shared_ptr<TStyle>(gROOT->GetStyle(_title.c_str()),[](TStyle*){});
+                }
                 dynamic_cast<TNamed*>(ll->At(i))->SetTitle(_title.c_str());
-                auto _style = style(ll->At(i));
+                //auto _style = style(ll->At(i));
                 *dynamic_cast<TAttLine*>(ll->At(i)) = *_style;
                 *dynamic_cast<TAttFill*>(ll->At(i)) = *_style;
                 *dynamic_cast<TAttMarker*>(ll->At(i)) = *_style;
