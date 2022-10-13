@@ -48,6 +48,7 @@
 #include "TMath.h"
 #include "TPRegexp.h"
 #include "TRegexp.h"
+#include "TExec.h"
 
 #include "TGListTree.h"
 #include "TGMsgBox.h"
@@ -2433,7 +2434,7 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
 #endif
 
 
-        if (fParent->get<RooStats::HistFactory::FlexibleInterpVar>()) {
+        if (fParent && fParent->get<RooStats::HistFactory::FlexibleInterpVar>()) {
             fParent->Vary(*this);
         }
 
@@ -4252,7 +4253,12 @@ xRooNode xRooNode::fitResult(const char* opt) const {
 //    return fitTo(*datasets().at(datasetName));
 //}
 
-void xRooNode::SetRange(const char* range) {
+void xRooNode::SetRange(const char* range, double low, double high) {
+    if (!std::isnan(low) && !std::isnan(high) && get<RooRealVar>()) {
+        if(range && strlen(range)) get<RooRealVar>()->setRange(range,low,high);
+        else get<RooRealVar>()->setRange(low,high);
+        return;
+    }
     if(auto o = get<RooAbsArg>(); o) o->setStringAttribute("range",range);
     // todo: clear the range attribute on all servers
     // could make this controlled by a flag but probably easiest to enforce so you must set range
@@ -5848,6 +5854,13 @@ void xRooNode::Draw(Option_t* opt) {
                                                                   std::numeric_limits<double>::infinity())))) ? "" : "LF2";
     if (rar==vv) dOpt+="TEXT";
 
+    if (rar==vv && rar->IsA()==RooRealVar::Class()) {
+        // add a TExec to the histogram so that when edited it will propagate to var
+        gROOT->SetEditHistograms(true);
+    } else {
+        gROOT->SetEditHistograms(false);
+    }
+
     if (hasSame) dOpt += " same";
     else hAxis = h;
 
@@ -5872,6 +5885,33 @@ void xRooNode::Draw(Option_t* opt) {
             h->SetBinError(i,0);
         }
     }
+
+    if (rar==vv && rar->IsA()==RooRealVar::Class()) {
+        // add a TExec to the histogram so that when edited it will propagate to var
+        //h->GetListOfFunctions()->Add(h->Clone("self"),"TEXTHIST");
+        dOpt = "TEXT";
+        auto node = new xRooNode(*this);
+        auto _hist = (errHist) ? errHist : h;
+        auto hCopy = (errHist) ? nullptr : h->Clone();
+        _hist->GetListOfFunctions()->Add( node  );
+        _hist->GetListOfFunctions()->Add(
+                new TExec(".update",
+                          TString::Format("gROOT->SetEditHistograms(true);for(auto p : *gPad->GetListOfPrimitives()) { auto h = dynamic_cast<TH1*>(p); if(!h) continue; if(auto n = dynamic_cast<xRooNode*>(h->GetListOfFunctions()->FindObject(\"%s\")); n && n->TestBit(TObject::kNotDeleted) && n->get<RooRealVar>()->getVal() != h->GetBinContent(1)) {double range = n->get<RooRealVar>()->getMax()-n->get<RooRealVar>()->getMin(); h->SetBinContent(1, TString::Format(\"%%.2g\",int(h->GetBinContent(1)/(range*0.01))*range*0.01).Atof());n->SetContents( h->GetBinContent(1) ); for(auto pp : *h->GetListOfFunctions()) if(auto hh = dynamic_cast<TH1*>(pp))hh->SetBinContent(1,h->GetBinContent(1));} }gPad->Modified();gPad->Update();",node->GetName()))
+        );
+        if (errHist) {
+            errHist->GetListOfFunctions()->Add(h,"TEXT HIST same");
+            errHist->SetFillColor(h->GetLineColor());
+        } else {
+            hCopy->SetBit(kCanDelete);
+            _hist->GetListOfFunctions()->Add(hCopy,"TEXT HIST same");
+            _hist->SetBinError(1,0);
+        }
+        _hist->Draw(((errHist) ? "e2" : ""));
+        gPad->Modified();
+        return;
+    }
+
+
 
 
     if (!hasSame) clearPad();
@@ -6086,6 +6126,7 @@ void xRooNode::Draw(Option_t* opt) {
     }
 
     if (errHist) {
+        dOpt.ReplaceAll("TEXT","");
         errHist->Draw(dOpt + (dOpt.Contains("LF2") ? "e3same" : "e2same"));
         double ymax = -std::numeric_limits<double>::infinity();
         double ymin = std::numeric_limits<double>::infinity();

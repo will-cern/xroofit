@@ -254,7 +254,7 @@ public:
     std::shared_ptr<xRooNode> fParent; //!
     std::string fFolder = ""; // folder to put this node in when 'organising' the parent
 
-    void SetRange(const char* range); // *MENU*
+    void SetRange(const char* range, double low = std::numeric_limits<double>::quiet_NaN(),double high = std::numeric_limits<double>::quiet_NaN()); // *MENU*
     const char* GetRange() const;
     mutable std::string fRange; //! only here so can have char* GetRange return so can return nullptr for no range set (required for RooCategory)
 
