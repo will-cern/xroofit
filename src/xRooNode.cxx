@@ -267,6 +267,29 @@ xRooNode::xRooNode(double value) : xRooNode(RooFit::RooConst(value)) { }
 void xRooNode::Checked(TObject* obj, bool val) {
     if (obj!=this) return;
 
+    // cycle through states:
+    //   unhidden and selected: tick, no uline
+    //   hidden and unselected: notick, uline
+    //   unhidden and unselected: tick, uline
+    if(auto o = get<RooAbsReal>(); o) {
+        if (o->isSelectedComp() && !val) {
+            // deselecting and hiding
+            o->selectComp(val);
+            o->setAttribute("hidden");
+        } else if(!o->isSelectedComp() && !val) {
+            // selecting
+            o->selectComp(!val);
+        } else if(val) {
+            // unhiding but keeping unselected
+            o->setAttribute("hidden",false);
+        }
+        auto item = GetTreeItem(nullptr);
+        item->CheckItem(!o->getAttribute("hidden"));
+        if(o->isSelectedComp()) item->ClearColor();
+        else item->SetColor(kGray);
+        return;
+    }
+
     if(auto o = get(); o) {
         //if (o->TestBit(1<<20)==val) return; // do nothing
         o->SetBit(1<<20, val); // TODO: check is 20th bit ok to play with?
@@ -406,6 +429,7 @@ void xRooNode::Browse(TBrowser* b) {
         if (hasFolders && !v->fFolder.empty()) continue; // in the folders
         if (strcmp(v->GetName(),".folders")==0) continue; // never 'browse' the folders property
         int _checked = (v->get<RooAbsData>() || v->get<RooFitResult>()) ? v->get()->TestBit(1<<20) : -1;
+        if (v->get<RooAbsPdf>() && get<RooSimultaneous>()) _checked= !v->get<RooAbsArg>()->getAttribute("hidden");
         TString _name = v->GetName();
         if (v->get() && _name.BeginsWith(TString(v->get()->ClassName())+"::")) {
             _name = _name(strlen(v->get()->ClassName())+2,_name.Length());
@@ -1256,7 +1280,14 @@ xRooNode::~xRooNode() {
 }
 
 void xRooNode::SetHidden(Bool_t set) {
-    if (auto a = get<RooAbsArg>()) a->setAttribute("hidden",set);
+    if (auto a = get<RooAbsArg>()) {
+        a->setAttribute("hidden",set);
+//        if(auto item = GetTreeItem(nullptr); item) {
+//            if(set) item->SetColor(kRed);
+//            else item->ClearColor();
+//        }
+    }
+
 }
 bool xRooNode::IsHidden() const {
     if (auto a = get<RooAbsArg>()) return a->getAttribute("hidden");
@@ -3161,6 +3192,7 @@ TGListTreeItem* xRooNode::GetTreeItem(TBrowser* b) const {
     if(auto _b = dynamic_cast<TGFileBrowser*>( dynamic_cast<TRootBrowser*>(b->GetBrowserImp())->fActBrowser ); _b) {
         auto _root = _b->fRootDir;
         if (!_root) _root = _b->fListTree->GetFirstItem();
+        _b->fListTree->SetColorMode(TGListTree::EColorMarkupMode(TGListTree::kColorUnderline | TGListTree::kColorBox));
         return _b->fListTree->FindItemByObj(_root,const_cast<xRooNode*>(this));
     }
     return nullptr;
@@ -4290,6 +4322,23 @@ xRooNLLVar xRooNode::nll(const xRooNode& _data, const RooLinkedList& opts) const
 
     if(!get<RooAbsPdf>()) throw std::runtime_error(TString::Format("%s is not a pdf",GetName()));
 
+    // if simultaneous and any channels deselected then reduce and return
+    if(auto s = get<RooSimultaneous>()) {
+        std::string selected;
+        bool hasDeselected=false;
+        for(auto c : variations()) {
+            if(!c->get<RooAbsReal>()->isSelectedComp()) { hasDeselected=true; }
+            else {
+                TString cName(c->GetName());
+                cName = cName(cName.Index('=')+1,cName.Length());
+                if (!selected.empty()) selected += ",";
+                selected += cName.Data();
+            }
+        }
+        if(hasDeselected) return reduced(selected).nll(_data,opts);
+    }
+
+
     if (!_data.get<RooAbsData>()) {
         // use node name to find dataset and recall
         auto _d = strlen(_data.GetName()) ? datasets().find(_data.GetName()) : nullptr;
@@ -4418,7 +4467,7 @@ std::shared_ptr<xRooNode> xRooNode::parentPdf() const {
     return out;
 }
 
-xRooNode xRooNode::reduced(const std::string& _range) {
+xRooNode xRooNode::reduced(const std::string& _range) const {
     auto rangeName = (_range.empty()) ? GetRange() : _range;
     if (!rangeName.empty()) {
         std::vector<TString> patterns;
@@ -5407,7 +5456,7 @@ void xRooNode::Draw(Option_t* opt) {
             chanVar.setLabel(cName);
             bool inRange=chanPatterns.empty();
             for(auto& p : chanPatterns) if(chanVar.inRange(p)) { inRange=true; break; }
-            if (!inRange) gPad->SetFillColor(kGray);
+            if (!inRange || !v->get<RooAbsReal>()->isSelectedComp()) gPad->SetFillColor(kGray);
             if(!hasSame && _size>1) gPad->SetLeftMargin(std::min(gPad->GetLeftMargin()*(1./gPad->GetWNDC()),0.3));
             v->Draw(opt);
             gSystem->ProcessEvents();

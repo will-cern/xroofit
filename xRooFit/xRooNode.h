@@ -160,7 +160,7 @@ public:
 
     xRooNode Combine(const xRooNode& rhs); // combine rhs with this node
 
-    xRooNode reduced(const std::string& range = ""); // return a node representing reduced version of this node, will use the SetRange to reduce if blank
+    xRooNode reduced(const std::string& range = "") const; // return a node representing reduced version of this node, will use the SetRange to reduce if blank
 
     // following versions are for the menu in the GUI
     void _Add_(const char* name, const char* opt); // *MENU*
