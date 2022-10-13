@@ -145,6 +145,9 @@ public:
 
     // use alt_value = nan to skip the asimov calculations
     xRooHypoPoint hypoPoint(const char* parName, double value, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
+    // this next method requires poi to be flagged in the model already (with "poi" attribute) .. must be exactly one
+    xRooHypoPoint hypoPoint(double value, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
+
 
     class xRooHypoSpace : public TNamed, public TAttFill, public TAttMarker, public TAttLine, public std::vector<xRooHypoPoint> {
       public:

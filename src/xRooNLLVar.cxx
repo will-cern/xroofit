@@ -1115,6 +1115,18 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double valu
 
 }
 
+xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(double value, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
+    if (!fFuncVars) { reinitialize(); }
+    std::unique_ptr<RooAbsCollection> _poi(fFuncVars->selectByAttrib("poi",true));
+    if (_poi->empty()) {
+        throw std::runtime_error("No POI specified in model");
+    } else if(_poi->size()!=1) {
+        throw std::runtime_error("Multiple POI specified in model");
+    }
+    return hypoPoint(_poi->first()->GetName(),value,alt_value,pllType);
+}
+
+
 #include "TStyle.h"
 #include "TH1D.h"
 #include "TLegend.h"
