@@ -185,7 +185,16 @@ xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const
                 }
             }
             if (TString(k).EndsWith("_POI")) {
-                v.setAttribAll("poi");
+                for(auto& s : v) {
+                    s->setAttribute("poi");
+                    auto _v = dynamic_cast<RooRealVar*>(s);
+                    if (!_v) continue;
+                    if (!_v->hasRange("physical")) {
+                        _v->setRange("physical", 0, std::numeric_limits<double>::infinity());
+                        // ensure range of poi is also straddling 0
+                        if (_v->getMin()>=0) _v->setMin(-1e-5);
+                    }
+                }
             }
         }
         if (!_allGlobs.empty() && _ws->_namedSets.count("globalObservables") == 0) {
@@ -1621,7 +1630,7 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
             if(get()) Info("Multiply","Scaled %s by existing factor %s::%s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),o->ClassName(),o->GetName());
             return out;
         } else if (sOpt=="norm") {
-            auto out =  Multiply(RooRealVar(child.GetName(),child.GetTitle(),1,0,100));
+            auto out =  Multiply(RooRealVar(child.GetName(),child.GetTitle(),1,-1e-5,100));
             if(get()) Info("Multiply","Scaled %s by new norm factor %s",mainChild().get() ? mainChild().get()->GetName() : get()->GetName(),out->GetName());
             return out;
         } else if (sOpt=="shape" || sOpt=="histo" || sOpt=="blankshape") {
