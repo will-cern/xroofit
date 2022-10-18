@@ -5186,10 +5186,13 @@ void addLegendEntry(TObject* o, const char* title, const char* opt) {
 // need to call update twice if have a legend drawn in order to relocate it.
 class PadRefresher {
 public:
-    PadRefresher(TVirtualPad* p) : fPad(p) { }
-    ~PadRefresher() { if(fPad) { getLegend(false,true); fPad->Update(); }}
+    PadRefresher(TVirtualPad* p) : fPad(p) { nExisting++; }
+    ~PadRefresher() { if(fPad) { getLegend(false,true); fPad->Update(); } nExisting--; }
     TVirtualPad* fPad=nullptr;
+    static int nExisting;
 };
+
+int PadRefresher::nExisting = 0;
 
 void xRooNode::Draw(Option_t* opt) {
     if (!get() && !IsFolder()) return;
@@ -5288,7 +5291,7 @@ void xRooNode::Draw(Option_t* opt) {
         gPad->SetTitle(GetTitle());
     }
 
-    PadRefresher padRefresh(((!hasSame || hasOverlay) && !hasGoff) ? gPad : nullptr);
+    PadRefresher padRefresh(((!hasSame || hasOverlay || PadRefresher::nExisting==0) && !hasGoff) ? gPad : nullptr);
 
     // TODO: Figure out way to adjust range for error hist so show at least 3x smallest error
     auto adjustYRange = [&](double min, double max, TH1* hh = nullptr, bool symmetrize=false) {
