@@ -3228,11 +3228,10 @@ xRooNode& xRooNode::browse() {
             if (auto existing = findByObj(c); existing) {
                 existing->fTimes++;
                 existing->fFolder = c->fFolder; // transfer folder assignment
-                out++;
             } else {
                 emplace_back(c);
-                out++;
             }
+            if (TString(c->GetName())!=".coef")out++; // don't count .coef as a child, as technically part of parent
         }
         return out;
     };
@@ -3269,7 +3268,6 @@ xRooNode& xRooNode::browse() {
         addedChildren += appendChildren(variations());
         if(get<ParamHistFunc>()) addedChildren += appendChildren(bins());
     }
-
     // if has no children and is a RooAbsArg, add all the proxies
     if (auto arg=get<RooAbsArg>(); arg && addedChildren==0) {
         for(int i=0;i<arg->numProxies();i++) {
@@ -3783,7 +3781,7 @@ xRooNode xRooNode::factors() const {
     auto _coefs = coefs();
     if (!_coefs.empty()) {
         if (_coefs.size() == 1) {
-            if (strcmp(_coefs.at(0)->GetName(),"1")!=0) { // don't add the "1"
+            if (strcmp(_coefs.at(0)->GetName(),"1")!=0 && strcmp(_coefs.at(0)->GetName(),"ONE")!=0) { // don't add the "1"
                 out.emplace_back(std::make_shared<xRooNode>(".coef", *_coefs.at(0)->get(), *this));
             }
         } else {
@@ -5293,7 +5291,6 @@ void xRooNode::Draw(Option_t* opt) {
 
     PadRefresher padRefresh(((!hasSame || hasOverlay || PadRefresher::nExisting==0) && !hasGoff) ? gPad : nullptr);
 
-    // TODO: Figure out way to adjust range for error hist so show at least 3x smallest error
     auto adjustYRange = [&](double min, double max, TH1* hh = nullptr, bool symmetrize=false) {
         if (!hh) hh = hAxis;
         // give max and min a buffer ...
@@ -5331,7 +5328,7 @@ void xRooNode::Draw(Option_t* opt) {
                     if (down > up) ymax = hh->GetBinContent(1) + down;
                     else ymin = hh->GetBinContent(1) - up;
                 }
-                if (hh == hAxis && pad && !pad->GetLogy() && ymin>0 && (log10(ymax) - log10(ymin))>=3) {
+                if (hh == hAxis && pad && !pad->GetLogy() && ymin>0 && (log10(ymax) - log10(max))>=3) {
                     // auto-log the pad
                     pad->SetLogy();
                 }
@@ -6022,6 +6019,7 @@ void xRooNode::Draw(Option_t* opt) {
         std::map<std::string,TH1*> histGroups;
         for(auto& samp : components()) {
             auto hh = samp->BuildHistogram(v);
+            if (strlen(hh->GetTitle())==0) hh->SetTitle(samp->GetName()); // ensure all hists has titles
             // automatically group hists that all have the same title
             if(histGroups.find(hh->GetTitle())==histGroups.end()) {
                 histGroups[hh->GetTitle()] = hh;
@@ -6070,7 +6068,7 @@ void xRooNode::Draw(Option_t* opt) {
             int ii = 0;
             bool goodPrefix = false;
             std::string commonSuffix;
-            if (titleMatchName) {
+            if (titleMatchName && ll->GetEntries()>1) {
                 while (ii < e-1 && allTitles.begin()->at(ii) == allTitles.rbegin()->at(ii)) {
                     ii++;
                     if (allTitles.begin()->at(ii) == '_' || allTitles.begin()->at(ii) == ' ') goodPrefix = true;
