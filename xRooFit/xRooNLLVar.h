@@ -24,6 +24,11 @@ class TGraphErrors;
 #include "TAttLine.h"
 #include "TAttMarker.h"
 
+//#include "RooStats/HypoTestResult.h"
+namespace RooStats{
+    class HypoTestResult;
+    class HypoTestInverterResult;
+}
 
 class xRooNLLVar : public std::shared_ptr<RooAbsReal> {
 
@@ -105,11 +110,14 @@ public:
         }
         std::pair<double,double> ts_toys(double nSigma=std::numeric_limits<double>::quiet_NaN()); // test statistic value
 
+        // Create a HypoTestResult representing the current state of this hypoPoint
+        RooStats::HypoTestResult result();
+
         xRooHypoPoint generateNull(int seed=0);
         xRooHypoPoint generateAlt(int seed=0);
 
-        void addNullToys(int nToys=1);
-        void addAltToys(int nToys=1);
+        void addNullToys(int nToys=1,int seed=0); // if seed=0 will use a random seed
+        void addAltToys(int nToys=1,int seed=0); // if seed=0 will use a random seed
 
         RooArgList poi();
         RooArgList alt_poi(); // values of the poi in the alt hypothesis (will be nans if not defined)
@@ -140,7 +148,9 @@ public:
 
       private:
         std::pair<double,double> pX_toys(bool alt, double nSigma=std::numeric_limits<double>::quiet_NaN());
-        void addToys(bool alt,int nToys);
+        void addToys(bool alt,int nToys, int initialSeed=0);
+
+        TString tsTitle();
     };
 
     // use alt_value = nan to skip the asimov calculations
@@ -161,7 +171,7 @@ public:
         void LoadFits(const char* apath);
 
         // A points over given parameter, number of points between low and high
-        int AddPoints(const char* parName, int nPoints, double low, double high);
+        int AddPoints(const char* parName, size_t nPoints, double low, double high);
 
         void Print(Option_t* opt="") const override;
 
@@ -198,6 +208,9 @@ public:
         std::shared_ptr<xRooNode> pdf(const RooAbsCollection& parValues) const;
         std::shared_ptr<xRooNode> pdf(const char* parValues="") const;
 
+        // caller needs to take ownership of the returned object
+        RooStats::HypoTestInverterResult* result();
+
       private:
         static RooArgList toArgs(const char* str);
 
@@ -216,6 +229,7 @@ public:
 
     xRooHypoSpace hypoSpace(const char* parName, int nPoints, double low, double high, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
     xRooHypoSpace hypoSpace(const char* parName = "",const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
+    xRooHypoSpace hypoSpace(int nPoints, double low, double high, double alt_value = std::numeric_limits<double>::quiet_NaN(), const xRooFit::Asymptotics::PLLType& pllType = xRooFit::Asymptotics::Unknown);
 
 
     std::shared_ptr<RooArgSet> pars(bool stripGlobalObs=true);

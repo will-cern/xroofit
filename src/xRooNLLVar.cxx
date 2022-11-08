@@ -29,6 +29,8 @@
 
 #include "Math/GenAlgoOptions.h"
 
+
+
 std::set<int> xRooNLLVar::xRooHypoPoint::allowedStatusCodes = {0};
 
 xRooNLLVar::~xRooNLLVar() {
@@ -1032,7 +1034,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
 
 #include "TDirectory.h"
 
-void xRooNLLVar::xRooHypoPoint::addToys(bool alt,int nToys) {
+void xRooNLLVar::xRooHypoPoint::addToys(bool alt,int nToys, int initialSeed) {
     if ( (alt && !cfit_alt()) || (!alt && !cfit_null()) ) {
         throw std::runtime_error("Cannot add toys, invalid conditional fit");
     }
@@ -1042,6 +1044,7 @@ void xRooNLLVar::xRooHypoPoint::addToys(bool alt,int nToys) {
     float lastTime = 0;int lasti = -1;
     TStopwatch s2; s2.Start(); TStopwatch s; s.Start();
     for(auto i = 0;i<nToys;i++) {
+        if(i==0 && initialSeed!=0) RooRandom::randomGenerator()->SetSeed(initialSeed);
         int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
         toys.push_back( std::make_tuple(seed, ((alt) ? generateAlt(seed) : generateNull(seed)).pll().first , 1.) );
         if(std::isnan(std::get<1>(toys.back()))) nans++;
@@ -1070,11 +1073,11 @@ void xRooNLLVar::xRooHypoPoint::addToys(bool alt,int nToys) {
     if (nans>0) std::cout << "Warning: " << nans << " toys were bad" << std::endl;
 }
 
-void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys) {
-   addToys(false,nToys);
+void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys, int seed) {
+   addToys(false,nToys,seed);
 }
-void xRooNLLVar::xRooHypoPoint::addAltToys(int nToys) {
-    addToys(true,nToys);
+void xRooNLLVar::xRooHypoPoint::addAltToys(int nToys, int seed) {
+    addToys(true,nToys,seed);
 }
 
 xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(const char* parName, double value, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
@@ -1227,26 +1230,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
         title += TString::Format("%s' = %g",fPOIName(), (isAlt) ? fAltVal() : fNullVal());
         title += TString::Format(" , N_{toys}=%lu",(isAlt) ? altToys.size() : nullToys.size());
         if (nBadOrZero > 0) title += TString::Format(" (N_{bad/0}=%lu)",nBadOrZero);
-        auto v = _poi;
-        if(fPllType == xRooFit::Asymptotics::OneSidedPositive) {
-            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";#tilde{q}_{%s=%g}",v->GetTitle(),v->getVal());
-            else if(v) title += TString::Format(";q_{%s=%g}",v->GetTitle(),v->getVal());
-            else title += ";q";
-        } else if(fPllType == xRooFit::Asymptotics::TwoSided) {
-            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";#tilde{t}_{%s=%g}",v->GetTitle(),v->getVal());
-            else if(v) title += TString::Format(";t_{%s=%g}",v->GetTitle(),v->getVal());
-            else title += ";t";
-        } else if(fPllType == xRooFit::Asymptotics::OneSidedNegative) {
-            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";#tilde{r}_{%s=%g}",v->GetTitle(),v->getVal());
-            else if(v) title += TString::Format(";r_{%s=%g}",v->GetTitle(),v->getVal());
-            else title += ";r";
-        } else if(fPllType == xRooFit::Asymptotics::Uncapped) {
-            if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) title += TString::Format(";#tilde{s}_{%s=%g}",v->GetTitle(),v->getVal());
-            else if(v) title += TString::Format(";s_{%s=%g}",v->GetTitle(),v->getVal());
-            else title += ";s";
-        } else {
-            title += ";Test Statistic";
-        }
+        title += ";"; title += tsTitle();
         title += TString::Format(";Probability Mass");
         h->SetTitle(title);
         h->SetLineColor(isAlt ? kRed : kBlue); h->SetLineWidth(2);
@@ -1351,6 +1335,29 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
     //}
 }
 
+TString xRooNLLVar::xRooHypoPoint::tsTitle() {
+    auto v = dynamic_cast<RooRealVar*>(poi().empty() ? nullptr : poi().first());
+    if(fPllType == xRooFit::Asymptotics::OneSidedPositive) {
+        if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) return TString::Format("#tilde{q}_{%s=%g}",v->GetTitle(),v->getVal());
+        else if(v) return TString::Format("q_{%s=%g}",v->GetTitle(),v->getVal());
+        else return "q";
+    } else if(fPllType == xRooFit::Asymptotics::TwoSided) {
+        if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) return TString::Format("#tilde{t}_{%s=%g}",v->GetTitle(),v->getVal());
+        else if(v) return TString::Format("t_{%s=%g}",v->GetTitle(),v->getVal());
+        else return "t";
+    } else if(fPllType == xRooFit::Asymptotics::OneSidedNegative) {
+        if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) return TString::Format("#tilde{r}_{%s=%g}",v->GetTitle(),v->getVal());
+        else if(v) return TString::Format("r_{%s=%g}",v->GetTitle(),v->getVal());
+        else return "r";
+    } else if(fPllType == xRooFit::Asymptotics::Uncapped) {
+        if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) return TString::Format("#tilde{s}_{%s=%g}",v->GetTitle(),v->getVal());
+        else if(v) return TString::Format("s_{%s=%g}",v->GetTitle(),v->getVal());
+        else return "s";
+    } else {
+        return "Test Statistic";
+    }
+}
+
 const char* xRooNLLVar::xRooHypoPoint::fPOIName() { return (poi().first())->GetName(); }
 double xRooNLLVar::xRooHypoPoint::fNullVal() { return dynamic_cast<RooAbsReal*>(poi().first())->getVal(); }
 double xRooNLLVar::xRooHypoPoint::fAltVal()  { return dynamic_cast<RooAbsReal*>(alt_poi().first())->getVal(); }
@@ -1360,6 +1367,12 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName, int nPoints
     hs.poi().first()->setStringAttribute("altVal",std::isnan(alt_value) ? nullptr : TString::Format("%f",alt_value));
     if(nPoints>0) hs.AddPoints(parName,nPoints,low,high);
     return hs;
+}
+
+xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(int nPoints, double low, double high, double alt_value, const xRooFit::Asymptotics::PLLType& pllType) {
+    auto _poi = std::unique_ptr<RooAbsCollection>(std::unique_ptr<RooAbsCollection>(pdf()->getVariables())->selectByAttrib("poi",true));
+    if(_poi->empty()) throw std::runtime_error("You must specify a POI for the hypoSpace");
+    return hypoSpace(_poi->first()->GetName(),nPoints,low,high,alt_value,pllType);
 }
 
 xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName,const xRooFit::Asymptotics::PLLType& pllType) {
@@ -1377,4 +1390,79 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName,const xRooFi
     s.fNlls[s.fPdfs.begin()->second] = std::make_shared<xRooNLLVar>(*this);
     s.fTestStatType = pllType;
     return s;
+}
+
+#define protected public
+#include "RooStats/HypoTestResult.h"
+#undef protected
+
+RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result() {
+    RooStats::HypoTestResult out; out.SetBackgroundAsAlt(true);
+
+    bool setReadonly = false;
+    if(nllVar && !nllVar->get()->getAttribute("readOnly")) {
+        setReadonly = true;
+        nllVar->get()->setAttribute("readOnly");
+    }
+
+    auto ts_obs = ts_asymp();
+
+    out.SetTestStatisticData(ts_obs.first);
+    RooArgList nullDetails;
+    if(!nullToys.empty()) {
+
+        std::vector<double> values;
+        std::vector<double> weights;
+        values.reserve(nullToys.size());
+        weights.reserve(nullToys.size());
+        size_t badToys = 0;
+        for(auto& t : nullToys) {
+            if(std::isnan(std::get<1>(t))) {
+                badToys++;
+            } else {
+                values.push_back(std::get<1>(t));
+                weights.push_back(std::get<2>(t));
+            }
+        }
+        nullDetails.addClone(RooRealVar("badToys","Number of bad Toys",badToys));
+
+        out.SetNullDistribution(new RooStats::SamplingDistribution("null","Null dist",values,weights,tsTitle()));
+        out.SetNullDetailedOutput(new RooDataSet("nullDetails","nullDetails",nullDetails));
+        out.GetNullDetailedOutput()->add(nullDetails);
+    } else {
+        out.fNullPValue = pNull_asymp().first;
+        out.fNullPValueError = pNull_asymp().second;
+    }
+
+    RooArgList altDetails;
+    if(!altToys.empty()) {
+        std::vector<double> values;
+        std::vector<double> weights;
+        values.reserve(nullToys.size());
+        weights.reserve(nullToys.size());
+        size_t badToys = 0;
+        for(auto& t : nullToys) {
+            if(std::isnan(std::get<1>(t))) {
+                badToys++;
+            } else {
+                values.push_back(std::get<1>(t));
+                weights.push_back(std::get<2>(t));
+            }
+        }
+        nullDetails.addClone(RooRealVar("badToys","Number of bad Toys",badToys));
+
+        out.SetAltDistribution(new RooStats::SamplingDistribution("alt","Alt dist",values,weights,tsTitle()));
+        out.SetAltDetailedOutput(new RooDataSet("altDetails","altDetails",altDetails));
+        out.GetAltDetailedOutput()->add(altDetails);
+    } else {
+        out.fAlternatePValue = pAlt_asymp().first;
+        out.fAlternatePValueError = pAlt_asymp().second;
+    }
+
+
+    if(setReadonly) {
+        nllVar->get()->setAttribute("readOnly",false);
+    }
+
+    return out;
 }

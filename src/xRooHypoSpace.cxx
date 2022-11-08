@@ -123,12 +123,19 @@ RooArgList xRooNLLVar::xRooHypoSpace::toArgs(const char* str) {
 
 }
 
-int xRooNLLVar::xRooHypoSpace::AddPoints(const char* parName, int nPoints, double low, double high) {
+int xRooNLLVar::xRooHypoSpace::AddPoints(const char* parName, size_t nPoints, double low, double high) {
+    if (nPoints == 0) return nPoints;
+
     auto _par = dynamic_cast<RooAbsRealLValue*>(fPars->find(parName));
     if (!_par) throw std::runtime_error("Unknown parameter");
 
+    if (nPoints==1) {
+        _par->setVal((high+low)*0.5); AddPoint();
+        return nPoints;
+    }
+
     double step = (high - low)/nPoints;
-    if(step < 0) throw std::runtime_error("Invalid steps");
+    if(step <= 0) throw std::runtime_error("Invalid steps");
 
     for(double v = low+step*0.5; v <= high; v += step) {
         _par->setVal(v);
@@ -1112,3 +1119,22 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
 }
 
+#include "RooStats/HypoTestInverterResult.h"
+
+
+RooStats::HypoTestInverterResult* xRooNLLVar::xRooHypoSpace::result() {
+
+    RooStats::HypoTestInverterResult* out = nullptr;
+
+    auto _axes = axes();
+    if (_axes.empty()) return out;
+
+    out = new RooStats::HypoTestInverterResult(GetName(),*dynamic_cast<RooRealVar*>(_axes.at(0)),0.05);
+
+    for(auto& p : *this) {
+        double _x = p.coords->getRealValue(_axes.at(0)->GetName(), std::numeric_limits<double>::quiet_NaN());
+        out->Add(_x,p.result());
+    }
+
+    return out;
+}
