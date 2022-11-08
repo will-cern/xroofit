@@ -168,6 +168,9 @@ public:
     void _Vary_(const char* what); // *MENU*
     xRooNode _Constrain_(const char* what) {return Constrain(what); } // *MENU*
 
+    void _ShowVars_(Bool_t set = kTRUE); // *TOGGLE* *GETTER=_IsShowVars_
+    bool _IsShowVars_() const;
+
     void SetHidden(Bool_t set = kTRUE); // *TOGGLE* *GETTER=IsHidden
     bool IsHidden() const;
 

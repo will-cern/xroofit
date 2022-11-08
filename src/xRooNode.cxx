@@ -486,6 +486,27 @@ void xRooNode::Browse(TBrowser* b) {
     b->SetSelected(this);
 }
 
+void xRooNode::_ShowVars_(Bool_t set) {
+    if (!set) {
+        // can't remove as causes a crash, need to remove from the browser first
+        /*for(auto itr = fBrowsables.begin(); itr != fBrowsables.end(); ++itr) {
+            if (strcmp((*itr)->GetName(),".vars")==0) {
+                fBrowsables.erase(itr);
+            }
+        }*/
+    } else {
+        auto v = std::make_shared<xRooNode>(vars());
+        fBrowsables.push_back(v);
+    }
+}
+
+bool xRooNode::_IsShowVars_() const {
+    for(auto& b : fBrowsables) {
+        if (strcmp(b->GetName(),".vars")==0) return true;
+    }
+    return false;
+}
+
 bool xRooNode::IsFolder() const {
     if (strlen(GetName())>0 && GetName()[0]=='!') return true;
     if (strlen(GetName())>0 && GetName()[0]=='.') return true;
@@ -922,6 +943,10 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
     } else if(strcmp(GetName(),".constraints")==0) {
         // constrain the parent
         return fParent->Constrain(child);
+    } else if(strcmp(GetName(),".pars")==0 && fParent->get<RooWorkspace>()) {
+        // adding a parameter, interpret as factory string unless no "[" then create RooRealVar
+        TString fac(child.GetName()); if(!fac.Contains("[")) fac += "[1]";
+        return xRooNode(*fParent->get<RooWorkspace>()->factory(fac),fParent);
     } else if(strcmp(GetName(),".datasets()")==0) {
         // create a dataset - only allowed for pdfs or workspaces
         if (auto _ws = ws(); _ws && fParent) {
@@ -1052,6 +1077,14 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
 
     }
 
+    if (auto p = get<RooAddPdf>(); p && child.get<RooAbsPdf>()) {
+        auto out = acquire(child.fComp);
+        p->_coefList.add(*acquire<RooRealVar>("1", "1", 1));
+        p->_pdfList.add(*std::dynamic_pointer_cast<RooAbsReal>(out));
+        sterilize();
+        return xRooNode(out,*this);
+    }
+
     if (auto p = get<RooRealSumPdf>(); p) {
         std::shared_ptr<TObject> out;
         auto cc = child.fComp;
@@ -1160,6 +1193,21 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                 return xRooNode(*_pdf,*this).Add(child);
             } else if(!tooMany) {
                 auto out = this->operator[]("samples")->Add(child);
+                return out;
+            }
+        } else if(child.get<RooAbsPdf>()) {
+            // can add if 0 or 1 RooAddPdf ....
+            RooAddPdf* _pdf = nullptr; bool tooMany(false);
+            for(auto& pp : factors()) {
+                if (auto _p = pp->get<RooAddPdf>(); _p) {
+                    if (_pdf) { _pdf = nullptr; tooMany=true; break; } // more than one!
+                    _pdf = _p;
+                }
+            }
+            if (_pdf) {
+                return xRooNode(*_pdf,*this).Add(child);
+            } else if(!tooMany) {
+                auto out = this->operator[]("components")->Add(child);
                 return out;
             }
         }
@@ -1786,15 +1834,30 @@ xRooNode xRooNode::Multiply(const xRooNode& child, Option_t* opt) {
         else if(child.get<RooAbsReal>() && mainChild().get<RooRealSumPdf>()) {
             return mainChild().Add(child);
         } else if(!child.get() || child.get<RooAbsReal>()) {
-            // need to create or hide inside a sumpdf
-            auto _pdf = acquireNew<RooRealSumPdf>(Form("%s_%s", p->GetName(),child.GetName()),(strlen(child.GetTitle())&&strcmp(child.GetTitle(),child.GetName())) ? child.GetTitle() : p->GetTitle(), RooArgList(), RooArgList(),true);
-            _pdf->setFloor(true);
+            // need to create or hide inside a sumpdf or rooadpdf
+            std::shared_ptr<RooAbsPdf> _pdf;
+            if(!child.get() && strcmp(child.GetName(),"components")==0) {
+                auto _sumpdf = acquireNew<RooAddPdf>(Form("%s_%s", p->GetName(), child.GetName()),
+                                                         (strlen(child.GetTitle()) &&
+                                                          strcmp(child.GetTitle(), child.GetName())) ? child.GetTitle()
+                                                                                                     : p->GetTitle(),
+                                                         RooArgList(), RooArgList());
+                _pdf = _sumpdf;
+            } else {
+                auto _sumpdf = acquireNew<RooRealSumPdf>(Form("%s_%s", p->GetName(), child.GetName()),
+                                                         (strlen(child.GetTitle()) &&
+                                                          strcmp(child.GetTitle(), child.GetName())) ? child.GetTitle()
+                                                                                                     : p->GetTitle(),
+                                                         RooArgList(), RooArgList(), true);
+                _sumpdf->setFloor(true);
+                _pdf = _sumpdf;
+            }
             _pdf->setStringAttribute("alias",child.GetName());
             // transfer axis attributes if present (TODO: should GetXaxis look beyond the immediate parent?)
             _pdf->setStringAttribute("xvar",p->getStringAttribute("xvar"));
             _pdf->setStringAttribute("binning",p->getStringAttribute("binning"));
             out = _pdf;
-            Info("Multiply","Created pdf RooRealSumPdf::%s in channel %s",_pdf->GetName(),p->GetName());
+            Info("Multiply","Created %s::%s in channel %s",_pdf->ClassName(),_pdf->GetName(),p->GetName());
             if(child.get<RooAbsReal>()) xRooNode(*out,*this).Add(child);
         }
 
@@ -3743,7 +3806,8 @@ xRooNode xRooNode::factors() const {
 
     if (auto p = get<RooProdPdf>(); p) {
         auto _main = mainChild();
-        if (auto a = _main.get<RooAbsArg>(); a && !a->getStringAttribute("alias")) a->setStringAttribute("alias","samples");
+        if (auto a = _main.get<RooRealSumPdf>(); a && !a->getStringAttribute("alias")) a->setStringAttribute("alias","samples");
+        else if (auto a = _main.get<RooAddPdf>(); a && !a->getStringAttribute("alias")) a->setStringAttribute("alias","components");
         int _npdfs = p->pdfList().size();
         for(auto& o : p->pdfList()) {
             out.emplace_back(std::make_shared<xRooNode>(*o,*this));
@@ -4842,7 +4906,7 @@ TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binS
         if (binningName=="") binningName = rar->GetName();
         if( x->hasBinning(binningName) ) {
             if( x->getBinning(binningName).isUniform() ) {
-                h = new TH1D(rar->GetName(), rar->GetTitle(), x->numBins(binningName), x->getMin(binningName), x->getMax(binningName));
+                h = new TH1D(rar->GetName(), rar->GetTitle(), x->numBins(binningName)<=0 ? 100 : x->numBins(binningName), x->getMin(binningName), x->getMax(binningName));
             } else {
                 h = new TH1D(rar->GetName(), rar->GetTitle(), x->numBins(binningName), x->getBinning(binningName).array());
             }
