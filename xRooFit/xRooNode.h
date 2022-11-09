@@ -20,6 +20,7 @@ class RooAbsBinning;
 class TGraph;
 class RooFitResult;
 class TGListTreeItem;
+class TGListTree;
 class TVirtualPad;
 class TStyle;
 
@@ -128,7 +129,7 @@ public:
 
     xRooNode shallowCopy(const std::string& name, std::shared_ptr<xRooNode> parent = nullptr);
 
-    std::shared_ptr<TObject> convertForAcquisition(xRooNode& acquirer) const;
+    std::shared_ptr<TObject> convertForAcquisition(xRooNode& acquirer, const char* opt="") const;
 
     xRooNode vars() const; // obs,globs,floats,args
     xRooNode obs() const; // robs and globs
@@ -241,6 +242,7 @@ public:
     void SaveAs(const char* filename="", Option_t* option="") const override; // *MENU*
 
     TGListTreeItem* GetTreeItem(TBrowser* b) const;
+    TGListTree* GetListTree(TBrowser* b) const;
 
     static void Interactive_PLLPlot();
     static void Interactive_Pull();
@@ -275,6 +277,7 @@ public:
 
     std::vector<std::shared_ptr<xRooNode>> fBrowsables; // will appear in the browser tree but are not actual children
     std::function<xRooNode(xRooNode*)> fBrowseOperation; // a way to specify a custom browsing operation
+
 
     ClassDefOverride(xRooNode,0)
 

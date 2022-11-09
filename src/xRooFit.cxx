@@ -21,6 +21,7 @@
 #include "RooLognormal.h"
 #include "RooRandom.h"
 #include "RooBinning.h"
+#include "RooUniformBinning.h"
 
 #include "RooStats/AsymptoticCalculator.h"
 #include "Math/GenAlgoOptions.h"
@@ -261,6 +262,10 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
                 for (auto &rr : *res) {if(boundaries.empty() || std::abs(boundaries.back()-rr) > 1e-3 || std::abs(boundaries.back()-rr)>1e-5*boundaries.back()) boundaries.push_back(rr); } // sometimes get virtual duplicates of boundaries
                 r->setBinning(RooBinning(boundaries.size() - 1, &boundaries[0]));
                 delete res;
+            } else if(r->numBins(r->getBinning().GetName())==0 && expected) {
+                // no bins ... in order to generate expected we need to have some bins
+                binnings[r] = std::shared_ptr<RooAbsBinning>(r->getBinning().clone(r->getBinning().GetName()));
+                r->setBinning(RooUniformBinning(r->getMin(),r->getMax(),100));
             }
         }
 
@@ -677,16 +682,33 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         }
 
         if (hesse && _minimizer.fitter()->Result().IsValid()) { // only do hesse if was a valid min
+
+            // remove limits on pars before calculation
+            // interesting note: error on pars before hesse can be significantly
+            // smaller than after hesse ... what is the pre-hesse error corresponding to?
+            auto parSettings = _minimizer.fitter()->Config().ParamsSettings();
+            for(auto& s :_minimizer.fitter()->Config().ParamsSettings()) {
+                s.RemoveLimits();
+            }
+
             //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? - and also becomes WRONG :-S
             auto _status = _minimizer.hesse(); //note: I have seen that you can get 'full covariance quality' without running hesse ... is that expected?
 
+
+
+            _minimizer.fitter()->Config().SetParamsSettings(parSettings);
+
             if (auto fff = dynamic_cast<ProgressMonitor*>(_nll); fff && fff->fInterrupt) {
                 delete _nll;
-                throw std::runtime_error("Keyboard interrupt while minimizing");
+                throw std::runtime_error("Keyboard interrupt while hesse calculating");
             }
             if (_status != 0 && status == 0 && printLevel >= -1) {
                 Warning("fitTo", "%s hesse status is %d", fitName.Data(), _status);
             }
+
+
+
+
         }
 
         // DO NOT DO THIS - seems to mess with the NLL function in a way that breaks the cache - reactivating wont fix
@@ -704,6 +726,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
         }
 
         out->_constPars->addClone(fUserPars, true);
+
+
 
 
         if (boundaryCheck) {
@@ -751,17 +775,35 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
             }
             if (limit_status == 900) {
                 if (printLevel >= 0)
-                    Warning("miminize", "PARLIM: Parameters within %g%% limit in fit result: %s", boundaryCheck * 100,
+                    Warning("miminize", "BOUNDCHK: Parameters within %g%% limit in fit result: %s", boundaryCheck * 100,
                             listpars.c_str());
             } else if (limit_status > 0) {
                 if (printLevel >= 0)
-                    Warning("miminize", "PARLIM: Parameters near limit in fit result");
+                    Warning("miminize", "BOUNDCHK: Parameters near limit in fit result");
             }
 
             // store the limit check result
             out->_statusHistory.push_back(std::make_pair("BOUNDCHK", limit_status));
             out->_status += limit_status;
         }
+
+//        // automatic parameter range adjustment based on errors
+//        for(auto a : *floatPars) {
+//            RooRealVar *v = dynamic_cast<RooRealVar *>(a);
+//            if(v->getMin() > v->getVal() - 3.*v->getError()) {
+//                v->setMin(v->getVal() - 3.1*v->getError());
+//            }
+//            if(v->getMax() < v->getVal() + 3.*v->getError()) {
+//                v->setMax(v->getVal() + 3.1*v->getError());
+//            }
+//            // also make sure the range isn't too big (fits can struggle)
+//            if(v->getMin() < v->getVal() - 10.*v->getError()) {
+//                v->setMin(v->getVal() - 9.9*v->getError());
+//            }
+//            if(v->getMax() > v->getVal() + 10.*v->getError()) {
+//                v->setMax(v->getVal() + 9.9*v->getError());
+//            }
+//        }
 
 
         if (printLevel < 0) RooMsgService::instance().setGlobalKillBelow(msglevel);
