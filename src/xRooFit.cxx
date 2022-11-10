@@ -256,7 +256,7 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
             if (!r) continue;
             if (_pdf->isBinnedDistribution(*r)) {
                 binnings[r] = std::shared_ptr<RooAbsBinning>(r->getBinning().clone(r->getBinning().GetName()));
-                auto res = _pdf->binBoundaries(*r, r->getMin(), r->getMax());
+                auto res = _pdf->binBoundaries(*r, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
                 std::vector<double> boundaries;
                 boundaries.reserve(res->size());
                 for (auto &rr : *res) {if(boundaries.empty() || std::abs(boundaries.back()-rr) > 1e-3 || std::abs(boundaries.back()-rr)>1e-5*boundaries.back()) boundaries.push_back(rr); } // sometimes get virtual duplicates of boundaries

@@ -218,7 +218,7 @@ void xRooNLLVar::reinitialize() {
                         if (obs->size() == 1) { // RooNLLVar requires exactly 1 obs
                             auto *var = static_cast<RooRealVar *>(obs->first());
                             std::unique_ptr<std::list<Double_t>> boundaries{
-                                    dynamic_cast<RooAbsReal *>(a)->binBoundaries(*var, var->getMin(), var->getMax())};
+                                    dynamic_cast<RooAbsReal *>(a)->binBoundaries(*var, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity())};
                             if (boundaries) {
                                 if (!std::shared_ptr<RooAbsReal>::get())
                                     Info("xRooNLLVar", "%s will be evaluated as a Binned PDF (%d bins)", a->GetName(),

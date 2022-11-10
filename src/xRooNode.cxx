@@ -1176,7 +1176,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
 
             if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue*>(_ax->GetParent())) {
 
-                if(auto _boundaries = std::unique_ptr<std::list<double>>(_f->binBoundaries(*dynamic_cast<RooAbsRealLValue*>(_ax->GetParent()),_ax->GetXmin(),_ax->GetXmax())); !_boundaries && _ax->GetNbins()>0) {
+                if(auto _boundaries = std::unique_ptr<std::list<double>>(_f->binBoundaries(*dynamic_cast<RooAbsRealLValue*>(_ax->GetParent()),-std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity())); !_boundaries && _ax->GetNbins()>0) {
                     Warning("Add","Adding unbinned function %s to binned %s - will wrap it in a RooBinSamplingPdf",_f->GetName(),GetName());
                     auto sumPdf = acquireNew<RooRealSumPdf>(TString::Format("%s_pdfWrapper",_f->GetName()),_f->GetTitle(),*_f,*acquire<RooRealVar>("1", "1", 1),true);
                     sumPdf->setStringAttribute("alias",_f->getStringAttribute("alias"));
@@ -5001,7 +5001,7 @@ TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binS
                 h = new TH1D(rar->GetName(), rar->GetTitle(), x->numBins(binningName), x->getBinning(binningName).array());
             }
             h->GetXaxis()->SetTitle(x->getBinning(binningName).GetTitle());
-        } else if (auto _boundaries = _or_func(/*rar->plotSamplingHint(*x,x->getMin(),x->getMax())*/(std::list<double>*)(nullptr) , rar->binBoundaries(*x,x->getMin(),x->getMax())); _boundaries) {
+        } else if (auto _boundaries = _or_func(/*rar->plotSamplingHint(*x,x->getMin(),x->getMax())*/(std::list<double>*)(nullptr) , rar->binBoundaries(*x,-std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity())); _boundaries) {
             std::vector<double> _bins; for(auto& b : *_boundaries) {if(_bins.empty() || std::abs(_bins.back()-b)>1e-5*_bins.back()) _bins.push_back(b); } // found sometimes get virtual duplicates in the binning
             h = new TH1D(rar->GetName(), rar->GetTitle(), _bins.size()-1, &_bins[0]);
             delete _boundaries;
