@@ -66,7 +66,9 @@
 #include "RooFitHS3/RooJSONFactoryWSTool.h"
 #endif
 
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,24,00)
 #include "RooBinSamplingPdf.h"
+#endif
 
 xRooNode::InteractiveObject* xRooNode::gIntObj = nullptr;
 std::map<std::string,std::tuple<std::function<double(double,double,double)>,bool>> xRooNode::auxFunctions;
@@ -1181,6 +1183,7 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
             if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue*>(_ax->GetParent())) {
 
                 if(auto _boundaries = std::unique_ptr<std::list<double>>(_f->binBoundaries(*dynamic_cast<RooAbsRealLValue*>(_ax->GetParent()),-std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity())); !_boundaries && _ax->GetNbins()>0) {
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,24,00)
                     Warning("Add","Adding unbinned function %s to binned %s - will wrap it in a RooBinSamplingPdf",_f->GetName(),GetName());
                     auto sumPdf = acquireNew<RooRealSumPdf>(TString::Format("%s_pdfWrapper",_f->GetName()),_f->GetTitle(),*_f,*acquire<RooRealVar>("1", "1", 1),true);
                     sumPdf->setStringAttribute("alias",_f->getStringAttribute("alias"));
@@ -1188,6 +1191,9 @@ xRooNode xRooNode::Add(const xRooNode& child, Option_t* opt) {
                     _f = acquireNew<RooBinSamplingPdf>(TString::Format("%s_binned",_f->GetName()),_f->GetTitle(),*dynamic_cast<RooAbsRealLValue*>(_ax->GetParent()),*sumPdf);
                     _f->setStringAttribute("alias",std::dynamic_pointer_cast<RooAbsArg>(out)->getStringAttribute("alias"));
                     if (!_f->getStringAttribute("alias")) _f->setStringAttribute("alias",out->GetName());
+#else
+                    throw std::runtime_error("unsupported addition of unbinned function to binned model - please upgrade to at least ROOT 6.24");
+#endif
                 }
             }
 
