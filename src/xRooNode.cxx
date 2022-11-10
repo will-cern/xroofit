@@ -32,6 +32,7 @@
 
 #include "RooCategory.h"
 #include "RooRealVar.h"
+#include "RooStringVar.h"
 #include "RooBinning.h"
 #include "RooUniformBinning.h"
 
@@ -1496,6 +1497,10 @@ void xRooNode::Print(Option_t *opt) const {
                 auto _snap = std::unique_ptr<RooAbsCollection>(_deps.snapshot());
                 coords(); // move to coords before printing (in case this matters)
                 get()->Print(sOpt);
+                if (auto _fr = get<RooFitResult>(); _fr && dynamic_cast<RooStringVar*>(_fr->constPars().find(".log"))) {
+                    std::cout << "Minimization Logs:" << std::endl;
+                    std::cout << dynamic_cast<RooStringVar*>(_fr->constPars().find(".log"))->getVal() << std::endl;
+                }
                 _deps.assignValueOnly(*_snap);
                 //std::cout << std::endl;
             } else std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
@@ -2377,7 +2382,10 @@ void xRooNode::_fitTo_(const char* datasetName,const char* constParValues) {
                 }
             }
         }
-        auto fr = nll(datasetName).minimize();
+        auto _nll = nll(datasetName);
+        _nll.fitConfigOptions()->SetValue("LogSize",65536);
+        _nll.fitConfig()->MinimizerOptions().SetPrintLevel(0);
+        auto fr = _nll.minimize();
         //_pars.argList() = *snap; // restore values - irrelevant as SetFitResult will restore values
         if (!fr.get()) throw std::runtime_error("Fit Failed");
         SetFitResult(fr.get());

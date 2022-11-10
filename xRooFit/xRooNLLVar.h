@@ -16,6 +16,7 @@ class RooRealVar;
 class TGraphErrors;
 
 #include "Fit/FitConfig.h"
+#include "Math/IOptions.h"
 
 #include "xRooFit.h"
 #include <map>
