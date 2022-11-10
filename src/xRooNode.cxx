@@ -3592,7 +3592,7 @@ xRooNode xRooNode::vars() const {
         RooArgSet allLeafs;
         p->leafNodeServerList(&allLeafs);
         for(auto& c : allLeafs) {
-            if (c->isFundamental() || dynamic_cast<RooConstVar*>(c)) {out.get<RooArgList>()->add(*c);out.emplace_back(std::make_shared<xRooNode>(*c,*this));  }
+            if (c->isFundamental() || (dynamic_cast<RooConstVar*>(c) && !TString(c->GetName()).IsFloat())) {out.get<RooArgList>()->add(*c);out.emplace_back(std::make_shared<xRooNode>(*c,*this));  }
         }
     } else if(auto p = get<RooAbsData>(); p) {
         for(auto a : *p->get()) {
@@ -6112,10 +6112,19 @@ void xRooNode::Draw(Option_t* opt) {
             gPad->SetGrid(1, 1);
         }
     }
-    TString dOpt = (rar->isBinnedDistribution(*vv) || rar->getAttribute("BinnedLikelihood") || (dynamic_cast<RooAbsRealLValue*>(vv) &&
+    TString dOpt = (TString(rar->ClassName()).Contains("Hist") || rar->isBinnedDistribution(*vv) || rar->getAttribute("BinnedLikelihood") || (dynamic_cast<RooAbsRealLValue*>(vv) &&
             std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue*>(vv),
                                                                   -std::numeric_limits<double>::infinity(),
                                                                   std::numeric_limits<double>::infinity())))) ? "" : "LF2";
+    if (dOpt=="LF2") {
+        // check if all components of dOpt are "Hist" type (CMS model support)
+        // if so then dOpt="";
+        bool allHist=true;
+        for(auto& s : components()) {
+            if(! (s->get() && TString(s->get()->ClassName()).Contains("Hist"))) { allHist=false; break; }
+        }
+        if (allHist) dOpt="";
+    }
     if (rar==vv) dOpt+="TEXT";
 
     if (rar==vv && rar->IsA()==RooRealVar::Class()) {
@@ -6239,9 +6248,43 @@ void xRooNode::Draw(Option_t* opt) {
         std::set<std::string> allTitles;
         bool titleMatchName = true;
         std::map<std::string,TH1*> histGroups;
-        for(auto& samp : components()) {
-            auto hh = samp->BuildHistogram(v);
-            if (strlen(hh->GetTitle())==0) hh->SetTitle(samp->GetName()); // ensure all hists has titles
+        std::vector<TH1*> hhs;
+        if(components().size()==1) {
+            // support for CMS model case where has single component containing many coeffs
+            // will build stack by setting each coeff equal to 0 in turn, rebuilding the histogram
+            // the difference from the "full" histogram will be the component
+            auto comps = components()[0];
+            RooArgList coefs;
+            for(auto& c : *comps) {
+                if(c->fFolder=="!.coeffs") coefs.add(*c->get<RooAbsArg>());
+            }
+            if (!coefs.empty()) {
+                RooRealVar zero("zero","",0);
+                std::shared_ptr<TH1> prevHist((TH1*)h->Clone());
+                for(auto c : coefs) {
+                    // seems I have to remake the function each time, as haven't figured out what cache needs clearing?
+                    std::unique_ptr<RooAbsReal> f(dynamic_cast<RooAbsReal*>(comps->get()->Clone("tmpCopy")));
+                    zero.setAttribute(Form("ORIGNAME:%s",c->GetName())); // used in redirectServers to say what this replaces
+                    f->redirectServers(RooArgSet(zero),false,true); // each time will replace one additional coef
+                    //zero.setAttribute(Form("ORIGNAME:%s",c->GetName()),false); (commented out so that on next iteration will still replace all prev)
+                    auto hh = xRooNode(*f,*this).BuildHistogram(v);
+                    if (strlen(hh->GetTitle())==0) hh->SetTitle(c->GetName()); // ensure all hists has titles
+                    titleMatchName &= (TString(c->GetName())==hh->GetTitle() || TString(hh->GetTitle()).BeginsWith(TString(c->GetName()) + "_"));
+                    std::shared_ptr<TH1> nextHist((TH1*)hh->Clone());
+                    hh->Add(prevHist.get(),-1.);hh->Scale(-1.);
+                    hhs.push_back(hh);
+                    prevHist = nextHist;
+                }
+            }
+        } else {
+            for (auto &samp: components()) {
+                auto hh = samp->BuildHistogram(v);
+                hhs.push_back(hh);
+                if (strlen(hh->GetTitle())==0) hh->SetTitle(samp->GetName()); // ensure all hists has titles
+                titleMatchName &= (TString(samp->GetName())==hh->GetTitle() || TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
+            }
+        }
+        for(auto& hh : hhs) {
             // automatically group hists that all have the same title
             if(histGroups.find(hh->GetTitle())==histGroups.end()) {
                 histGroups[hh->GetTitle()] = hh;
@@ -6275,7 +6318,6 @@ void xRooNode::Draw(Option_t* opt) {
             //if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ? "" : "LF2";
             stack->Add(hh,thisOpt);
             allTitles.insert(hh->GetTitle());
-            titleMatchName &= (TString(samp->GetName())==hh->GetTitle() || TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
         }
         stack->SetBit(kCanDelete); // should delete its sub histograms
         stack->Draw("noclear same");
@@ -6421,7 +6463,7 @@ void xRooNode::Draw(Option_t* opt) {
         gPad->SetBottomMargin(padFrac);
         auto ratioPad = new TPad("auxPad","aux plot",0,0,1,padFrac);
         ratioPad->SetNumber(1);
-        ratioPad->SetBottomMargin(ratioPad->GetBottomMargin()*(1.-padFrac)/padFrac);
+        ratioPad->SetBottomMargin(ratioPad->GetBottomMargin()/padFrac);
         ratioPad->SetTopMargin(0.04);
         ratioPad->SetLeftMargin(gPad->GetLeftMargin());ratioPad->SetRightMargin(gPad->GetRightMargin());
         ratioPad->cd();
