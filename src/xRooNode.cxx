@@ -456,6 +456,7 @@ void xRooNode::Browse(TBrowser* b) {
             dynamic_cast<TQObject*>(b->GetBrowserImp())->Connect(
                     "Checked(TObject *, Bool_t)","xRooNode",
                     v.get(),"Checked(TObject *, Bool_t)");
+            if(auto _fr = v->get<RooFitResult>(); _fr && _fr->status()) v->GetTreeItem(b)->SetColor(kRed);
         }
         //v.fBrowsers.insert(b);
     }
@@ -734,7 +735,10 @@ const char* xRooNode::GetIconName() const {
                 if (!gClient->GetMimeTypeList()->GetIcon("xRooFitObs",true)) {
                     gClient->GetMimeTypeList()->AddType("xRooFitObs", "xRooFitObs", "x_pic.xpm", "x_pic.xpm", "->Browse()");
                 }
-                return "xRooFitObs";
+                if (!gClient->GetMimeTypeList()->GetIcon("xRooFitGlobs",true)) {
+                    gClient->GetMimeTypeList()->AddType("xRooFitGlobs", "xRooFitGlobs", "z_pic.xpm", "z_pic.xpm", "->Browse()");
+                }
+                return (get<RooAbsArg>()->getAttribute("global") ? "xRooFitGlobs" : "xRooFitObs");
             }
             return "TLeaf";
         }
@@ -3420,6 +3424,7 @@ xRooNode& xRooNode::browse() {
         if (!get<RooWorkspace>()) addedChildren += appendChildren(factors());
         addedChildren += appendChildren(variations());
         if(get<ParamHistFunc>()) addedChildren += appendChildren(bins());
+        if(get<RooAbsData>()) addedChildren += appendChildren(obs());
     }
     // if has no children and is a RooAbsArg, add all the proxies
     if (auto arg=get<RooAbsArg>(); arg && addedChildren==0) {
@@ -3755,13 +3760,13 @@ xRooNode xRooNode::components() const {
                 if (s.Contains(';')) s= s(0,s.Index(';'));
                 if (auto _pdf = out.find(s.Data()); _pdf) {
                     //std::cout << " type = " << _pdf->get()->ClassName() << std::endl;
-                    out.emplace_back(std::make_shared<xRooNode>(fr->GetTitle(),*fr,_pdf));
+                    out.emplace_back(std::make_shared<xRooNode>(fr->GetName(),*fr,_pdf));
                     // for a while, this node's parent pointed to something of type Node2!!
                     // how to fix??? - I fxied it with a new constructo to avoid the shared_ptr<Node2> calling the const Node2& constructor via getting wrapped in a Node2(shared_ptr<TObject>) call
                     //out.back()->fParent = _pdf;
                     //std::cout << " type2 = " << out.back()->fParent->get()->ClassName() << std::endl;
                 } else {
-                    out.emplace_back(std::make_shared<xRooNode>(fr->GetTitle(),*fr,*this));
+                    out.emplace_back(std::make_shared<xRooNode>(fr->GetName(),*fr,*this));
 
                 }
                 out.back()->fFolder = "!fits";
@@ -4089,9 +4094,31 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros, TVirtualPad* fr
         if (!theHist) {
             auto _parentPdf = parentPdf();
             if (!_parentPdf) {
-                throw std::runtime_error("Cannot draw dataset without parent PDF");
+                // can still build graph if v is an obs ... will use v binning
+                auto vo = dynamic_cast<TObject*>(v);
+                if (v && obs().find(vo->GetName())) {
+                    if (auto cat = dynamic_cast<RooAbsCategoryLValue*>(v)) {
+                        theHist = new TH1D(TString::Format("%s_%s", GetName(), vo->GetName()),
+                                           TString::Format("my temp hist;%s",
+                                                           strlen(vo->GetTitle()) ? vo->GetTitle() : vo->GetName()),
+                                           cat->numTypes(), 0, cat->numTypes());
+                        for(int i=0;i<cat->numTypes();i++) {
+                            cat->setBin(i);
+                            theHist->GetXaxis()->SetBinLabel(i+1,cat->getLabel());
+                        }
+                    } else {
+                        theHist = new TH1D(TString::Format("%s_%s", GetName(), vo->GetName()),
+                                           TString::Format("my temp hist;%s",
+                                                           strlen(vo->GetTitle()) ? vo->GetTitle() : vo->GetName()),
+                                           v->numBins(), v->getBinningPtr(nullptr)->lowBound(),
+                                           v->getBinningPtr(nullptr)->highBound());
+                    }
+                } else {
+                    throw std::runtime_error("Cannot draw dataset without parent PDF");
+                }
+            } else {
+                theHist = _parentPdf->BuildHistogram(v, true);
             }
-            theHist = _parentPdf->BuildHistogram(v, true);
         }
         if (!theHist) return nullptr;
         //this hist will get filled with w*x to track weighted x position per bin
@@ -4189,6 +4216,11 @@ TGraph* xRooNode::BuildGraph(RooAbsLValue* v, bool includeZeros, TVirtualPad* fr
 
         // transfer limits from theHist to dataGraph hist
         dataGraph->GetHistogram()->GetXaxis()->SetLimits(theHist->GetXaxis()->GetXmin(),theHist->GetXaxis()->GetXmax());
+        // and bin labels, if any
+        if(xcat) {
+            dataGraph->GetHistogram()->GetXaxis()->Set(theHist->GetNbinsX(),0,theHist->GetNbinsX());
+            for(int i=1;i<=theHist->GetNbinsX();i++) dataGraph->GetHistogram()->GetXaxis()->SetBinLabel(i, theHist->GetXaxis()->GetBinLabel(i));
+        }
 
         delete xPos;
         delete xPos2;
@@ -6042,11 +6074,21 @@ void xRooNode::Draw(Option_t* opt) {
     //if (!v) { v = get<RooRealVar>(); } // self-axis
     //if (!v) return;
 
+    if (auto lv = get<RooAbsLValue>(); lv && fParent && fParent->get<RooAbsData>()) {
+        // drawing an observable from a dataset ... build graph, and exit
+        auto gr = fParent->BuildGraph(lv,true);
+        gr->SetBit(kCanDelete);
+        gr->Draw(hasSame ? "P" : "AP");
+        return;
+    }
+
     auto rar = get<RooAbsReal>();
     if (!rar) {
         get()->Draw();
         return;
     }
+
+
 
     auto h = BuildHistogram(v,false,hasErrorOpt);
     if (!h) return;
