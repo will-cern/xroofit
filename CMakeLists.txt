@@ -18,7 +18,6 @@ add_custom_target(xRooFit_version
         COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_BINARY_DIR}/versioning/temp_xroofit_version.h)
 
 list(APPEND CMAKE_PREFIX_PATH $ENV{ROOTSYS})
-set(ROOT_COMPONENTS )
 # if 6.26 ROOT available, add RooFitHS3
 find_package( ROOT 6.26 QUIET COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit RooFitCore Matrix Gpad Graf RooStats HistPainter HistFactory Gui Ged RooFitHS3)
 if (NOT ROOT_FOUND)
