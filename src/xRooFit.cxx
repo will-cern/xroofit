@@ -832,6 +832,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal& nll, const std
               for(auto p : *pars) {
                   xRooFit::minos(nll,*out,p->GetName(),myFitConfig);
               }
+              if (!pars->empty()) *floatPars = out->floatParsFinal(); // put values back to best fit
         }
 
         if (restore) {
