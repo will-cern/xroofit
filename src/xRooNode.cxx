@@ -5366,10 +5366,11 @@ void addLegendEntry(TObject* o, const char* title, const char* opt) {
 
     l->AddEntry(o,title,opt);
     if(auto nObj = l->GetListOfPrimitives()->GetEntries();nObj>0) {
-        // each entry takes up 0.05 ... maximum of 9 before next column
-        if (nObj>1 && (nObj % 9)==1) {l->SetNColumns(l->GetNColumns()+1);}
-        else if(nObj<=9) {
-            l->SetY1NDC(l->GetY2NDC()-0.05*nObj);
+        // each entry takes up 0.05 ... maximum of N*(N+4) (where N is # cols) before next column
+        int nn = l->GetNColumns(); nn *= (nn+4);
+        if (nObj>1 && (nObj % nn)==1) {l->SetNColumns(l->GetNColumns()+1);}
+        else if(nObj<=nn && nObj>=l->GetNColumns()*l->GetNColumns()) {
+            l->SetY1NDC(l->GetY2NDC()-0.05*gPad->GetHNDC()*nObj);
         }
     }
 
@@ -5555,7 +5556,7 @@ void xRooNode::Draw(Option_t* opt) {
     if (hasFR) {
         // drawing the fitresult as a pull plot on a subpad, and rest of the draw elsewhere
         clearPad();
-        pad->Divide(1,2);//,0,0);
+        pad->Divide(1,2,1e-9,1e-9);//,0,0);
         pad->GetPad(1)->SetPad(0,0.2,1,1);
         pad->GetPad(2)->SetPad(0,0,1,0.2);
         TString optNoFR(opt); optNoFR.ReplaceAll("pull","");
@@ -5634,7 +5635,7 @@ void xRooNode::Draw(Option_t* opt) {
 //                    //pad->GetCanvas()->Set( w*(pad->GetCanvas()->GetWindowWidth()/2.),h*(pad->GetCanvas()->GetWindowHeight()/2.))  )
 //                }
 //            }
-            dynamic_cast<TPad *>(pad)->DivideSquare(_size);//,0,0);
+            dynamic_cast<TPad *>(pad)->DivideSquare(_size,1e-9,1e-9);
         }
         int i=0;
         auto& chanVar = const_cast<RooAbsCategoryLValue&>(get<RooSimultaneous>()->indexCat());
@@ -5657,7 +5658,7 @@ void xRooNode::Draw(Option_t* opt) {
             bool inRange=chanPatterns.empty();
             for(auto& p : chanPatterns) if(chanVar.inRange(p)) { inRange=true; break; }
             if (!inRange || !v->get<RooAbsReal>()->isSelectedComp()) gPad->SetFillColor(kGray);
-            if(!hasSame && _size>1) gPad->SetLeftMargin(std::min(gPad->GetLeftMargin()*(1./gPad->GetWNDC()),0.3));
+            if(!hasSame && _size>1 && (gStyle->GetTitleFont("Y")%10) == 3) gPad->SetLeftMargin(std::min(gPad->GetLeftMargin()*(1./gPad->GetWNDC()),0.3));
             v->Draw(opt);
             gSystem->ProcessEvents();
         }
@@ -5688,7 +5689,7 @@ void xRooNode::Draw(Option_t* opt) {
         if (!hasSame) {
             clearPad();
             pad->SetBorderSize(0);
-            dynamic_cast<TPad *>(pad)->DivideSquare(_size);//,0,0);
+            dynamic_cast<TPad *>(pad)->DivideSquare(_size,1e-9,1e-9);
         }
         int i=0;
         for(auto& v : *this) {
@@ -5703,7 +5704,7 @@ void xRooNode::Draw(Option_t* opt) {
             if (s.BeginsWith(".") || s.BeginsWith("!")) continue;
             pad->cd(++i);
             gPad->SetName(s);
-            if(!hasSame && _size>1) gPad->SetLeftMargin(std::min(gPad->GetLeftMargin()*(1./gPad->GetWNDC()),0.3));
+            if(!hasSame && _size>1 && (gStyle->GetTitleFont("Y")%10) == 3) gPad->SetLeftMargin(std::min(gPad->GetLeftMargin()*(1./gPad->GetWNDC()),0.3));
             v->Draw(opt);
             //pad->Modified();//pad->Update();
             gSystem->ProcessEvents();
@@ -5917,7 +5918,7 @@ void xRooNode::Draw(Option_t* opt) {
         clearPad();
         // create a new pad because adjust the margins ...
         auto oldPad = gPad;
-        gPad->Divide(1,1);
+        gPad->Divide(1,1,1e-9,1e-9);
         gPad->cd(1);
         gPad->SetBottomMargin(0.4);
 
@@ -6155,8 +6156,13 @@ void xRooNode::Draw(Option_t* opt) {
         if (h->GetSumw2()->At(i)) {hasError=true; break;}
     }
 
+    /** This doesn't seem necessary in at least 6.26 any more - pads seem adjusted on their own
     if (!hasSame && h->GetYaxis()->GetTitleFont()%10 == 2) {
         h->GetYaxis()->SetTitleOffset( gPad->GetLeftMargin() / gStyle->GetPadLeftMargin() );
+    } */
+    // don't this instead - dont want to leave as zero (auto) in case show aux plot
+    if (!hasSame && h->GetYaxis()->GetTitleFont()%10 == 2) {
+        h->GetYaxis()->SetTitleOffset( 1. );
     }
 
     TH1* errHist = nullptr;
@@ -6212,6 +6218,9 @@ void xRooNode::Draw(Option_t* opt) {
             overlayExisted = true;
         } else {
             h->SetTitle(overlayName);
+            // for overlays will take style from current gStyle before overriding with personal style
+            // this ensures initial style will be whatever gStyle is, rather than whatever ours is
+            (TAttLine&)(*h) = *gStyle;
 
 //            std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case getObject has decided to return the owning ptr (for some reason)
 //            if (!gROOT->GetStyle(h->GetTitle())) {
