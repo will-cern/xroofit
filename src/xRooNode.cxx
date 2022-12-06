@@ -3587,7 +3587,7 @@ xRooNode  xRooNode::np() const {
     xRooNode out(".np",std::make_shared<RooArgList>(),*this);
     out.get<RooArgList>()->setName((GetPath()+".np").c_str());
     for(auto o : pars()) {
-        if (!o->get<RooAbsArg>()->getAttribute("poi") && !o->get<RooConstVar>()) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
+        if (!o->get<RooAbsArg>()->getAttribute("Constant") && !o->get<RooAbsArg>()->getAttribute("poi") && !o->get<RooConstVar>()) {out.get<RooArgList>()->add(*o->get<RooAbsArg>());out.emplace_back(o);}
     }
     return out;
 }
