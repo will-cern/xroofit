@@ -3600,7 +3600,13 @@ xRooNode xRooNode::vars() const {
         RooArgSet allLeafs;
         p->leafNodeServerList(&allLeafs);
         for(auto& c : allLeafs) {
-            if (c->isFundamental() || (dynamic_cast<RooConstVar*>(c) && !TString(c->GetName()).IsFloat())) {out.get<RooArgList>()->add(*c);out.emplace_back(std::make_shared<xRooNode>(*c,*this));  }
+            if (c->isFundamental() || (dynamic_cast<RooConstVar*>(c) && !TString(c->GetName()).IsFloat())) {
+                out.get<RooArgList>()->add(*c);out.emplace_back(std::make_shared<xRooNode>(*c,*this));
+                if(c->getAttribute("global")) out.back()->fFolder = "!globs";
+                else if(c->getAttribute("obs")) out.back()->fFolder = "!obs";
+                else if(dynamic_cast<RooConstVar*>(c)) out.back()->fFolder = "!constants";
+                else out.back()->fFolder = "!pars";
+            }
         }
     } else if(auto p = get<RooAbsData>(); p) {
         for(auto a : *p->get()) {
@@ -5418,6 +5424,24 @@ void xRooNode::Draw(Option_t* opt) {
 
     TString sOpt(opt);
     TString sOpt2(sOpt);sOpt2.ToLower();
+    TString forceNames = "";
+    if(sOpt2.Contains("force")) {
+        // force plots show how much NLL changes wrt to a change of variables
+        if (get<RooRealVar>() && fParent && fParent->get<RooAbsPdf>()) {
+            // assume want force of this parameter from the parent pdf
+            TString ff = sOpt(sOpt2.Index("force"),sOpt2.Index("force")+5);
+            sOpt.ReplaceAll(ff,TString::Format("force%s",get()->GetName()));
+            fParent->Draw(sOpt);
+            return;
+        } else if(get<RooAbsPdf>()) {
+            // extract the parameter(s) to calculate force for
+            forceNames = sOpt(sOpt2.Index("force")+5,sOpt2.Length());
+            sOpt = sOpt(0,sOpt2.Index("force"));
+            sOpt2 = sOpt2(0,sOpt2.Index("force"));
+        } else {
+            throw std::runtime_error("Can only compute forces with PDFs");
+        }
+    }
     bool hasOverlay = sOpt2.Contains("overlay");
     TString overlayName = "";
     if (hasOverlay) {
@@ -5638,7 +5662,7 @@ void xRooNode::Draw(Option_t* opt) {
             dynamic_cast<TPad *>(pad)->DivideSquare(_size,1e-9,1e-9);
         }
         int i=0;
-        auto& chanVar = const_cast<RooAbsCategoryLValue&>(get<RooSimultaneous>()->indexCat());
+        auto& chanVar = const_cast<RooAbsCategoryLValue&>(_simPdf->indexCat());
         auto _idx = chanVar.getIndex();
         auto _range = GetRange();
         std::vector<TString> chanPatterns;
@@ -5722,77 +5746,6 @@ void xRooNode::Draw(Option_t* opt) {
         return;
     }
 
-    /*
-    if(auto p = get<RooFitResultTree>(); p) {
-
-        // iterate up through parents until we are out of the tree
-        int depth = 0;
-        auto _pdf = fParent;
-        while (_pdf && _pdf->get() == p) {
-            _pdf = _pdf->fParent;
-            depth++;
-        }
-
-        if (depth == 2) {
-            // a pll scan ... name is parameter name, name of parent is dataset name ...
-            auto g = new TGraphErrors;
-            g->SetName("PLL");
-
-            // get unconditional fit
-            auto _pad = gPad;
-            auto _hiddenPad = new TPad("hidden","hidden",0,0,1,0.01);_hiddenPad->SetNumber(2);
-            auto _pullPad = new TPad("pulls","pulls",0,0,1,0.4);_pullPad->SetNumber(1);
-            _pullPad->cd();
-            double minVal = std::numeric_limits<double>::infinity();
-            if(auto ufits = p->GetEntrys(p->BuildSelection(fParent->GetName())); !ufits.empty()) {
-                for(auto idx : ufits) {
-                    auto _fr = p->GetFit(idx);
-                    g->SetPoint(g->GetN(),dynamic_cast<RooRealVar *>(_fr->floatParsFinal().find(GetName()))->getVal(), _fr->minNll());
-                    g->SetPointError(g->GetN()-1,0,_fr->edm());
-                    if (auto lo = g->GetPointY(g->GetN()-1) - g->GetErrorY(g->GetN()-1); lo < minVal) minVal = lo;
-                    g->SetTitle(TString::Format("#hat{%s}=%.2f;%s;-2 ln#Lambda",GetName(),g->GetPointX(g->GetN()-1),GetName()));
-                }
-            }
-
-            // get conditional fits
-            std::set<std::pair<double,TGraph*>> pullGraphs;
-            for(auto idx : p->GetEntrys(
-                    p->BuildSelection(fParent->GetName(), {{GetName(), std::numeric_limits<double>::quiet_NaN()}}))) {
-                auto _fr = p->GetFit(idx);
-                // note the axissame call will cause a double-delete if we clear before updating pad
-                // so to avoid TList::Clear warning about double delete for all but the last draw we must remove last entry
-                if (!pullGraphs.empty()) gPad->GetListOfPrimitives()->RemoveLast();
-                clearPad();
-                xRooNode(_fr,*this).Draw(); // draws pull plot
-                g->SetPoint(g->GetN(),dynamic_cast<RooRealVar*>(_fr->constPars().find(GetName()))->getVal(),_fr->minNll());
-                pullGraphs.insert(std::make_pair(g->GetPointX(g->GetN()-1), dynamic_cast<TGraph*>( gPad->GetPrimitive(TString::Format("%s_pull",_fr->GetName()))->Clone(TString::Format("%g",g->GetPointX(g->GetN()-1))) ) ));
-                g->SetPointError(g->GetN()-1,0,_fr->edm());
-                if (auto lo = g->GetPointY(g->GetN()-1) - g->GetErrorY(g->GetN()-1); lo < minVal) minVal = lo;
-            }
-            _hiddenPad->cd();
-            for(auto& g :pullGraphs) {
-                g.second->SetBit(kCanDelete);
-                g.second->AppendPad(); // just adding it to the list
-            }
-            g->Sort();
-            g->SetEditable(false);
-            for(int i=0;i<g->GetN();i++) g->SetPointY(i,2.*(g->GetPointY(i)-minVal)); // convert to 2*pll
-            _pad->cd();
-            clearPad();
-            _pad->SetBottomMargin(0.5);
-            g->SetBit(kCanDelete);
-            g->Draw("AP");
-            gPad->AddExec("interactivePLL","xRooNode::Interactive_PLLPlot()");
-            _hiddenPad->Draw();
-            _pullPad->Draw();
-            _pad->cd();
-            gPad->Modified();
-            //gPad->Update();
-        }
-
-        return;
-    }
-     */
 
     if (auto fr = get<RooFitResult>(); fr) {
         //auto graph = BuildGraph();
@@ -6094,6 +6047,60 @@ void xRooNode::Draw(Option_t* opt) {
         auto gr = fParent->BuildGraph(lv,true);
         gr->SetBit(kCanDelete);
         gr->Draw(hasSame ? "P" : "AP");
+        return;
+    }
+
+    if (forceNames != "") {
+        // drawing a force plot ... build nll and fill a histogram with force terms
+        auto _dsets = datasets();
+        bool _drawn=false;
+        auto _coords = coords();
+        auto _fr = fitResult();
+        auto initPar = dynamic_cast<RooRealVar*>(_fr.get<RooFitResult>()->floatParsInit().find(forceNames));
+        if (!initPar) return;
+        for (auto &d : _dsets) {
+            if (!d->get()->TestBit(1 << 20)) continue;
+            auto emptyHist = BuildHistogram(v,true);
+            emptyHist->SetBit(kCanDelete);
+            auto _obs = d->obs();
+            auto x = _obs.find((v) ? dynamic_cast<TObject*>(v)->GetName() : emptyHist->GetXaxis()->GetName());
+            auto _nll = nll(d);
+            auto theData = d->get<RooAbsData>();
+            int nevent = theData->numEntries();
+            for(int i=0;i<nevent;i++) {
+                theData->get(i);
+                bool _skip=false;
+                for(auto _c : _coords) {
+                    if (auto cat = _c->get<RooAbsCategoryLValue>(); cat) {
+                        if (cat->getIndex() != theData->get()->getCatIndex(cat->GetName())) {
+                            _skip = true; break;
+                        }
+                    }
+                }
+                if (_skip) continue;
+
+                if (x) {
+                    auto val = _nll.pars()->getRealValue(initPar->GetName());
+                    auto nllVal = _nll.getEntryVal(i);
+                    _nll.pars()->setRealValue(initPar->GetName(),initPar->getVal());
+                    auto nllVal2 = _nll.getEntryVal(i);
+                    _nll.pars()->setRealValue(initPar->GetName(),val);
+                    emptyHist->Fill(x->get<RooAbsReal>()->getVal(),(nllVal2-nllVal));
+                }
+            }
+            auto val = _nll.pars()->getRealValue(initPar->GetName());
+            auto _extTerm = _nll.extendedTerm();
+            _nll.pars()->setRealValue(initPar->GetName(),initPar->getVal());
+            auto _extTerm2 = _nll.extendedTerm();
+            _nll.pars()->setRealValue(initPar->GetName(),val);
+            for(int i=1;i<=emptyHist->GetNbinsX();i++) {
+                emptyHist->SetBinContent(i,emptyHist->GetBinContent(i)+(_extTerm2-_extTerm)/emptyHist->GetNbinsX());
+                emptyHist->SetBinError(i,0);
+            }
+            emptyHist->GetYaxis()->SetTitle("log (L(#theta)/L(#theta_{0}))");
+            emptyHist->Draw(_drawn ? "same" : "");
+            _drawn=true;
+        }
         return;
     }
 
@@ -6479,6 +6486,7 @@ void xRooNode::Draw(Option_t* opt) {
         auto _tmpPad = gPad;
         gPad->SetBottomMargin(padFrac);
         auto ratioPad = new TPad("auxPad","aux plot",0,0,1,padFrac);
+        ratioPad->SetFillColor(_tmpPad->GetFillColor());
         ratioPad->SetNumber(1);
         ratioPad->SetBottomMargin(ratioPad->GetBottomMargin()/padFrac);
         ratioPad->SetTopMargin(0.04);
