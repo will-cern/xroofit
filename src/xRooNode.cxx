@@ -97,54 +97,57 @@ xRooNode::xRooNode(const char* classname, const char* name, const char* title) :
 xRooNode::xRooNode(const char* name, const std::shared_ptr<TObject>& comp, const std::shared_ptr<xRooNode>& parent) :
     TNamed(name,""), fComp(comp), fParent(parent) {
 
-    if (!fComp && !fParent && !gSystem->AccessPathName(gSystem->ExpandPathName(name)) ) {
-
-        // if file is json can try to read
-        if(TString(gSystem->ExpandPathName(name)).EndsWith(".json")) {
+    if (!fComp && !fParent) {
+        TString pathName = TString(gSystem->ExpandPathName(name));
+        if(!gSystem->AccessPathName(pathName)) {
+            // if file is json can try to read
+            if(pathName.EndsWith(".json")) {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6,26,00)
-            fComp = std::make_shared<RooWorkspace>("workspace",name);
-            RooJSONFactoryWSTool tool(*get<RooWorkspace>());
-            RooFit::MsgLevel msglevel = RooMsgService::instance().globalKillBelow();
-            RooMsgService::instance().setGlobalKillBelow(RooFit::WARNING);
-            if (!tool.importJSON(gSystem->ExpandPathName(name))) {
-                Error("xRooNode","Error reading json workspace %s",name);
-                fComp.reset();
-            }
-            RooMsgService::instance().setGlobalKillBelow(msglevel);
+                fComp = std::make_shared<RooWorkspace>("workspace",name);
+                RooJSONFactoryWSTool tool(*get<RooWorkspace>());
+                RooFit::MsgLevel msglevel = RooMsgService::instance().globalKillBelow();
+                RooMsgService::instance().setGlobalKillBelow(RooFit::WARNING);
+                if (!tool.importJSON(pathName.Data())) {
+                    Error("xRooNode","Error reading json workspace %s",name);
+                    fComp.reset();
+                }
+                RooMsgService::instance().setGlobalKillBelow(msglevel);
 #else
-            Error("xRooNode","json format workspaces available only in ROOT 6.26 onwards");
+                Error("xRooNode","json format workspaces available only in ROOT 6.26 onwards");
 #endif
-        } else {
+            } else {
 
-            // using acquire in the constructor seems to cause a mem leak according to valgrind ... possibly because
-            // (*this) gets called on it before the node is fully constructed
-            auto _file = std::make_shared<TFile>(gSystem->ExpandPathName(
-                    name)); //acquire<TFile>(name); // acquire file to ensure stays open while we have the workspace
-            // actually it appears we don't need to keep the file open once we've loaded the workspace, but should be
-            // no harm doing so
-            // otherwise the workspace doesn't saveas
-            auto keys = _file->GetListOfKeys();
-            if (keys) {
-                for (auto &&k: *keys) {
-                    auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
-                    if (cl == RooWorkspace::Class() || cl->InheritsFrom("RooWorkspace")) {
-                        fComp.reset(_file->Get<RooWorkspace>(k->GetName()), [](TObject *ws) {
-                            // memory leak in workspace, some RooLinkedLists aren't cleared
-                            if (ws) {
-                                dynamic_cast<RooWorkspace *>(ws)->_embeddedDataList.Delete();
-                                xRooNode(*ws,std::make_shared<xRooNode>()).sterilize();
-                                delete ws;
+                // using acquire in the constructor seems to cause a mem leak according to valgrind ... possibly because
+                // (*this) gets called on it before the node is fully constructed
+                auto _file = std::make_shared<TFile>(pathName); //acquire<TFile>(name); // acquire file to ensure stays open while we have the workspace
+                // actually it appears we don't need to keep the file open once we've loaded the workspace, but should be
+                // no harm doing so
+                // otherwise the workspace doesn't saveas
+                auto keys = _file->GetListOfKeys();
+                if (keys) {
+                    for (auto &&k: *keys) {
+                        auto cl = TClass::GetClass(((TKey *) k)->GetClassName());
+                        if (cl == RooWorkspace::Class() || cl->InheritsFrom("RooWorkspace")) {
+                            fComp.reset(_file->Get<RooWorkspace>(k->GetName()), [](TObject *ws) {
+                                // memory leak in workspace, some RooLinkedLists aren't cleared
+                                if (ws) {
+                                    dynamic_cast<RooWorkspace *>(ws)->_embeddedDataList.Delete();
+                                    xRooNode(*ws,std::make_shared<xRooNode>()).sterilize();
+                                    delete ws;
+                                }
+                            });
+                            if (fComp) {
+                                TNamed::SetNameTitle(fComp->GetName(), fComp->GetTitle());
+                                fParent = std::make_shared<xRooNode>(
+                                        _file); // keep file alive - seems necessary to save workspace again in some cases
+                                        break;
                             }
-                        });
-                        if (fComp) {
-                            TNamed::SetNameTitle(fComp->GetName(), fComp->GetTitle());
-                            fParent = std::make_shared<xRooNode>(
-                                    _file); // keep file alive - seems necessary to save workspace again in some cases
-                            break;
                         }
                     }
                 }
             }
+        } else if(pathName.EndsWith(".root") || pathName.EndsWith(".json")) {
+            throw std::runtime_error(TString::Format("%s does not exist",name));
         }
     }
 
@@ -6132,7 +6135,7 @@ void xRooNode::Draw(Option_t* opt) {
             std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue*>(vv),
                                                                   -std::numeric_limits<double>::infinity(),
                                                                   std::numeric_limits<double>::infinity())))) ? "" : "LF2";
-    if (dOpt=="LF2") {
+    if (dOpt=="LF2" && !components().empty()) {
         // check if all components of dOpt are "Hist" type (CMS model support)
         // if so then dOpt="";
         bool allHist=true;
