@@ -3604,7 +3604,7 @@ xRooNode xRooNode::vars() const {
                 out.get<RooArgList>()->add(*c);out.emplace_back(std::make_shared<xRooNode>(*c,*this));
                 if(c->getAttribute("global")) out.back()->fFolder = "!globs";
                 else if(c->getAttribute("obs")) out.back()->fFolder = "!obs";
-                else if(dynamic_cast<RooConstVar*>(c)) out.back()->fFolder = "!constants";
+                else if(dynamic_cast<RooConstVar*>(c)) out.back()->fFolder = "!consts";
                 else out.back()->fFolder = "!pars";
             }
         }
