@@ -94,6 +94,8 @@
 
 
 #ifdef XROOFIT_NAMESPACE
+#define VAL(str) #str
+#define TOSTRING(str) VAL(str)
 namespace XROOFIT_NAMESPACE {
 #else
 #pragma ide diagnostic ignored "misc-no-recursion"
@@ -487,8 +489,14 @@ void xRooNode::Browse(TBrowser* b) {
         b->Add(v.get(),_name,_checked);
         if (auto o = v->get(); o) v->TNamed::SetNameTitle(nameSave,titleSave);
         if (_checked!=-1) {
+#ifdef XROOFIT_NAMESPACE
+           std::string _classname = TOSTRING(XROOFIT_NAMESPACE);
+           _classname += "::xRooNode";
+#else
+           std::string _classname = "xRooNode";
+#endif
             dynamic_cast<TQObject*>(b->GetBrowserImp())->Connect(
-                    "Checked(TObject *, Bool_t)","xRooNode",
+                    "Checked(TObject *, Bool_t)",_classname.c_str(),
                     v.get(),"Checked(TObject *, Bool_t)");
             if(auto _fr = v->get<RooFitResult>(); _fr && _fr->status()) v->GetTreeItem(b)->SetColor(kRed);
         }
@@ -2666,7 +2674,7 @@ bool xRooNode::SetBinContent(int bin, double value, const char* par, double parV
             auto nomf = getObject<RooHistFunc>(f->getStringAttribute("symmetrize_nominal"));
             auto otherf = getObject<RooHistFunc>(otherfName);
             if (nomf && otherf) {
-                otherf->dataHist().set(*bin_pars, 2*nomf->dataHist().get_wgt(bin-1) - value);
+                otherf->dataHist().set(*bin_pars, 2*nomf->dataHist().weight(bin-1) - value);
                 otherf->setValueDirty();
             }
         }
@@ -2777,7 +2785,7 @@ bool xRooNode::SetBinError(int bin, double value) {
             TString origName = (f->getStringAttribute("origName")) ? f->getStringAttribute("origName") : GetName();
             rrv->setStringAttribute(Form("sumw2_%s",origName.Data()),TString::Format("%f",pow(value,2)));
             auto bin_pars = f->dataHist().get(bin - 1);
-            auto _binContent = f->dataHist().get_wgt(bin-1);
+            auto _binContent = f->dataHist().weight();
             if (f->getAttribute("density")) {
                 _binContent *= f->dataHist().binVolume(*bin_pars);
             }
@@ -5644,7 +5652,13 @@ void xRooNode::Draw(Option_t* opt) {
         if(gPad->GetCanvas() && !gPad->GetCanvas()->TestBit(TCanvas::kShowEventStatus)) {
             gPad->GetCanvas()->ToggleEventStatus();
         }
-        gPad->AddExec("interactivePull","xRooNode::Interactive_Pull()");
+#ifdef XROOFIT_NAMESPACE
+        std::string _classname = TOSTRING(XROOFIT_NAMESPACE);
+        _classname += "::xRooNode";
+#else
+        std::string _classname = "xRooNode";
+#endif
+        gPad->AddExec("interactivePull",(_classname + "::Interactive_Pull()").c_str());
 
         pad->cd();
         return;

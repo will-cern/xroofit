@@ -1,6 +1,8 @@
 #pragma once
-#ifndef XROOFIT_XROOFIT_H
-#define XROOFIT_XROOFIT_H
+// removed the include guard because was preventing having local version of xRooFit on top of ROOT's version
+//#ifndef XROOFIT_XROOFIT_H
+//#define XROOFIT_XROOFIT_H
+
 
 /**
  * This is the main include for the xRooFit project.
@@ -176,4 +178,4 @@ public:
 
 
   
-#endif // include guard
+//#endif // include guard
