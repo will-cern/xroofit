@@ -102,6 +102,7 @@ xRooNode buildModel(double data, double bkg, double bkg_uncert, double sig, doub
     // adjust the ranges of the parameter of interest - relevant in hypothesis testing
     w.pars()["mu_Sig"]->get<RooRealVar>()->setRange(-0.01,100); // allow slightly less than 0 as possible fit, so 0 is not on the boundary of fit range
     w.pars()["mu_Sig"]->get<RooRealVar>()->setRange("physical",0,100); // but specify a physical range: used for asymptotic formulae etc
+    w.pars()["mu_Sig"]->get<RooRealVar>()->setAttribute("poi");
 
     return w;
 }
@@ -115,7 +116,7 @@ double testPoint(xRooNode w, double testValue = 1, double altValue = 0, int nToy
 
 
     // Perform a hypothesis test of mu=testValue hypothesis using mu=altValue as alt hypothesis
-    auto hypoTest = nll.hypoPoint("mu_Sig",testValue,altValue);
+    auto hypoTest = nll.hypoPoint(testValue,altValue);
 
     auto _pll = hypoTest.pll();
     auto _sigma_mu = hypoTest.sigma_mu();
@@ -176,7 +177,7 @@ double testPoint(xRooNode w, double testValue = 1, double altValue = 0, int nToy
         for (int i = 0; i < nToys / 10; i++) {
             auto toy = nll.generate(); //xRooFit::generateFrom(*nll.fPdf,alt_fit); //nll.generate();
             nll.setData(toy);
-            auto toy_pll = nll.hypoPoint("mu_Sig", testValue, altValue, xRooFit::Asymptotics::OneSidedPositive).pll();
+            auto toy_pll = nll.hypoPoint(testValue, altValue, xRooFit::Asymptotics::OneSidedPositive).pll();
             if (std::isnan(toy_pll.first)) std::cout << " nan alt " << std::endl;
             if (toy_pll.first >= _pll.first) toy_clb_obs++;
             toy_vals_b.push_back(toy_pll.first);
@@ -252,7 +253,7 @@ TEST(test1,toyHypoTest) {
 
     auto model = buildModel(20,16,0,1,0,0,0);
 
-    auto hp = model["simPdf"]->nll("obsData").hypoPoint("mu_Sig",1,0);
+    auto hp = model["simPdf"]->nll("obsData").hypoPoint(1,0);
 
     hp.addNullToys(30);
 
@@ -337,12 +338,17 @@ TEST(test1, testSimpleModel) {
 TEST(test1,speedTest) {
 
     xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-sa_install2/ttHws/hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
-    w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange("physical",0,std::numeric_limits<double>::infinity());
+    // no longer need to specify physical range as will default to 0->inf on POI
+    //w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange("physical",0,std::numeric_limits<double>::infinity());
     w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange(-1,10);
 
-    auto nll = w["simPdf"]->nll("asimovData",{xRooFit::ReuseNLL(false)});
     w.pars()["sqrt_mu"]->get<RooRealVar>()->setVal(0);
-    nll.setData(nll.generate(true));
+
+    //auto nll = w["simPdf"]->nll("asimovData",{xRooFit::ReuseNLL(false)});
+    //nll.setData(nll.generate(true));
+
+
+    auto nll = w["simPdf"]->nll(); // now if no dataset given will generate asimov dataset
     nll->SetName("nll_hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
 
     w["simPdf"]->pars().reduced("alpha_*,gamma_*").argList().setAttribAll("Constant",true);
@@ -350,15 +356,26 @@ TEST(test1,speedTest) {
     nll.fitConfig()->MinimizerOptions().SetStrategy(1);
     nll.fitConfig()->MinimizerOptions().SetTolerance(1);
 
-    TFile f("hypoSpace400.root","UPDATE");
+    TFile f("hypoSpace400.root","RECREATE");
 
     nll.pars()->find("sqrt_mu")->setStringAttribute("altVal","0");
     auto hs = nll.hypoSpace("sqrt_mu");
 
-    auto lim = hs.FindLimit("cls exp0 readonly",0.05);
+    auto lim = hs.FindLimit("cls exp0",0.05);
     std::cout << lim.first << " +/- " << lim.second << std::endl;
 
     f.Close();
+
+    // verify can reproduce limit ....
+    xRooHypoSpace hs2;
+    hs2.LoadFits("hypoSpace400.root:nll_hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
+    hs2.Print();
+
+    auto lim2 = hs2.FindLimit("cls exp0",0.05);
+    std::cout << lim2.first << " +/- " << lim2.second << std::endl;
+
+    ASSERT_LT(abs(lim.first-lim2.first),1e-3);
+    ASSERT_LT(abs(lim.second-lim2.second),1e-3);
 
 }
 
