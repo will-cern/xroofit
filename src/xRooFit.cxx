@@ -36,10 +36,20 @@
 #include "TGraphErrors.h"
 #include "TLegend.h"
 #include "TKey.h"
+#include "RooAbsTestStatistic.h"
+#include "TPRegexp.h"
+#include "RooStringVar.h"
+
+
+#include "RooRealProxy.h"
 
 #include "xRooFitVersion.h"
 
 #include <signal.h>
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
 
 RooCmdArg xRooFit::ReuseNLL(bool flag) { return RooCmdArg("ReuseNLL",flag,0,0,0,0,0,0,0); }
 
@@ -90,8 +100,8 @@ std::pair<std::shared_ptr<RooAbsData>,std::shared_ptr<const RooAbsCollection>> x
     // determine globs from fr constPars
     auto _globs = std::unique_ptr<RooAbsCollection>(fr->constPars().selectByAttrib("global",true));
 
-    bool doBinned = false;
-    RooAbsPdf::GenSpec** gs = nullptr;
+    //bool doBinned = false;
+    //RooAbsPdf::GenSpec** gs = nullptr;
 
     if(seed==0) seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
     RooRandom::randomGenerator()->SetSeed(seed);
@@ -357,12 +367,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
     return fFitConfig;
 }
 
-#include "RooAbsTestStatistic.h"
-#include "TPRegexp.h"
-#include "RooStringVar.h"
 
-
-#include "RooRealProxy.h"
 
 class ProgressMonitor : public RooAbsReal {
   public:
@@ -1025,7 +1030,7 @@ int xRooFit::minos(RooAbsReal& nll, const RooFitResult& ufit, const char* parNam
 }
 
 
-TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const xRooFit::Asymptotics::PLLType& pllType) {
+TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int /*nToysAlt*/, const xRooFit::Asymptotics::PLLType& pllType) {
     TCanvas* out = nullptr;
 
     //1. Determine pdf: use top-level, if more than 1 then exit and tell user they need to flag
@@ -1310,3 +1315,6 @@ TCanvas* xRooFit::hypoTest(RooWorkspace& w, int nToysNull, int nToysAlt, const x
     return out;
 }
 
+#ifdef XROOFIT_NAMESPACE
+}
+#endif

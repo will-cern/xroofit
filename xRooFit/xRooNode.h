@@ -9,8 +9,15 @@
 #include <functional>
 
 class TAxis;
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
 
 class xRooNode;
+
+#ifdef XROOFIT_NAMESPACE
+}
+#endif
 class RooWorkspace;
 class RooAbsReal;
 class TH1;
@@ -24,10 +31,14 @@ class TGListTree;
 class TVirtualPad;
 class TStyle;
 
-#include "xRooFit/xRooFit.h"
+#include "xRooFit.h"
 #include "RooLinkedList.h"
 #include "RooCmdArg.h"
 #include "TQObject.h"
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
 
 class xRooNLLVar;
 
@@ -283,3 +294,6 @@ public:
 
 };
 
+#ifdef XROOFIT_NAMESPACE
+}
+#endif

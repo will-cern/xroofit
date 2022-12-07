@@ -11,6 +11,20 @@
 #include "TStopwatch.h"
 #include "TSystem.h"
 #include "TPRegexp.h"
+#include "TMemFile.h"
+#include "RooDataSet.h"
+#include "TKey.h"
+#include "TFile.h"
+#include "TGraphErrors.h"
+#include "TH1F.h"
+#include "TStyle.h"
+#include "TLegend.h"
+#include "TLine.h"
+#include "RooStats/HypoTestInverterResult.h"
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
 
 //bool xRooNLLVar::xRooHypoSpace::AddWorkspace(const char* wsFilename, const char* extraPars){
 //
@@ -106,7 +120,6 @@ RooArgList xRooNLLVar::xRooHypoSpace::toArgs(const char* str) {
         if (_idx==-1) continue;
         TString _name = s(0,_idx);
         TString _val = s(_idx+1,s.Length());
-        double val = std::numeric_limits<double>::quiet_NaN();
 
         if (_val.IsFloat()) {
             out.addClone(RooConstVar(_name,_name,_val.Atof()));
@@ -144,7 +157,7 @@ int xRooNLLVar::xRooHypoSpace::AddPoints(const char* parName, size_t nPoints, do
     return nPoints;
 }
 
-#include "TMemFile.h"
+
 
 double round_to_digits(double value, int digits) {
     if (value == 0.0) return 0.0;
@@ -173,7 +186,7 @@ std::pair<double,double> matchPrecision(const std::pair<double,double>& in) {
     return out;
 }
 
-#include "RooDataSet.h"
+
 
 std::map<std::string,std::pair<double,double>> xRooNLLVar::xRooHypoSpace::limits(const char* opt, double relUncert) {
     TString sOpt(opt);
@@ -375,8 +388,7 @@ RooArgList xRooNLLVar::xRooHypoSpace::poi() {
     return out;
 }
 
-#include "TKey.h"
-#include "TFile.h"
+
 
 void xRooNLLVar::xRooHypoSpace::LoadFits(const char* apath) {
 
@@ -565,7 +577,7 @@ void xRooNLLVar::xRooHypoSpace::LoadFits(const char* apath) {
     }
 }
 
-void xRooNLLVar::xRooHypoSpace::Print(Option_t* opt) const {
+void xRooNLLVar::xRooHypoSpace::Print(Option_t* /*opt*/) const {
 
     auto _axes = axes();
 
@@ -596,7 +608,7 @@ void xRooNLLVar::xRooHypoSpace::Print(Option_t* opt) const {
 
 }
 
-#include "TGraphErrors.h"
+
 
 std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char* opt) {
 
@@ -841,10 +853,7 @@ std::pair<double,double> xRooNLLVar::xRooHypoSpace::FindLimit(const char* opt, d
 
 }
 
-#include "TH1F.h"
-#include "TStyle.h"
-#include "TLegend.h"
-#include "TLine.h"
+
 
 void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
@@ -923,8 +932,8 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
     }
 
     if (sOpt.Contains("pcls") || sOpt.Contains("pnull")) {
-        bool doCLs = (sOpt.Contains("cls"));
-        const char* sCL = (doCLs) ? "CLs" : "null";
+        //bool doCLs = (sOpt.Contains("cls"));
+        //const char* sCL = (doCLs) ? "CLs" : "null";
 
         auto exp2 = BuildGraph(sOpt +" exp2");
         auto exp1 = BuildGraph(sOpt+" exp1");
@@ -1119,7 +1128,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t* opt) {
 
 }
 
-#include "RooStats/HypoTestInverterResult.h"
+
 
 
 RooStats::HypoTestInverterResult* xRooNLLVar::xRooHypoSpace::result() {
@@ -1138,3 +1147,7 @@ RooStats::HypoTestInverterResult* xRooNLLVar::xRooHypoSpace::result() {
 
     return out;
 }
+
+#ifdef XROOFIT_NAMESPACE
+}
+#endif

@@ -12,6 +12,11 @@
 #include "TStyle.h"
 #include "TGraphAsymmErrors.h"
 #include "TMultiGraph.h"
+#include "TSystem.h"
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
 
 void xRooNode::Interactive_Pull() {
     auto select = dynamic_cast<TGraph*>(gPad->GetSelected());
@@ -33,7 +38,7 @@ void xRooNode::Interactive_Pull() {
             return;
         }
         // mouse up event, if this was an original point it needs snapping back
-        double _y = select->GetPointY(0);
+        //double _y = select->GetPointY(0);
         TString _name = select->GetName();
         TString _varyName = "";
         if (_name.Contains(";")) {
@@ -113,11 +118,11 @@ void xRooNode::Interactive_PLLPlot() {
     if(!_hidden_pad) return;
 
     //erase old position and draw a line at current position
-    int pxold = gPad->GetUniqueID();
+    //int pxold = gPad->GetUniqueID();
     int px = gPad->GetEventX();
-    int py = gPad->GetEventY();
-    int pymin = gPad->YtoAbsPixel(gPad->GetUymin());
-    int pymax = gPad->YtoAbsPixel(gPad->GetUymax());
+    //int py = gPad->GetEventY();
+    //int pymin = gPad->YtoAbsPixel(gPad->GetUymin());
+    //int pymax = gPad->YtoAbsPixel(gPad->GetUymax());
     //if(pxold) gVirtualX->DrawLine(pxold,pymin,pxold,pymax);
     //gVirtualX->DrawLine(px,pymin,px,pymax);
     gPad->SetUniqueID(px);
@@ -162,9 +167,7 @@ void xRooNode::Interactive_PLLPlot() {
 
 }
 
-#include "TSystem.h"
-
-void xRooNode::InteractiveObject::Interactive_PLLPlot(TVirtualPad *pad, TObject *obj, Int_t x, Int_t y) {
+void xRooNode::InteractiveObject::Interactive_PLLPlot(TVirtualPad *pad, TObject *obj, Int_t x, Int_t /*y*/) {
 
     if(auto g = dynamic_cast<TGraph*>(obj); g && pad && pad->GetMother() && pad->GetNumber()==1) {
         auto frPad = pad->GetMother()->GetPad(2);
@@ -192,3 +195,7 @@ void xRooNode::InteractiveObject::Interactive_PLLPlot(TVirtualPad *pad, TObject 
     }
 
 }
+
+#ifdef XROOFIT_NAMESPACE
+}
+#endif

@@ -7,7 +7,7 @@
  * Including this should give you access to all xRooFit features
  */
 
-#include "xRooFit/xRooNode.h"
+#include "xRooNode.h"
 
 class RooAbsData;
 class RooAbsCollection;
@@ -15,7 +15,6 @@ class RooFitResult;
 class RooAbsPdf;
 class RooAbsReal;
 class RooLinkedList;
-class xRooNLLVar;
 
 #include "Fit/FitConfig.h"
 
@@ -24,6 +23,12 @@ class xRooNLLVar;
 class TCanvas;
 
 #include <memory>
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
+
+class xRooNLLVar;
 
 class xRooFit {
 
@@ -162,7 +167,13 @@ public:
 
 };
 
-#include "xRooFit/xRooNLLVar.h"
-#include "xRooFit/xRooHypoSpace.h"
+#ifdef XROOFIT_NAMESPACE
+}
+#endif
 
+#include "xRooNLLVar.h"
+#include "xRooHypoSpace.h"
+
+
+  
 #endif // include guard

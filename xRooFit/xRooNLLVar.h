@@ -1,6 +1,6 @@
 #pragma once
 
-#include "xRooFit/xRooFit.h"
+#include "xRooFit.h"
 
 class RooAbsPdf;
 class RooAbsData;
@@ -18,7 +18,6 @@ class TGraphErrors;
 #include "Fit/FitConfig.h"
 #include "Math/IOptions.h"
 
-#include "xRooFit.h"
 #include <map>
 #include <set>
 #include "TAttFill.h"
@@ -30,6 +29,10 @@ namespace RooStats{
     class HypoTestResult;
     class HypoTestInverterResult;
 }
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
 
 class xRooNLLVar : public std::shared_ptr<RooAbsReal> {
 
@@ -281,3 +284,7 @@ public:
     bool kReuseNLL = true;
 
 };
+
+#ifdef XROOFIT_NAMESPACE
+}
+#endif

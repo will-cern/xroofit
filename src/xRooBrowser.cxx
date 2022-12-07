@@ -8,6 +8,10 @@
 #include "TFile.h"
 #include "RooWorkspace.h"
 
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
+
 xRooBrowser::xRooBrowser(xRooNode* o) : TBrowser("RooBrowser", o, "RooFit Browser"), fTopNode(o) {
 
 
@@ -75,3 +79,6 @@ xRooBrowser::xRooBrowser() :xRooBrowser([]() {
     */
 }
 
+#ifdef XROOFIT_NAMESPACE
+}
+#endif

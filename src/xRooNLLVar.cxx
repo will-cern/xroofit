@@ -29,7 +29,26 @@
 
 #include "Math/GenAlgoOptions.h"
 
+#define private public
+#include "RooWorkspace.h"
+#undef private
 
+#include "TMultiGraph.h"
+#include "TCanvas.h"
+#include "TArrow.h"
+#include "RooStringVar.h"
+#include "TDirectory.h"
+#include "TStyle.h"
+#include "TH1D.h"
+#include "TLegend.h"
+
+#define protected public
+#include "RooStats/HypoTestResult.h"
+#undef protected
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
 
 std::set<int> xRooNLLVar::xRooHypoPoint::allowedStatusCodes = {0};
 
@@ -192,9 +211,7 @@ void xRooNLLVar::Print(Option_t*) {
     std::cout << "Last Rebuild Log Output: " << fFuncCreationLog << std::endl;
 }
 
-#define private public
-#include "RooWorkspace.h"
-#undef private
+
 
 void xRooNLLVar::reinitialize() {
     TString oldName = ""; if (std::shared_ptr<RooAbsReal>::get()) oldName = std::shared_ptr<RooAbsReal>::get()->GetName();
@@ -363,7 +380,7 @@ ROOT::Math::IOptions* xRooNLLVar::fitConfigOptions() {
 double xRooNLLVar::getEntryVal(size_t entry) {
     auto _data = data();
     if (!_data) return 0;
-    if (_data->numEntries()<=entry) return 0;
+    if (size_t(_data->numEntries())<=entry) return 0;
     auto _pdf = pdf();
     *std::unique_ptr<RooAbsCollection>(_pdf->getObservables(_data)) = *_data->get(entry);
     //if (auto s = dynamic_cast<RooSimultaneous*>(_pdf.get());s) return -_data->weight()*s->getPdf(s->indexCat().getLabel())->getLogVal(_data->get());
@@ -378,9 +395,7 @@ std::shared_ptr<RooArgSet> xRooNLLVar::pars(bool stripGlobalObs) {
     return out;
 }
 
-#include "TMultiGraph.h"
-#include "TCanvas.h"
-#include "TArrow.h"
+
 
 void xRooNLLVar::Draw(Option_t* opt) {
     TString sOpt(opt);
@@ -442,7 +457,7 @@ void xRooNLLVar::Draw(Option_t* opt) {
         double low = v->getVal(); double high = low;
         double step = (v->getMax() - v->getMin())/100;
         double init = v->getVal(); double initVal = func()->getVal();
-        double xscale = (normRange) ? (2.*(v->getMax() - v->getMin())) : 1.;
+        //double xscale = (normRange) ? (2.*(v->getMax() - v->getMin())) : 1.;
         auto currTime = std::chrono::steady_clock::now();
         while( out->GetN() < 100 && (low > v->getMin() || high < v->getMax()) ) {
             if(out->GetN()==0) {
@@ -652,12 +667,12 @@ std::pair<double,double> xRooNLLVar::xRooHypoPoint::getVal(const char* what) {
                                                              sWhat.Index(" ",sWhat.Index("exp"))==-1 ? sWhat.Length() : sWhat.Index(" ",sWhat.Index("exp")))).Atof()) : std::numeric_limits<double>::quiet_NaN();
 
     bool toys = sWhat.Contains("toys");
-    bool asymp = sWhat.Contains("asymp");
+    //bool asymp = sWhat.Contains("asymp");
 
     bool readOnly = sWhat.Contains("readonly");
 
     struct RestoreNll {
-        RestoreNll(std::shared_ptr<xRooNLLVar>& v, bool r) : var(v), rr(r) {
+        RestoreNll(std::shared_ptr<xRooNLLVar>& v, bool r) : rr(r),var(v) {
             if (rr && var && var->get()) {
                 _readOnly = var->get()->getAttribute("readOnly");
                 var->get()->setAttribute("readOnly",rr);
@@ -897,7 +912,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit(bool readOnl
     return (fUfit = nllVar->minimize());
 }
 
-#include "RooStringVar.h"
+
 std::string collectionContents(const RooAbsCollection& coll) {
     std::string out;
     for(auto & c : coll) {
@@ -1032,7 +1047,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed) {
     return out;
 }
 
-#include "TDirectory.h"
+
 
 void xRooNLLVar::xRooHypoPoint::addToys(bool alt,int nToys, int initialSeed) {
     if ( (alt && !cfit_alt()) || (!alt && !cfit_null()) ) {
@@ -1130,9 +1145,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::hypoPoint(double value, double alt_value, 
 }
 
 
-#include "TStyle.h"
-#include "TH1D.h"
-#include "TLegend.h"
+
 
 void xRooNLLVar::xRooHypoPoint::Draw(Option_t* opt) {
 
@@ -1392,9 +1405,7 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char* parName,const xRooFi
     return s;
 }
 
-#define protected public
-#include "RooStats/HypoTestResult.h"
-#undef protected
+
 
 RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result() {
     RooStats::HypoTestResult out; out.SetBackgroundAsAlt(true);
@@ -1466,3 +1477,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result() {
 
     return out;
 }
+
+#ifdef XROOFIT_NAMESPACE
+}
+#endif

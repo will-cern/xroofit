@@ -1,7 +1,8 @@
 #pragma clang diagnostic push
-#pragma ide diagnostic ignored "misc-no-recursion"
+
 
 #include "xRooFit/xRooNode.h"
+#include "xRooFit/xRooFit.h"
 
 #define protected public
 #include "TRootBrowser.h"
@@ -54,6 +55,7 @@
 #include "TGListTree.h"
 #include "TGMsgBox.h"
 #include "TGedEditor.h"
+#include "TGMimeTypes.h"
 
 //#include "RooFitTrees/RooFitResultTree.h"
 //#include "RooFitTrees/RooDataTree.h"
@@ -69,6 +71,32 @@
 
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6,24,00)
 #include "RooBinSamplingPdf.h"
+#endif
+
+#include "RooPoisson.h"
+#include "RooGaussian.h"
+#include "RooFormulaVar.h"
+#include "TVectorD.h"
+#include "TStopwatch.h"
+#include "TTimeStamp.h"
+
+#include <csignal>
+#include "TSystem.h"
+
+#include "TCanvas.h"
+#include "THStack.h"
+
+#include "TLegend.h"
+#include "TLegendEntry.h"
+#include "TGraphErrors.h"
+#include "TMultiGraph.h"
+#include "TFrame.h"
+
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#else
+#pragma ide diagnostic ignored "misc-no-recursion"
 #endif
 
 xRooNode::InteractiveObject* xRooNode::gIntObj = nullptr;
@@ -719,7 +747,7 @@ TAxis* xRooNode::GetXaxis() const {
     return fXAxis.get();
 }
 
-#include "TGMimeTypes.h"
+
 
 const char* xRooNode::GetIconName() const {
     if (auto o = get(); o) {
@@ -893,7 +921,7 @@ xRooNode xRooNode::Remove(const xRooNode& child) {
                 p->removeServer(*arg, true);
                 // have to be careful removing coef because if shared will end up removing them all!!
                 std::vector<RooAbsArg*> _coefs;
-                for(int ii=0;ii<p->_coefList.size();ii++) { if(ii != idx) _coefs.push_back(p->_coefList.at(ii)); }
+                for(size_t ii=0;ii<p->_coefList.size();ii++) { if(ii != size_t(idx)) _coefs.push_back(p->_coefList.at(ii)); }
                 p->_coefList.removeAll();
                 for(auto& a : _coefs) p->_coefList.add(*a);
 
@@ -1551,8 +1579,7 @@ void xRooNode::Print(Option_t *opt) const {
 
 
 
-#include "RooPoisson.h"
-#include "RooGaussian.h"
+
 
 xRooNode xRooNode::Constrain(const xRooNode& child) {
     if (!child.get()) {
@@ -2366,7 +2393,7 @@ xRooNode& xRooNode::operator=(const TObject& o) {
      */
 }
 
-#include "RooFormulaVar.h"
+
 
 void xRooNode::_fitTo_(const char* datasetName,const char* constParValues) {
     try {
@@ -3208,7 +3235,7 @@ bool xRooNode::SetXaxis(const RooAbsBinning& binning) {
     auto name = binning.GetName();
     double high = binning.highBound();
     double low = binning.lowBound();
-    int nbins = binning.numBins();
+    //int nbins = binning.numBins();
     auto title = binning.GetTitle();
 
     // if have any dependents and name isn't one of them then stop
@@ -3291,7 +3318,7 @@ std::shared_ptr<xRooNode> xRooNode::at(const std::string& name, bool browseResul
         }
     }
     // before giving up see if partName is numeric and indexes within the range
-    if (TString s(partname); s.IsDec() && s.Atoi()<size()) {
+    if (TString s(partname); s.IsDec() && size_t(s.Atoi())<size()) {
         auto child2 = at(s.Atoi());
         if (partname != name) {
             return child2->at(name.substr(partname.length()+1));
@@ -4019,14 +4046,14 @@ xRooNode xRooNode::variations() const {
         }
     } else if (auto p = get<PiecewiseInterpolation>(); p) {
         out.emplace_back(std::make_shared<xRooNode>("nominal",p->_nominal.arg(),*this));
-        for(int i=0;i < p->paramList().size();i++) {
+        for(size_t i=0;i < p->paramList().size();i++) {
             // TODO: should we only return one if we find they are symmetrized?
             out.emplace_back(std::make_shared<xRooNode>(TString::Format("%s=1",p->paramList().at(i)->GetName()),*p->highList().at(i),*this));
             out.emplace_back(std::make_shared<xRooNode>(TString::Format("%s=-1",p->paramList().at(i)->GetName()),*p->lowList().at(i),*this));
         }
     } else if(auto p = get<RooStats::HistFactory::FlexibleInterpVar>(); p) {
         out.emplace_back(std::make_shared<xRooNode>("nominal", RooFit::RooConst(p->_nominal), *this));
-        for (int i = 0; i < p->_paramList.size(); i++) {
+        for (size_t i = 0; i < p->_paramList.size(); i++) {
             out.emplace_back(std::make_shared<xRooNode>(TString::Format("%s=1", p->_paramList.at(i)->GetName()),
                                                       RooFit::RooConst(p->_high.at(i)), *this));
             out.emplace_back(std::make_shared<xRooNode>(TString::Format("%s=-1", p->_paramList.at(i)->GetName()),
@@ -4832,7 +4859,7 @@ xRooNode xRooNode::reduced(const std::string& _range) const {
 //    return out;
 //}
 
-#include "TVectorD.h"
+
 
 class PdfWrapper : public RooAbsPdf {
 public:
@@ -4945,10 +4972,7 @@ private:
     bool fExpectedEventsMode=false;
 };
 
-#include "TStopwatch.h"
-#include "TTimeStamp.h"
 
-#include <csignal>
 
 const xRooNode* runningNode = nullptr;
 void (*gOldHandlerr)(int);
@@ -5107,7 +5131,7 @@ TH1* xRooNode::BuildHistogram(RooAbsLValue* v, bool empty, bool errors, int binS
 //        }
 
 
-        if (!fr->_VM || fr->_VM->GetNcols() < fr->floatParsFinal().size()) {
+        if (!fr->_VM || size_t(fr->_VM->GetNcols()) < fr->floatParsFinal().size()) {
             TMatrixDSym cov(fr->floatParsFinal().getSize());
             auto prevCov = fr->_VM;
             if (prevCov) {
@@ -5278,13 +5302,7 @@ xRooNode xRooNode::mainChild() const {
 
 void xRooNode::Inspect() const { if(auto o = get();o) o->Inspect(); else TNamed::Inspect(); }
 
-#include "TSystem.h"
 
-#include "TCanvas.h"
-#include "THStack.h"
-
-#include "TLegend.h"
-#include "TLegendEntry.h"
 
 Bool_t TopRightPlaceBox(TPad* p, TObject* o, Double_t w, Double_t h, Double_t& xl, Double_t& yb) {
         p->FillCollideGrid(o);
@@ -5386,9 +5404,7 @@ void addLegendEntry(TObject* o, const char* title, const char* opt) {
     getLegend(); // to mark modified
 }
 
-#include "TGraphErrors.h"
-#include "TMultiGraph.h"
-#include "TFrame.h"
+
 
 // this exists to avoid calling update excessively because it slows down x11 ... but still
 // need to call update twice if have a legend drawn in order to relocate it.
@@ -5666,7 +5682,7 @@ void xRooNode::Draw(Option_t* opt) {
         }
         int i=0;
         auto& chanVar = const_cast<RooAbsCategoryLValue&>(_simPdf->indexCat());
-        auto _idx = chanVar.getIndex();
+        //auto _idx = chanVar.getIndex();
         auto _range = GetRange();
         std::vector<TString> chanPatterns;
         if (_range && strlen(_range)) {
@@ -6355,8 +6371,8 @@ void xRooNode::Draw(Option_t* opt) {
 
             // get common prefix to strip off only if all titles match names and
             // any title is longer than 10 chars
-            int e = std::min(allTitles.begin()->size(),allTitles.rbegin()->size());
-            int ii = 0;
+            size_t e = std::min(allTitles.begin()->size(),allTitles.rbegin()->size());
+            size_t ii = 0;
             bool goodPrefix = false;
             std::string commonSuffix;
             if (titleMatchName && ll->GetEntries()>1) {
@@ -6367,7 +6383,7 @@ void xRooNode::Draw(Option_t* opt) {
 
                 // find common suffix if there is one .. must start with a "_"
                 bool stop=false;
-                while(!stop && commonSuffix.size() < e-1) {
+                while(!stop && commonSuffix.size() < size_t(e-1)) {
                     commonSuffix = allTitles.begin()->substr(allTitles.begin()->length()-commonSuffix.length()-1);
                     for(auto& t : allTitles) {
                         if (!TString(t).EndsWith(commonSuffix.c_str())) {
@@ -6384,8 +6400,7 @@ void xRooNode::Draw(Option_t* opt) {
 
             // also find how many characters are needed to distinguish all entries (that dont have the same name)
             // then carry on up to first space or underscore
-            int jj=0;
-            bool someSame=true;
+            size_t jj=0;
             std::map<std::string,std::string> reducedTitles;
             while(reducedTitles.size() != allTitles.size()) {
                 jj++;
@@ -6762,7 +6777,7 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
 //        fr->setFinalParList(l2);
 //    }
 
-    if (!fr->_VM || fr->_VM->GetNcols() < fr->floatParsFinal().size()) {
+    if (!fr->_VM || size_t(fr->_VM->GetNcols()) < fr->floatParsFinal().size()) {
         TMatrixDSym cov(fr->floatParsFinal().getSize());
         auto prevCov = fr->_VM;
         if (prevCov) {
@@ -6827,6 +6842,10 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
     return out;
 
 }
+
+#ifdef XROOFIT_NAMESPACE
+}
+#endif
 
 
 #pragma clang diagnostic pop

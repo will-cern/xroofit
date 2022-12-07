@@ -1,8 +1,13 @@
 #pragma once
 
-#include "xRooFit/xRooNode.h"
+#include "xRooNode.h"
 
 #include "TBrowser.h"
+
+#ifdef XROOFIT_NAMESPACE
+namespace XROOFIT_NAMESPACE {
+#endif
+
 class xRooBrowser: public TBrowser {
 public:
     xRooBrowser();
@@ -10,7 +15,7 @@ public:
 
     xRooNode* GetSelected() { return dynamic_cast<xRooNode*>(TBrowser::GetSelected()); }
 
-    void ls(const char* path = nullptr) {
+    void ls(const char* path = nullptr) const override {
         if (!fNode) return;
         if (!path) fNode->Print();
         else {
@@ -32,3 +37,7 @@ private:
 ClassDefOverride(TBrowser,0)
 
 };
+
+#ifdef XROOFIT_NAMESPACE
+}
+#endif
