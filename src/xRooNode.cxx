@@ -427,7 +427,6 @@ void xRooNode::Browse(TBrowser* b) {
     }
 
 
-
     browse();
     if (empty()) {
         try {
@@ -487,7 +486,7 @@ void xRooNode::Browse(TBrowser* b) {
             // property node -- display the  name of the contained object
             if (v->get()) _name = TString::Format("%s: %s::%s",_name.Data(),v->get()->ClassName(),
                                                   (v->get<RooAbsArg>() && v->get<RooAbsArg>()->getStringAttribute("alias")) ? v->get<RooAbsArg>()->getStringAttribute("alias") : v->get()->GetName());
-        } else if (v->get() && !v->get<TFile>()) _name = TString::Format("%s::%s",v->get()->ClassName(),_name.Data());
+        } else if (v->get() && !v->get<TFile>() && !TString(v->GetName()).BeginsWith('/')) _name = TString::Format("%s::%s",v->get()->ClassName(),_name.Data());
         if (auto _type = v->GetNodeType(); strlen(_type)) {
             // decided not to show const values until figure out how to update if value changes
             /*if (TString(_type)=="Const") _name += TString::Format(" [%s=%g]",_type,v->get<RooConstVar>()->getVal());
@@ -2747,7 +2746,11 @@ bool xRooNode::SetBinError(int bin, double value) {
                 if (parNames!="") parNames += ",";
                 parNames += p->get()->GetName();
             }
-            auto h = std::shared_ptr<TH1>( f->dataHist().createHistogram(parNames) );
+            auto h = std::unique_ptr<TH1>( f->dataHist().createHistogram(parNames
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 27, 00)
+            , RooCmdArg::none()
+#endif
+                                                                           ) );
             h->Reset();
             h->SetName("statFactor");
             h->SetTitle(TString::Format("StatFactor of %s",f->GetTitle()));
