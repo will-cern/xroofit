@@ -64,7 +64,7 @@ xRooBrowser::xRooBrowser(xRooNode *o) : TBrowser("RooBrowser", o, "RooFit Browse
    // override file menu event handling so that can intercept "Open"
    if(auto rb = dynamic_cast<TRootBrowser *>(GetBrowserImp())) {
       rb->Disconnect(rb->fMenuFile, "Activated(Int_t)", rb, "HandleMenu(Int_t)");
-      rb->fMenuFile->Connect("Activated(Int_t)", "xRooBrowser", this, "HandleMenu(Int_t)");
+      rb->fMenuFile->Connect("Activated(Int_t)", ClassName(), this, "HandleMenu(Int_t)");
    }
 }
 

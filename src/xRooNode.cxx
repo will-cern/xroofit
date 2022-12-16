@@ -499,14 +499,8 @@ void xRooNode::Browse(TBrowser* b) {
         b->Add(v.get(),_name,_checked);
         if (auto o = v->get(); o) v->TNamed::SetNameTitle(nameSave,titleSave);
         if (_checked!=-1) {
-#ifdef XROOFIT_NAMESPACE
-           std::string _classname = TOSTRING(XROOFIT_NAMESPACE);
-           _classname += "::xRooNode";
-#else
-           std::string _classname = "xRooNode";
-#endif
             dynamic_cast<TQObject*>(b->GetBrowserImp())->Connect(
-                    "Checked(TObject *, Bool_t)",_classname.c_str(),
+                    "Checked(TObject *, Bool_t)",ClassName(),
                     v.get(),"Checked(TObject *, Bool_t)");
             if(auto _fr = v->get<RooFitResult>(); _fr && _fr->status()) v->GetTreeItem(b)->SetColor(kRed);
         }
@@ -5667,13 +5661,7 @@ void xRooNode::Draw(Option_t* opt) {
         if(gPad->GetCanvas() && !gPad->GetCanvas()->TestBit(TCanvas::kShowEventStatus)) {
             gPad->GetCanvas()->ToggleEventStatus();
         }
-#ifdef XROOFIT_NAMESPACE
-        std::string _classname = TOSTRING(XROOFIT_NAMESPACE);
-        _classname += "::xRooNode";
-#else
-        std::string _classname = "xRooNode";
-#endif
-        gPad->AddExec("interactivePull",(_classname + "::Interactive_Pull()").c_str());
+        gPad->AddExec("interactivePull",TString::Format("%s::Interactive_Pull()",ClassName()));
 
         pad->cd();
         return;
