@@ -10,34 +10,29 @@
  * listed in LICENSE (http://roofit.sourceforge.net/license.txt)
  */
 
-#ifndef XROOFIT_NAMESPACE
-#pragma once
+#include "Config.h"
+
+#ifdef XROOFIT_USE_PRAGMA_ONCE
+# pragma once
 #endif
-#if !defined(XROOFIT_XROONODE_H) || !defined(XROOFIT_NAMESPACE)
-#define XROOFIT_XROONODE_H
+#if !defined(XROOFIT_XROONODE_H) || defined(XROOFIT_USE_PRAGMA_ONCE)
+# ifndef XROOFIT_USE_PRAGMA_ONCE
+#  define XROOFIT_XROONODE_H
+# endif
 
 #include "TNamed.h"
 #include <vector>
 #include <functional>
 
-class TAxis;
-#ifdef XROOFIT_NAMESPACE
-namespace XROOFIT_NAMESPACE {
-#endif
-
-class xRooNode;
-
-#ifdef XROOFIT_NAMESPACE
-}
-#endif
 class RooWorkspace;
 class RooAbsReal;
 class TH1;
 class RooAbsLValue;
 class RooArgList;
 class RooAbsBinning;
-class TGraph;
 class RooFitResult;
+class TGraph;
+class TAxis;
 class TGListTreeItem;
 class TGListTree;
 class TVirtualPad;
@@ -48,10 +43,9 @@ class TStyle;
 #include "RooCmdArg.h"
 #include "TQObject.h"
 
-#ifdef XROOFIT_NAMESPACE
-namespace XROOFIT_NAMESPACE {
-#endif
+BEGIN_XROOFIT_NAMESPACE
 
+class xRooNode;
 class xRooNLLVar;
 
 class xRooNode : public TNamed, public std::vector<std::shared_ptr<xRooNode>> {
@@ -135,7 +129,7 @@ public:
    explicit operator bool() const { return strlen(GetName()) || get(); } // the 'null' Component is the empty string
 
    // at doesn't do an initial browse of the object, unlike [] operator
-   const std::shared_ptr<xRooNode> &at(ssize_t idx, bool browseResult = true) const
+   const std::shared_ptr<xRooNode> &at(size_t idx, bool browseResult = true) const
    {
       IsFolder();
       auto &out = std::vector<std::shared_ptr<xRooNode>>::at(idx);
@@ -151,7 +145,7 @@ public:
    bool contains(const std::string &name) const; // doesn't trigger a browse of the found object, unlike find
 
    // most users should use these methods: will do an initial browse and will browse the returned object too
-   std::shared_ptr<xRooNode> operator[](ssize_t idx) { return at(idx); }
+   std::shared_ptr<xRooNode> operator[](size_t idx) { return at(idx); }
    std::shared_ptr<xRooNode> operator[](const std::string &name); // will create a child node if not existing
 
    // needed in pyROOT to avoid it creating iterators that follow the 'get' to death
@@ -382,8 +376,6 @@ public:
    ClassDefOverride(xRooNode, 0)
 };
 
-#ifdef XROOFIT_NAMESPACE
-}
-#endif
+END_XROOFIT_NAMESPACE
 
 #endif // include guard

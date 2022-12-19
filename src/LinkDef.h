@@ -1,4 +1,6 @@
-//#include "xRooFit/xRooFit.h"
+//#include "../xRooFit/xRooFit.h"
+
+//#define XROOFIT_USE_PRAGMA_ONCE
 
 #pragma link C++ class xRooFit+;
 #pragma link C++ class xRooNode+;
