@@ -117,7 +117,18 @@ or even just open the workspace file and then do:
 ```python
 b = ROOT.xRooBrowser()
 ```
-which will browse all workspaces of all open files. 
+which will browse all workspaces of all open files.
+
+You can browse through an `xRooNode` from the command line using the inspection methods, listed above. Specifically, in python, the easiest thing to do is use the `Print` method in combination with the operator `[<childName>]` so for example:
+
+```python
+w.Print() # lists all children
+w["simPdf"].Print() # if there was a child called simPdf then access it and print it too
+w["simPdf/chan1"].Print() # access the chan1 child in simPdf
+```
+
+Note that the folders that appear in the browser are *not* part of the path used in `[<childName>]`, this is because really the folders are just used as a way to organize the children of a node. It may be possible in the future to include folders in the path names but for now you should try not to think about folders as part of the paths. 
+
 
 ### Model Fitting
 
