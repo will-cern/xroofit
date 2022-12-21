@@ -38,8 +38,10 @@ struct cout_redirect {
       stderr = old4;
       if(fp) {
          std::fclose(fp);
-         std::ifstream t(filename);
-         buffer << t.rdbuf();
+         {
+            std::ifstream t(filename);
+            buffer << t.rdbuf();
+         }
          gSystem->Unlink(filename); // delete the temp file
       }
       out = buffer.str();
