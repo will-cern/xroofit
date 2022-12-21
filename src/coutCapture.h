@@ -18,7 +18,7 @@ struct cout_redirect {
    cout_redirect(std::string &_out, size_t bufSize = 102 * 1024) : out(_out), buffer2(nullptr), fp(nullptr)
    {
 
-      filename = TUUID().AsString();
+      filename = "xRooFit-logging-";
       old = std::cout.rdbuf(buffer.rdbuf());
       old2 = std::cerr.rdbuf(buffer.rdbuf());
       old3 = stdout;
