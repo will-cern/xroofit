@@ -40,7 +40,7 @@ struct cout_redirect {
          std::fclose(fp);
          std::ifstream t(filename);
          buffer << t.rdbuf();
-         // do we need to worry about deleting the temporary file? Assuming not ...
+         gSystem->Unlink(filename); // delete the temp file
       }
       out = buffer.str();
       if(buffer2) {
