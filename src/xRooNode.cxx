@@ -6181,7 +6181,7 @@ public:
    {
       if (fPad) {
          getLegend(false, true);
-         fPad->Update();
+         fPad->GetCanvas()->Update();
       }
       nExisting--;
    }
@@ -7166,6 +7166,7 @@ void xRooNode::Draw(Option_t *opt)
          h = existing;
          overlayExisted = true;
       } else {
+         TString oldStyle = (rar && rar->getStringAttribute("style")) ? rar->getStringAttribute("style") : "";
          h->SetTitle(overlayName);
          // for overlays will take style from current gStyle before overriding with personal style
          // this ensures initial style will be whatever gStyle is, rather than whatever ours is
@@ -7192,6 +7193,7 @@ void xRooNode::Draw(Option_t *opt)
          //            (TAttFill&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          //            (TAttMarker&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          auto _style = style(h);
+         rar->setStringAttribute("style",oldStyle=="" ? nullptr : oldStyle.Data()); // restores old style
          (TAttLine &)(*h) = *_style;
          (TAttFill &)(*h) = *_style;
          (TAttMarker &)(*h) = *_style;
