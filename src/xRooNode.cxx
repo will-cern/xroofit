@@ -6133,6 +6133,7 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
       l = new TLegend(0.6, 1. - gPad->GetTopMargin() - 0.08, 1. - gPad->GetRightMargin(),
                       1. - gPad->GetTopMargin() - 0.08);
       l->SetBorderSize(0);
+      if (l->GetTextSize()==0) l->SetTextSize(gStyle->GetTitleYSize());
    }
    l->SetBit(kCanDelete);
    // l->SetMargin(0);
