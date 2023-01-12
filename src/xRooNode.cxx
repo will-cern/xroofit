@@ -5776,9 +5776,9 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          if (x->hasError())
             h->SetBinError(1, x->getError());
          h->SetMaximum(x->hasMax() ? x->getMax()
-                                   : (h->GetBinContent(1) + std::max(abs(h->GetBinContent(1) * 0.1), 50.)));
+                                   : (h->GetBinContent(1) + std::max(std::abs(h->GetBinContent(1) * 0.1), 50.)));
          h->SetMinimum(x->hasMin() ? x->getMin()
-                                   : (h->GetBinContent(1) - std::max(abs(h->GetBinContent(1) * 0.1), 50.)));
+                                   : (h->GetBinContent(1) - std::max(std::abs(h->GetBinContent(1) * 0.1), 50.)));
          h->GetXaxis()->SetName(dynamic_cast<TObject *>(v)->GetName());
          return h;
       }
@@ -6133,6 +6133,7 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
       l = new TLegend(0.6, 1. - gPad->GetTopMargin() - 0.08, 1. - gPad->GetRightMargin(),
                       1. - gPad->GetTopMargin() - 0.08);
       l->SetBorderSize(0);
+      if (l->GetTextSize()==0) l->SetTextSize(gStyle->GetTitleYSize());
    }
    l->SetBit(kCanDelete);
    // l->SetMargin(0);
@@ -6181,7 +6182,7 @@ public:
    {
       if (fPad) {
          getLegend(false, true);
-         fPad->Update();
+         fPad->GetCanvas()->Update();
       }
       nExisting--;
    }
@@ -7166,6 +7167,7 @@ void xRooNode::Draw(Option_t *opt)
          h = existing;
          overlayExisted = true;
       } else {
+         TString oldStyle = (rar && rar->getStringAttribute("style")) ? rar->getStringAttribute("style") : "";
          h->SetTitle(overlayName);
          // for overlays will take style from current gStyle before overriding with personal style
          // this ensures initial style will be whatever gStyle is, rather than whatever ours is
@@ -7192,6 +7194,7 @@ void xRooNode::Draw(Option_t *opt)
          //            (TAttFill&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          //            (TAttMarker&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          auto _style = style(h);
+         rar->setStringAttribute("style",oldStyle=="" ? nullptr : oldStyle.Data()); // restores old style
          (TAttLine &)(*h) = *_style;
          (TAttFill &)(*h) = *_style;
          (TAttMarker &)(*h) = *_style;
