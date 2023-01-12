@@ -841,7 +841,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
                v->setVal(v->getMin());
                double boundary_nll = _nll->getVal();
                if (boundary_nll <= out->minNll()) {
-                  ((RooRealVar *)out->floatParsFinal().find(v->GetName()))->setVal(v->getMin());
+                  static_cast<RooRealVar*>(out->floatParsFinal().find(v->GetName()))->setVal(v->getMin());
                   out->setMinNLL(boundary_nll);
                   // Info("fit","Corrected %s onto minimum @ %g",v->GetName(),v->getMin());
                } else {
@@ -1119,8 +1119,8 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
 
    std::vector<std::pair<std::string,int>> statusHistory;
    for(int i=0;i<ufit.numStatusHistory();i++)
-      statusHistory.push_back(std::make_pair(ufit.statusLabelHistory(i),ufit.statusCodeHistory(i)));
-   statusHistory.push_back(std::make_pair(std::string(TString::Format("xMINOS_%s", parName)), status));
+      statusHistory.emplace_back(ufit.statusLabelHistory(i),ufit.statusCodeHistory(i));
+   statusHistory.emplace_back(TString::Format("xMINOS_%s", parName), status);
    const_cast<RooFitResult &>(ufit).setStatusHistory(statusHistory);
    const_cast<RooFitResult &>(ufit).setStatus(ufit.status() + status);
 
