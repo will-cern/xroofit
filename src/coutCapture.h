@@ -21,7 +21,7 @@ struct cout_redirect {
       filename = "xRooFit-logging-";
       old = std::cout.rdbuf(buffer.rdbuf());
       old2 = std::cerr.rdbuf(buffer.rdbuf());
-      old3 = stdout;
+      old3 = stdout; old4 = stderr;
       //buffer2 = (char *)calloc(sizeof(char), bufSize);fp = fmemopen(buffer2, bufSize, "w");
       fp = gSystem->TempFileName(filename);
       if(fp) {
