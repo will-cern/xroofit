@@ -10,9 +10,15 @@
  * listed in LICENSE (http://roofit.sourceforge.net/license.txt)
  */
 
+#include "RVersion.h"
+
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
 #define protected public
+#endif
 #include "RooFitResult.h"
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
 #undef protected
+#endif
 
 #include "xRooFit/xRooFit.h"
 
@@ -33,11 +39,7 @@
 
 #include "RooStats/AsymptoticCalculator.h"
 #include "Math/GenAlgoOptions.h"
-
-#define private public
 #include "RooMinimizer.h"
-#undef private
-
 #include "coutCapture.h"
 
 #include "TCanvas.h"
@@ -661,7 +663,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       bool restore = !_minimizer.fitter()->Config().UpdateAfterFit();
       _minimizer.fitter()->Config().SetUpdateAfterFit(true); // note: seems to always take effect
 
-      std::vector<TString> algNames;
+      std::vector<std::pair<std::string,int> > statusHistory;
 
       // gCurrentSampler = this;
       // gOldHandlerr = signal(SIGINT,toyInterruptHandlerr);
@@ -714,20 +716,15 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          }
 
          // RooMinimizer loses the useful status code, so here we will override it
-         status = _minimizer.fitter()
-                     ->Result()
-                     .Status(); // note: Minuit failure is status code 4, minuit2 that is edm above max
-         _minimizer._statusHistory.back().second = _minimizer.fitter()->Result().Status();
+         status = _minimizer.fitter()->Result().Status(); // note: Minuit failure is status code 4, minuit2 that is edm above max
          minim = _minimizer.fitter()->Config().MinimizerType(); // may have changed value
-         if (save)
-            algNames.push_back(_minimizer.fitter()->Config().MinimizerType() +
+         statusHistory.push_back(std::make_pair(_minimizer.fitter()->Config().MinimizerType() +
                                _minimizer.fitter()->Config().MinimizerAlgoType() +
-                               std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy()));
-         // int status = _minimizer->migrad();
+                               std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy()),status));
          if (status % 1000 == 0)
             break; // fit was good
 
-         if (_minimizer.fitter()->Result().Status() == 4 && minim != "Minuit") {
+         if (status == 4 && minim != "Minuit") {
             if (printLevel >= -1)
                Warning("fitTo", "%s Hit max function calls of %d", fitName.Data(),
                        _minimizer.fitter()->Config().MinimizerOptions().MaxFunctionCalls());
@@ -818,15 +815,10 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       // signal(SIGINT,gOldHandlerr);
       out = _minimizer.save(fitName, resultTitle);
 
-      if (save) {
-         // modify the statusHistory to use the algnames instead ..
-         int i = 0;
-         for (auto &ss : algNames) {
-            out->_statusHistory[i++].first = ss;
-         }
-      }
+      out->setStatusHistory(statusHistory);
 
-      out->_constPars->addClone(fUserPars, true);
+      // userPars wont have been added to the RooFitResult by RooMinimizer
+      const_cast<RooArgList&>(out->constPars()).addClone(fUserPars, true);
 
       if (boundaryCheck) {
          // check if any of the parameters are at their limits (potentially a problem with fit)
@@ -849,7 +841,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
                v->setVal(v->getMin());
                double boundary_nll = _nll->getVal();
                if (boundary_nll <= out->minNll()) {
-                  ((RooRealVar *)out->_finalPars->find(v->GetName()))->setVal(v->getMin());
+                  ((RooRealVar *)out->floatParsFinal().find(v->GetName()))->setVal(v->getMin());
                   out->setMinNLL(boundary_nll);
                   // Info("fit","Corrected %s onto minimum @ %g",v->GetName(),v->getMin());
                } else {
@@ -881,8 +873,9 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          }
 
          // store the limit check result
-         out->_statusHistory.push_back(std::make_pair("BOUNDCHK", limit_status));
-         out->_status += limit_status;
+         statusHistory.push_back(std::make_pair("BOUNDCHK", limit_status));
+         out->setStatusHistory(statusHistory);
+         out->setStatus(out->status()+limit_status);
       }
 
       //        // automatic parameter range adjustment based on errors
@@ -941,7 +934,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
    }
    if (out && !logs.empty()) {
       // save logs to StringVar in constPars list
-      out->_constPars->addClone(RooStringVar(".log", "log", logs.c_str()));
+      const_cast<RooArgList&>(out->constPars()).addClone(RooStringVar(".log", "log", logs.c_str()));
    }
 
    if (out && cacheDir && cacheDir->IsWritable()) {
@@ -961,7 +954,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
             dir->WriteObject(&fitConfig, configName.data());
          }
          // add the fitConfig name into the fit result before writing, so can retrieve in future
-         out->_constPars->addClone(RooStringVar(".fitConfigName", "fitConfigName", configName.c_str()));
+         const_cast<RooArgList&>(out->constPars()).addClone(RooStringVar(".fitConfigName", "fitConfigName", configName.c_str()));
 
          dir->WriteObject(out, out->GetName());
       }
@@ -1124,9 +1117,12 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
    fitConfig.SetMinosErrors(mErrs);
    par->setConstant(isConst);
 
-   const_cast<RooFitResult &>(ufit)._statusHistory.push_back(
-      std::make_pair(std::string(TString::Format("xMINOS_%s", parName)), status));
-   const_cast<RooFitResult &>(ufit)._status += status;
+   std::vector<std::pair<std::string,int>> statusHistory;
+   for(int i=0;i<ufit.numStatusHistory();i++)
+      statusHistory.push_back(std::make_pair(ufit.statusLabelHistory(i),ufit.statusCodeHistory(i)));
+   statusHistory.push_back(std::make_pair(std::string(TString::Format("xMINOS_%s", parName)), status));
+   const_cast<RooFitResult &>(ufit).setStatusHistory(statusHistory);
+   const_cast<RooFitResult &>(ufit).setStatus(ufit.status() + status);
 
    return status;
 }
