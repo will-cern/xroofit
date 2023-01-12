@@ -1004,12 +1004,12 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
    auto findValue = [&](double val_guess, double N_sigma = 1, double precision = 0.002, int printLevel = 0) {
       double tmu;
       int nrItr = 0;
-      double sigma_guess = fabs((val_guess - val_best) / N_sigma);
+      double sigma_guess = std::abs((val_guess - val_best) / N_sigma);
       double val_pre =
          val_guess -
          10 * precision * sigma_guess; // this is just to set value st. guarantees will do at least one iteration
       bool lastOverflow = false, lastUnderflow = false;
-      while (fabs(val_pre - val_guess) > precision * sigma_guess) {
+      while (std::abs(val_pre - val_guess) > precision * sigma_guess) {
          val_pre = val_guess;
          if (val_guess > 0 && par->getMax() < val_guess)
             par->setMax(2 * val_guess);
