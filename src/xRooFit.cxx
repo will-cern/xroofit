@@ -663,7 +663,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       bool restore = !_minimizer.fitter()->Config().UpdateAfterFit();
       _minimizer.fitter()->Config().SetUpdateAfterFit(true); // note: seems to always take effect
 
-      std::vector<std::pair<std::string,int> > statusHistory;
+      std::vector<std::pair<std::string, int>> statusHistory;
 
       // gCurrentSampler = this;
       // gOldHandlerr = signal(SIGINT,toyInterruptHandlerr);
@@ -716,11 +716,14 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          }
 
          // RooMinimizer loses the useful status code, so here we will override it
-         status = _minimizer.fitter()->Result().Status(); // note: Minuit failure is status code 4, minuit2 that is edm above max
+         status = _minimizer.fitter()
+                     ->Result()
+                     .Status(); // note: Minuit failure is status code 4, minuit2 that is edm above max
          minim = _minimizer.fitter()->Config().MinimizerType(); // may have changed value
-         statusHistory.push_back(std::make_pair(_minimizer.fitter()->Config().MinimizerType() +
-                               _minimizer.fitter()->Config().MinimizerAlgoType() +
-                               std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy()),status));
+         statusHistory.push_back(std::make_pair(
+            _minimizer.fitter()->Config().MinimizerType() + _minimizer.fitter()->Config().MinimizerAlgoType() +
+               std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy()),
+            status));
          if (status % 1000 == 0)
             break; // fit was good
 
@@ -818,7 +821,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       out->setStatusHistory(statusHistory);
 
       // userPars wont have been added to the RooFitResult by RooMinimizer
-      const_cast<RooArgList&>(out->constPars()).addClone(fUserPars, true);
+      const_cast<RooArgList &>(out->constPars()).addClone(fUserPars, true);
 
       if (boundaryCheck) {
          // check if any of the parameters are at their limits (potentially a problem with fit)
@@ -841,7 +844,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
                v->setVal(v->getMin());
                double boundary_nll = _nll->getVal();
                if (boundary_nll <= out->minNll()) {
-                  static_cast<RooRealVar*>(out->floatParsFinal().find(v->GetName()))->setVal(v->getMin());
+                  static_cast<RooRealVar *>(out->floatParsFinal().find(v->GetName()))->setVal(v->getMin());
                   out->setMinNLL(boundary_nll);
                   // Info("fit","Corrected %s onto minimum @ %g",v->GetName(),v->getMin());
                } else {
@@ -873,9 +876,9 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          }
 
          // store the limit check result
-         statusHistory.push_back(std::make_pair("BOUNDCHK", limit_status));
+         statusHistory.emplace_back("BOUNDCHK", limit_status);
          out->setStatusHistory(statusHistory);
-         out->setStatus(out->status()+limit_status);
+         out->setStatus(out->status() + limit_status);
       }
 
       //        // automatic parameter range adjustment based on errors
@@ -934,7 +937,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
    }
    if (out && !logs.empty()) {
       // save logs to StringVar in constPars list
-      const_cast<RooArgList&>(out->constPars()).addClone(RooStringVar(".log", "log", logs.c_str()));
+      const_cast<RooArgList &>(out->constPars()).addOwned(*new RooStringVar(".log", "log", logs.c_str()));
    }
 
    if (out && cacheDir && cacheDir->IsWritable()) {
@@ -954,7 +957,8 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
             dir->WriteObject(&fitConfig, configName.data());
          }
          // add the fitConfig name into the fit result before writing, so can retrieve in future
-         const_cast<RooArgList&>(out->constPars()).addClone(RooStringVar(".fitConfigName", "fitConfigName", configName.c_str()));
+         const_cast<RooArgList &>(out->constPars())
+            .addOwned(*new RooStringVar(".fitConfigName", "fitConfigName", configName.c_str()));
 
          dir->WriteObject(out, out->GetName());
       }
@@ -1117,9 +1121,9 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
    fitConfig.SetMinosErrors(mErrs);
    par->setConstant(isConst);
 
-   std::vector<std::pair<std::string,int>> statusHistory;
-   for(int i=0;i<ufit.numStatusHistory();i++)
-      statusHistory.emplace_back(ufit.statusLabelHistory(i),ufit.statusCodeHistory(i));
+   std::vector<std::pair<std::string, int>> statusHistory;
+   for (int i = 0; i < ufit.numStatusHistory(); i++)
+      statusHistory.emplace_back(ufit.statusLabelHistory(i), ufit.statusCodeHistory(i));
    statusHistory.emplace_back(TString::Format("xMINOS_%s", parName), status);
    const_cast<RooFitResult &>(ufit).setStatusHistory(statusHistory);
    const_cast<RooFitResult &>(ufit).setStatus(ufit.status() + status);
@@ -1244,8 +1248,8 @@ xRooFit::hypoTest(RooWorkspace &w, int nToysNull, int /*nToysAlt*/, const xRooFi
             Info("hypoTest", "No altVal found - to specify setStringAttribute(\"altVal\",\"<value>\") on POI or set "
                              "the physical range");
       }
-      bool doCLs =
-         !std::isnan(altVal) && std::abs(mu->getMin("hypoPoints")) > altVal && std::abs(mu->getMax("hypoPoints")) > altVal;
+      bool doCLs = !std::isnan(altVal) && std::abs(mu->getMin("hypoPoints")) > altVal &&
+                   std::abs(mu->getMax("hypoPoints")) > altVal;
 
       const char *sCL = (doCLs) ? "CLs" : "null";
       Info("hypoTest", "%s testing active", sCL);
