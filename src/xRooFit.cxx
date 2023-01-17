@@ -16,7 +16,7 @@
 #define protected public
 #endif
 #include "RooFitResult.h"
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
+#ifdef protected
 #undef protected
 #endif
 
@@ -505,8 +505,6 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
    auto myFitConfig = _fitConfig ? _fitConfig : createFitConfig();
    auto &fitConfig = *myFitConfig;
-
-   bool save = true;
 
    auto _nll = &nll;
 
@@ -1122,7 +1120,7 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
    par->setConstant(isConst);
 
    std::vector<std::pair<std::string, int>> statusHistory;
-   for (int i = 0; i < ufit.numStatusHistory(); i++) {
+   for (unsigned int i = 0; i < ufit.numStatusHistory(); i++) {
       statusHistory.emplace_back(ufit.statusLabelHistory(i), ufit.statusCodeHistory(i));
    }
    statusHistory.emplace_back(TString::Format("xMINOS_%s", parName), status);
