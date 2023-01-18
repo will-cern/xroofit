@@ -79,8 +79,8 @@ void xRooNode::Interactive_Pull()
                   newPoint = dynamic_cast<TGraphAsymmErrors *>(
                      select->Clone(TString::Format("%s;%s", select->GetName(), _varyName.Data())));
                newPoint->SetPointX(0, _gr->GetPointX(i - 1));
-               newPoint->SetMarkerColor(vNum + 1);
-               newPoint->SetLineColor(vNum + 1);
+               newPoint->SetMarkerColor(860 + (vNum-1)*20);
+               newPoint->SetLineColor(newPoint->GetMarkerColor());
                newPoint->SetPointEYlow(0, 0);
                newPoint->SetPointEYhigh(0, 0); // remove errors because currently meaningless!
                newPoint->Draw("z0p");
