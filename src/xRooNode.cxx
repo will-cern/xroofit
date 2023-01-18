@@ -41,6 +41,7 @@
 #define GETACTBROWSER(b) b->fActBrowser
 #define GETROOTDIR(b) b->fRootDir
 #define GETLISTTREE(b) b->fListTree
+#define GETDMP(o,m) o->m
 
 #else
 
@@ -67,6 +68,8 @@
 #define GETACTBROWSER(b) b->GetActBrowser()
 #define GETROOTDIR(b) b->GetRootDir()
 #define GETLISTTREE(b) b->GetListTree()
+#define GETDMP(o,m) (*(void**)(((unsigned char*)o) + o->Class()->GetDataMemberOffset(#m)))
+
 #endif
 
 #include "RooAddition.h"
@@ -1226,7 +1229,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
    } else if (strcmp(GetName(), ".bins") == 0 && fParent->get<RooSimultaneous>()) {
       // adding a channel (should adding a 'bin' be an 'Extend' operation?)
       return fParent->Vary(child);
-   } else if (strcmp(GetName(), ".pars") == 0 && fParent->get<RooWorkspace>()) {
+   } else if ((strcmp(GetName(), ".pars") == 0 || strcmp(GetName(),".vars")==0) && fParent->get<RooWorkspace>()) {
       // adding a parameter, interpret as factory string unless no "[" then create RooRealVar
       TString fac(child.GetName());
       if (!fac.Contains("["))
@@ -2874,8 +2877,7 @@ void xRooNode::_fitTo_(const char *datasetName, const char *constParValues)
          for (auto p : _pars.argList()) {
             if (TString(p->GetName()).Contains(TRegexp(pat, true))) {
                p->setAttribute("Constant", true);
-               if (std::isnan(val))
-                  dynamic_cast<RooAbsRealLValue *>(p)->setVal(val);
+               if (!std::isnan(val)) { dynamic_cast<RooAbsRealLValue *>(p)->setVal(val); }
             }
          }
       }
@@ -5225,11 +5227,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
                auto fr = std::make_shared<RooFitResult>("");
                fr->SetTitle(TString::Format("%s parameter snapshot", GetName()));
                fr->setFinalParList(*_pars);
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
-               auto prevCov = fr->_VM;
-#else
-               auto prevCov = &(fr->covarianceMatrix());
-#endif
+               TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr,_VM));
                if (prevCov) {
                   auto cov = _fr->reducedCovarianceMatrix(*_pars);
                   fr->setCovarianceMatrix(cov);
@@ -5265,11 +5263,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
    fr->setFinalParList(*_pars);
 
    TMatrixDSym cov(fr->floatParsFinal().getSize());
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
-   auto prevCov = fr->_VM;
-#else
-   auto prevCov = &(fr->covarianceMatrix());
-#endif
+   TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr,_VM));
    if (prevCov) {
       for (int i = 0; i < prevCov->GetNcols(); i++) {
          for (int j = 0; j < prevCov->GetNrows(); j++) {
@@ -5995,12 +5989,9 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    RooFitResult *fr = nullptr;
    if (errors) {
       fr = dynamic_cast<RooFitResult *>(fitResult().get()->Clone());
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
-      // in old ROOT versions its possible for pars list to be null
-      if (!fr->_finalPars) {
+      if (!GETDMP(fr,_finalPars)) {
          fr->setFinalParList(RooArgList());
       }
-#endif
 
 
       /// Oct2022: No longer doing this because want to allow fitResult to be used to get partial error
@@ -6022,11 +6013,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       //            fr->setFinalParList(l2);
       //        }
 
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
-      auto prevCov = fr->_VM;
-#else
-      auto prevCov = &(fr->covarianceMatrix());
-#endif
+      TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr,_VM));
 
       if (!prevCov || size_t(fr->covarianceMatrix().GetNcols()) < fr->floatParsFinal().size()) {
          TMatrixDSym cov(fr->floatParsFinal().getSize());
@@ -6241,8 +6228,14 @@ void xRooNode::Inspect() const
 Bool_t TopRightPlaceBox(TPad *p, TObject *o, Double_t w, Double_t h, Double_t &xl, Double_t &yb)
 {
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
+   // reinitialize collide grid because the filling depends on fUxmin and fUxmax (and ymin ymax too)
+   // and these aren't filled on the first time we do the placement (they init to 0 and 1), but will be filled subsequently
+   for (int i = 0; i < p->fCGnx; i++) {
+      for (int j = 0; j < p->fCGny; j++) {
+         p->fCollideGrid[i + j * p->fCGnx] = kTRUE;
+      }
+   }
    p->FillCollideGrid(o);
-
    Int_t iw = (int)(p->fCGnx * w);
    Int_t ih = (int)(p->fCGny * h);
 
@@ -6262,7 +6255,7 @@ Bool_t TopRightPlaceBox(TPad *p, TObject *o, Double_t w, Double_t h, Double_t &x
    }
    return kFALSE;
 #else
-   return p->PlaceBox(o, w, h, xl, yb, true);
+   return p->PlaceBox(o, w, h, xl, yb, "wtr");
 #endif
 }
 
@@ -6275,7 +6268,7 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
          gPad->PaintModified(); //-- slows down x11 so trying to avoid
       if (TopRightPlaceBox(dynamic_cast<TPad *>(gPad), p, w, h, x, y)) {
          // squash inside the frame ..
-         // std::cout << gPad->GetName() << ":" << x << " , " << y << " , " << h << " , " << w << std::endl;
+         //std::cout << gPad->GetName() << ":" << x << " , " << y << " , " << w << " , " << h << std::endl;
          x = std::max(x, (gPad->GetLeftMargin() + 0.02));
          y = std::max(y, (gPad->GetBottomMargin() + 0.02));
          x = std::min(x, (1. - gPad->GetRightMargin() - 0.02) - w);
@@ -6882,11 +6875,8 @@ void xRooNode::Draw(Option_t *opt)
          } else if (!fParent) {
             // no parent to determine constraints from ... prefitError=0 will be the unconstrained ones
             if (prefitError == 0) {
-               // uses range of var if no postfit error either
-               prefitError =
-                  (_v->getError())
-                     ? _v->getError()
-                     : (std::max(std::max(_v->getMax() - _v->getVal(), _v->getVal() - _v->getMin()), 4.) / 4);
+               // uses range of var
+               prefitError = (std::max(std::max(_v->getMax() - _v->getVal(), _v->getVal() - _v->getMin()), 4.) / 4);
                ugraph->SetPoint(ugraph->GetN(), ugraph->GetN(), (_v->getVal() - prefitVal) / prefitError);
                ugraph->SetPointError(ugraph->GetN() - 1, 0, 0, (-_v->getErrorLo()) / prefitError,
                                      (_v->getErrorHi()) / prefitError);
@@ -6901,13 +6891,9 @@ void xRooNode::Draw(Option_t *opt)
             offset[p->GetName()] = prefitVal;
 
          } else {
-            // unconstrained (or at least couldn't determine constraint) ... use postfit error if no prefit error
+            // unconstrained (or at least couldn't determine constraint) ... use par range if no prefit error
             if (prefitError == 0) {
-               // uses range of var if no postfit error either
-               prefitError =
-                  (_v->getError())
-                     ? _v->getError()
-                     : (std::max(std::max(_v->getMax() - _v->getVal(), _v->getVal() - _v->getMin()), 4.) / 4);
+               prefitError = (std::max(std::max(_v->getMax() - _v->getVal(), _v->getVal() - _v->getMin()), 4.) / 4);
             }
             ugraph->SetPoint(ugraph->GetN(), ugraph->GetN(), (_v->getVal() - prefitVal) / prefitError);
             ugraph->SetPointError(ugraph->GetN() - 1, 0, 0, (-_v->getErrorLo()) / prefitError,
@@ -7910,12 +7896,9 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
                                                                          : fitResult().fComp);
    }
 
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
-   // in old ROOT versions its possible for pars list to be null
-   if (!fr->_finalPars) {
+   if (!GETDMP(fr,_finalPars)) {
       fr->setFinalParList(RooArgList());
    }
-#endif
 
    /// Oct2022: No longer doing this because want to allow fitResult to be used to get partial error
    //    // need to add any floating parameters not included somewhere already in the fit result ...
@@ -7935,11 +7918,8 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
    //        fr->setFinalParList(l2);
    //    }
 
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
-   auto prevCov = fr->_VM;
-#else
-   auto prevCov = &(fr->covarianceMatrix());
-#endif
+   TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr,_VM));
+
 
    if (!prevCov || size_t(prevCov->GetNcols()) < fr->floatParsFinal().size()) {
       TMatrixDSym cov(fr->floatParsFinal().getSize());
