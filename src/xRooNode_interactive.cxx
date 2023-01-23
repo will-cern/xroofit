@@ -133,7 +133,7 @@ void xRooNode::Interactive_Pull()
       (TAttLine &)(*gStyle) = bak;
       (TAttFill &)(*gStyle) = bak2;
       _pars = *snap;
-      _tmpPad->GetMother()->GetMother()->cd();
+      _tmpPad->GetCanvas()->cd();
    }
 }
 

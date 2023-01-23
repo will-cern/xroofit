@@ -102,6 +102,7 @@
 #include "TGMsgBox.h"
 #include "TGedEditor.h"
 #include "TGMimeTypes.h"
+#include "TH2.h"
 
 //#include "RooFitTrees/RooFitResultTree.h"
 //#include "RooFitTrees/RooDataTree.h"
@@ -1093,7 +1094,7 @@ xRooNode xRooNode::Remove(const xRooNode &child)
             else if (p->_extendedIndex > i)
                p->_extendedIndex--;
 #else
-            p->removePdfs(*pdf);
+            p->removePdfs(RooArgSet(*pdf));
 #endif
             sterilize();
             return xRooNode(*pdf);
@@ -2356,7 +2357,7 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
             p2->_extendedIndex = p2->_pdfList.size() - 1;
          }
 #else
-            p2->addPdfs(*_pdf);
+            p2->addPdfs(RooArgSet(*_pdf));
 #endif
          // TODO: any more cleanup?
          sterilize();
@@ -5227,7 +5228,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
                auto fr = std::make_shared<RooFitResult>("");
                fr->SetTitle(TString::Format("%s parameter snapshot", GetName()));
                fr->setFinalParList(*_pars);
-               TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr,_VM));
+               TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr.get(),_VM));
                if (prevCov) {
                   auto cov = _fr->reducedCovarianceMatrix(*_pars);
                   fr->setCovarianceMatrix(cov);
@@ -5263,7 +5264,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
    fr->setFinalParList(*_pars);
 
    TMatrixDSym cov(fr->floatParsFinal().getSize());
-   TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr,_VM));
+   TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr.get(),_VM));
    if (prevCov) {
       for (int i = 0; i < prevCov->GetNcols(); i++) {
          for (int j = 0; j < prevCov->GetNrows(); j++) {
@@ -6255,7 +6256,7 @@ Bool_t TopRightPlaceBox(TPad *p, TObject *o, Double_t w, Double_t h, Double_t &x
    }
    return kFALSE;
 #else
-   return p->PlaceBox(o, w, h, xl, yb, "wtr");
+   return p->PlaceBox(o, w, h, xl, yb, "trw");
 #endif
 }
 
@@ -6357,6 +6358,7 @@ public:
       if (fPad) {
          getLegend(false, true);
          fPad->GetCanvas()->Update();
+         fPad->cd();
       }
       nExisting--;
    }
@@ -6795,7 +6797,21 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    if (auto fr = get<RooFitResult>(); fr) {
-      // auto graph = BuildGraph();
+      if (sOpt.Contains("corr")) {
+         // do correlation matrix
+         auto hist = fr->correlationHist(fr->GetName());
+         hist->SetTitle(fr->GetTitle());
+         hist->SetBit(kCanDelete);
+         hist->Scale(100);
+         TString b(gStyle->GetPaintTextFormat());
+         gStyle->SetPaintTextFormat(".1f");
+         hist->GetXaxis()->SetTickSize(0);
+         hist->GetYaxis()->SetTickSize(0);
+         hist->Draw(sOpt);
+         gStyle->SetPaintTextFormat(b);
+         gPad->SetGrid(1,1);
+         return;
+      }
 
       // plot pull
       TGraphAsymmErrors *out = new TGraphAsymmErrors;
@@ -7896,7 +7912,7 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
                                                                          : fitResult().fComp);
    }
 
-   if (!GETDMP(fr,_finalPars)) {
+   if (!GETDMP(fr.get(),_finalPars)) {
       fr->setFinalParList(RooArgList());
    }
 
@@ -7918,7 +7934,7 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
    //        fr->setFinalParList(l2);
    //    }
 
-   TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr,_VM));
+   TMatrixTSym<Double_t> *prevCov = (TMatrixTSym<Double_t>*)(GETDMP(fr.get(),_VM));
 
 
    if (!prevCov || size_t(prevCov->GetNcols()) < fr->floatParsFinal().size()) {
