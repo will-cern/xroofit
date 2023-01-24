@@ -13,12 +13,12 @@
 #include "Config.h"
 
 #ifdef XROOFIT_USE_PRAGMA_ONCE
-# pragma once
+#pragma once
 #endif
 #if !defined(XROOFIT_XROONODE_H) || defined(XROOFIT_USE_PRAGMA_ONCE)
-# ifndef XROOFIT_USE_PRAGMA_ONCE
-#  define XROOFIT_XROONODE_H
-# endif
+#ifndef XROOFIT_USE_PRAGMA_ONCE
+#define XROOFIT_XROONODE_H
+#endif
 
 #include "TNamed.h"
 #include <vector>

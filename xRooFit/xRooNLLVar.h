@@ -13,11 +13,11 @@
 #include "Config.h"
 
 #ifdef XROOFIT_USE_PRAGMA_ONCE
-# pragma once
+#pragma once
 #endif
 #if !defined(XROOFIT_XROONLLVAR_H) || defined(XROOFIT_USE_PRAGMA_ONCE)
-# ifndef XROOFIT_USE_PRAGMA_ONCE
-#  define XROOFIT_XROONLLVAR_H
+#ifndef XROOFIT_USE_PRAGMA_ONCE
+#define XROOFIT_XROONLLVAR_H
 # endif
 
 #include "xRooFit.h"
