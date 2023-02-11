@@ -669,13 +669,13 @@ public:
    Double_t GetBinLowEdge(Int_t bin) const override
    {
       if (auto v = rvar(); v)
-         return v->getBinning(GetName()).binLow(bin - 1);
+         return (bin==v->getBinning(GetName()).numBins()+1) ? v->getBinning(GetName()).binHigh(bin-2) : v->getBinning(GetName()).binLow(bin - 1);
       return bin - 1;
    }
    Double_t GetBinUpEdge(Int_t bin) const override
    {
       if (auto v = rvar(); v)
-         return v->getBinning(GetName()).binHigh(bin - 1);
+         return (bin==0) ? v->getBinning(GetName()).binLow(bin) : v->getBinning(GetName()).binHigh(bin - 1);
       return bin;
    }
 
@@ -1028,7 +1028,24 @@ xRooNode xRooNode::coords(bool setVals) const
    while (_p) {
       TString pName(_p->GetName());
       if (auto pos = pName.Index('='); pos != -1) {
-         if (auto _obs = _p->getObject<RooAbsArg>(pName(0, pos)); _obs) {
+         if (pos > 0 && pName(pos-1)=='<') {
+            // should be a range on a real lvalue, of form low<=name<high
+            double low = TString(pName(0,pos-1)).Atof();
+            pName = pName(pos+1,pName.Length());
+            double high = TString(pName(pName.Index('<')+1,pName.Length())).Atof();
+            pName = pName(0,pName.Index('<'));
+            if(auto _obs = _p->getObject<RooAbsRealLValue>(pName.Data());_obs) {
+               if(setVals) {
+                  _obs->setVal((high+low)/2.);
+                  static_cast<RooRealVar*>(_obs.get())->setRange("coordRange",low,high);
+                  _obs->setStringAttribute("coordRange","coordRange"); // will need if we allow multi disconnected regions, need comma list
+               }
+               out.emplace_back(std::make_shared<xRooNode>(_obs->GetName(), _obs, _p));
+            } else {
+               throw std::runtime_error(TString::Format("Unknown observable: %s",pName.Data()) );
+            }
+
+         } else if (auto _obs = _p->getObject<RooAbsArg>(pName(0, pos)); _obs) {
             if (setVals) {
                if (auto _cat = dynamic_cast<RooAbsCategoryLValue *>(_obs.get()); _cat) {
                   _cat->setLabel(pName(pos + 1, pName.Length()));
@@ -2837,6 +2854,9 @@ xRooNode &xRooNode::operator=(const TObject &o)
           (a && a->isFundamental()) || get<RooConstVar>() || get<RooStats::HistFactory::FlexibleInterpVar>()) {
          SetBinContent(1, _c->getVal());
          return *this;
+      } else if(get<RooAbsData>()) { // try to do assignment to a dataset (usually setting a bin content)
+         SetBinContent(0,_c->getVal());
+         return *this;
       }
    }
 
@@ -2966,11 +2986,11 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
 
    if (get<RooAbsData>()) {
       if (auto _data = get<RooDataSet>(); _data) {
-         auto _ax = GetXaxis();
-         if (!_ax) {
+         auto _ax = (bin) ? GetXaxis() : nullptr;
+         if (!_ax && bin) {
             throw std::runtime_error("Cannot determine binning to fill data");
          }
-         if (_ax->GetNbins() < bin)
+         if (_ax && _ax->GetNbins() < bin)
             throw std::out_of_range(TString::Format("%s range %s only has %d bins", _ax->GetParent()->GetName(),
                                                     _ax->GetName(), _ax->GetNbins()));
          RooArgSet obs;
@@ -2983,6 +3003,12 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
                   cut += " && ";
                cut += TString::Format("%s==%d", _cat->GetName(), _cat->getCurrentIndex());
                obs.add(*_cat); // note: if we ever changed coords to return clones, would need to keep coords alive
+            } else if(auto _rv = _c->get<RooAbsRealLValue>(); _rv) {
+               // todo: check coordRange is a single range rather than multirange
+               if (cut != "")
+                  cut += " && ";
+               cut += TString::Format("%s>=%f&&%s<%f", _rv->GetName(),_rv->getMin(_rv->getStringAttribute("coordRange")),_rv->GetName(),_rv->getMax(_rv->getStringAttribute("coordRange")));
+               obs.add(*_rv); // note: if we ever changed coords to return clones, would need to keep coords alive
             } else {
                throw std::runtime_error("SetBinContent of data: Unsupported coordinate type");
             }
@@ -2991,10 +3017,15 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
          RooFormulaVar cutFormula("cut1", cut, obs); // doing this to avoid complaints about unused vars
          RooFormulaVar icutFormula("icut1", TString::Format("!(%s)", cut.Data()), obs);
 
-         TString cut2 = TString::Format("%s >= %f && %s < %f", _ax->GetParent()->GetName(), _ax->GetBinLowEdge(bin),
-                                        _ax->GetParent()->GetName(), _ax->GetBinUpEdge(bin));
-         obs.add(*dynamic_cast<RooAbsArg *>(_ax->GetParent()));
 
+         TString cut2;
+         if(_ax) {
+            cut2 = TString::Format("%s >= %f && %s < %f", _ax->GetParent()->GetName(), _ax->GetBinLowEdge(bin),
+                                   _ax->GetParent()->GetName(), _ax->GetBinUpEdge(bin));
+            obs.add(*dynamic_cast<RooAbsArg *>(_ax->GetParent()));
+         } else {
+            cut2 = "1==1";
+         }
          RooFormulaVar cutFormula2("cut2", cut + " && " + cut2, obs);
          RooFormulaVar icutFormula2("icut2", TString::Format("!(%s && %s)", cut.Data(), cut2.Data()), obs);
 
@@ -3056,28 +3087,29 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
 
          // using SetBinContent means dataset must take on a binned form at these coordinates
          // if number of entries doesnt match number of bins then will 'bin' the data
-         if (auto _nentries = std::unique_ptr<RooAbsData>(_data->reduce(cutFormula))->numEntries();
-             _nentries != _ax->GetNbins()) {
-            auto _contents = GetBinContents(1, _ax->GetNbins());
+         if(bin) {
+            if (auto _nentries = std::unique_ptr<RooAbsData>(_data->reduce(cutFormula))->numEntries();
+                _nentries != _ax->GetNbins()) {
+               auto _contents = GetBinContents(1, _ax->GetNbins());
 
-            if (_nentries > 0) {
-               Info("SetBinContent", "Binning %s in channel: %s", GetName(), cut.Data());
-               auto _reduced = std::unique_ptr<RooAbsData>(_data->reduce(icutFormula));
-               _data->reset();
-               for (int j = 0; j < _reduced->numEntries(); j++) {
-                  auto _obs = _reduced->get(j);
-                  _data->add(*_obs, _reduced->weight());
+               if (_nentries > 0) {
+                  Info("SetBinContent", "Binning %s in channel: %s", GetName(), cut.Data());
+                  auto _reduced = std::unique_ptr<RooAbsData>(_data->reduce(icutFormula));
+                  _data->reset();
+                  for (int j = 0; j < _reduced->numEntries(); j++) {
+                     auto _obs = _reduced->get(j);
+                     _data->add(*_obs, _reduced->weight());
+                  }
+               }
+               for (int i = 1; i <= _ax->GetNbins(); i++) {
+                  // can skip over the bin we will be setting to save a reduce step below
+                  if (i == bin)
+                     continue;
+                  dynamic_cast<RooAbsLValue *>(_ax->GetParent())->setBin(i - 1, _ax->GetName());
+                  _data->add(obs, _contents.at(i - 1));
                }
             }
-            for (int i = 1; i <= _ax->GetNbins(); i++) {
-               // can skip over the bin we will be setting to save a reduce step below
-               if (i == bin)
-                  continue;
-               dynamic_cast<RooAbsLValue *>(_ax->GetParent())->setBin(i - 1, _ax->GetName());
-               _data->add(obs, _contents.at(i - 1));
-            }
          }
-
          // remove existing entries
          if (std::unique_ptr<RooAbsData>(_data->reduce(cutFormula2))->numEntries() > 0) {
             auto _reduced = std::unique_ptr<RooAbsData>(_data->reduce(icutFormula2));
@@ -3087,7 +3119,7 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
                _data->add(*_obs, _reduced->weight());
             }
          }
-         dynamic_cast<RooAbsLValue *>(_ax->GetParent())->setBin(bin - 1, _ax->GetName());
+         if(_ax) dynamic_cast<RooAbsLValue *>(_ax->GetParent())->setBin(bin - 1, _ax->GetName());
          _data->add(obs, value);
          return true;
 
@@ -4611,7 +4643,7 @@ xRooNode xRooNode::bins() const
             }
          }
          out.emplace_back(std::make_shared<xRooNode>(
-            TString::Format("%s=%g", ax->GetParent()->GetName(), ax->GetBinCenter(i)),
+            TString::Format("%g<=%s<%g", ax->GetBinLowEdge(i), ax->GetParent()->GetName(), ax->GetBinLowEdge(i+1)),
             _factors.empty() ? nullptr
                              : std::make_shared<RooProduct>(TString::Format("%s.binFactors.bin%d", GetName(), i),
                                                             "binFactors", RooArgList()),
@@ -4842,7 +4874,7 @@ xRooNode xRooNode::datasets() const
          out.back()->fFolder = "!datasets";
       }
    } else if (auto __ws = ws(); __ws) {
-      if (get<RooAbsPdf>()) {
+      if (get<RooAbsPdf>() || (!get() && fParent && fParent->get<RooAbsPdf>())) { // second condition handles 'bins' nodes of pdf, which have null ptr
          // only add datasets that have observables that cover all our observables
          RooArgSet _obs(obs().argList());
          _obs.add(coords(false).argList(), true); // include coord observables too, and current xaxis if there's one
@@ -4975,6 +5007,12 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
          for (auto _c : _coords) {
             if (auto cat = _c->get<RooAbsCategoryLValue>(); cat) {
                if (cat->getIndex() != theData->get()->getCatIndex(cat->GetName())) {
+                  _skip = true;
+                  break;
+               }
+            } else if(auto rv = _c->get<RooAbsRealLValue>(); rv) {
+               // must be in range
+               if(!rv->inRange(theData->get()->getRealValue(rv->GetName()),rv->getStringAttribute("coordRange"))) {
                   _skip = true;
                   break;
                }
@@ -6172,9 +6210,17 @@ std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const
    }
    std::vector<double> out;
    if (get<RooAbsData>()) {
-      auto g = BuildGraph(nullptr, true /*include points for zeros*/);
-      if (!g)
+      auto g = BuildGraph(nullptr, (binStart!=0||binEnd!=0) /*include points for zeros unless we are asking for a single point with start=end=0*/);
+      if (!g) {
          return out;
+      }
+      if (binStart==binEnd && binStart==0) {
+         // integral over all bins if getting bin content 0
+         double integral(0);
+         for(int i=0;i<g->GetN();i++) integral += g->GetPointY(i);
+         out.push_back(integral);
+         delete g; return out;
+      }
       for (int i = binStart - 1; i < g->GetN() && (binEnd == 0 || i < binEnd); i++) {
          out.push_back(g->GetPointY(i));
       }
@@ -7060,6 +7106,7 @@ void xRooNode::Draw(Option_t *opt)
          return;
 
       dataGraph->SetBit(kCanDelete); // will be be deleted when pad is cleared
+      dataGraph->SetMarkerSize(dataGraph->GetMarkerSize()*gPad->GetWNDC()); // scale marker sizes to pad size
 
       if (!hasSame) {
          clearPad();
