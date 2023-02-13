@@ -10,7 +10,7 @@
  * listed in LICENSE (http://roofit.sourceforge.net/license.txt)
  */
 
-#include "Config.h"
+#include "xRooFit/Config.h"
 
 // when not using the namespace will use the once pragma.
 // when using the namespace (as happens in the ROOT build of xRooFit) then
