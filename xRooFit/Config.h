@@ -17,6 +17,11 @@
  * these classes if built on top of ROOT.
  */
 
+// Define XROOFIT_USE_PRAGMA_ONCE if you want to use "pragma once" instead of
+// header guards
+#ifndef XROOFIT_USE_PRAGMA_ONCE
+# define XROOFIT_USE_PRAGMA_ONCE
+#endif
 
 #ifndef xRooFit_Config_h_xRooFit
 #define xRooFit_Config_h_xRooFit
@@ -27,9 +32,7 @@
 #undef XROOFIT_NAMESPACE
 #endif
 
-// Define XROOFIT_USE_PRAGMA_ONCE if you want to use "pragma once" instead of
-// header guards
-# define XROOFIT_USE_PRAGMA_ONCE
+
 
 
 # ifdef XROOFIT_NAMESPACE
