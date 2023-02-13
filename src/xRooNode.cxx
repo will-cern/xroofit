@@ -97,6 +97,7 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "TPRegexp.h"
 #include "TRegexp.h"
 #include "TExec.h"
+#include "TPaveText.h"
 
 #include "TGListTree.h"
 #include "TGMsgBox.h"
@@ -6210,12 +6211,12 @@ std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const
    }
    std::vector<double> out;
    if (get<RooAbsData>()) {
-      auto g = BuildGraph(nullptr, (binStart!=0||binEnd!=0) /*include points for zeros unless we are asking for a single point with start=end=0*/);
+      auto g = BuildGraph(nullptr, (binStart!=-1||binEnd!=-1) /*include points for zeros unless we are asking for a single point with start=end=-1*/);
       if (!g) {
          return out;
       }
-      if (binStart==binEnd && binStart==0) {
-         // integral over all bins if getting bin content 0
+      if (binStart==binEnd && binStart==-1) {
+         // integral over all bins if getting bin content -1
          double integral(0);
          for(int i=0;i<g->GetN();i++) integral += g->GetPointY(i);
          out.push_back(integral);
@@ -6303,6 +6304,29 @@ Bool_t TopRightPlaceBox(TPad *p, TObject *o, Double_t w, Double_t h, Double_t &x
 #else
    return p->PlaceBox(o, w, h, xl, yb, "trw");
 #endif
+}
+
+TPaveText* getPave(const char* name = "labels",bool create=true, bool doPaint=false) {
+   if (auto p = dynamic_cast<TPaveText *>(gPad->GetPrimitive(name)); p) {
+      double x, y;
+      double w = p->GetX2NDC() - p->GetX1NDC(), h = p->GetY2NDC() - p->GetY1NDC();
+      if (doPaint)
+         gPad->PaintModified(); //-- slows down x11 so trying to avoid
+      return p;
+   }
+   if (!create) { return nullptr; }
+   auto l = new TPaveText(gPad->GetLeftMargin()+0.02, 1. - gPad->GetTopMargin() - 0.08, 0.6,
+                   1. - gPad->GetTopMargin() - 0.08);
+   l->SetBorderSize(0);
+   if (l->GetTextSize()==0) l->SetTextSize(gStyle->GetTitleYSize());
+
+   l->SetBit(kCanDelete);
+   // l->SetMargin(0);
+   l->SetFillStyle(0);
+   l->SetName(name);
+   l->Draw();
+   l->ConvertNDCtoPad();
+   return l;
 }
 
 TLegend *getLegend(bool create = true, bool doPaint = false)
@@ -7207,51 +7231,69 @@ void xRooNode::Draw(Option_t *opt)
       auto initPar = dynamic_cast<RooRealVar *>(_fr.get<RooFitResult>()->floatParsInit().find(forceNames));
       if (!initPar)
          return;
-      for (auto &d : _dsets) {
-         if (!d->get()->TestBit(1 << 20))
-            continue;
-         auto emptyHist = BuildHistogram(v, true);
-         emptyHist->SetBit(kCanDelete);
-         auto _obs = d->obs();
-         auto x = _obs.find((v) ? dynamic_cast<TObject *>(v)->GetName() : emptyHist->GetXaxis()->GetName());
-         auto _nll = nll(d);
-         auto theData = d->get<RooAbsData>();
-         int nevent = theData->numEntries();
-         for (int i = 0; i < nevent; i++) {
-            theData->get(i);
-            bool _skip = false;
-            for (const auto &_c : _coords) {
-               if (auto cat = _c->get<RooAbsCategoryLValue>(); cat) {
-                  if (cat->getIndex() != theData->get()->getCatIndex(cat->GetName())) {
-                     _skip = true;
-                     break;
+      std::vector<double> valuesToDo = {initPar->getVal()};
+      if (initPar->hasError() || initPar->hasAsymError()) {
+         valuesToDo.push_back(initPar->getVal()+initPar->getErrorLo());
+         valuesToDo.push_back(initPar->getVal()+initPar->getErrorHi());
+      }
+      int ii=0;
+      for(auto valueToDo : valuesToDo) {
+         ii++;
+         for (auto &d : _dsets) {
+            if (!d->get()->TestBit(1 << 20))
+               continue;
+            auto emptyHist = BuildHistogram(v, true);
+            emptyHist->SetBit(kCanDelete);
+            auto _obs = d->obs();
+            auto x = _obs.find((v) ? dynamic_cast<TObject *>(v)->GetName() : emptyHist->GetXaxis()->GetName());
+            auto _nll = nll(d);
+            auto theData = d->get<RooAbsData>();
+            int nevent = theData->numEntries();
+            for (int i = 0; i < nevent; i++) {
+               theData->get(i);
+               bool _skip = false;
+               for (const auto &_c : _coords) {
+                  if (auto cat = _c->get<RooAbsCategoryLValue>(); cat) {
+                     if (cat->getIndex() != theData->get()->getCatIndex(cat->GetName())) {
+                        _skip = true;
+                        break;
+                     }
                   }
                }
-            }
-            if (_skip)
-               continue;
+               if (_skip)
+                  continue;
 
-            if (x) {
-               auto val = _nll.pars()->getRealValue(initPar->GetName());
-               auto nllVal = _nll.getEntryVal(i);
-               _nll.pars()->setRealValue(initPar->GetName(), initPar->getVal());
-               auto nllVal2 = _nll.getEntryVal(i);
-               _nll.pars()->setRealValue(initPar->GetName(), val);
-               emptyHist->Fill(x->get<RooAbsReal>()->getVal(), (nllVal2 - nllVal));
+               if (x) {
+                  auto val = _nll.pars()->getRealValue(initPar->GetName());
+                  if (ii>1) _nll.pars()->setRealValue(initPar->GetName(), valueToDo);
+                  auto nllVal = _nll.getEntryVal(i);
+                  _nll.pars()->setRealValue(initPar->GetName(), initPar->getVal());
+                  auto nllVal2 = _nll.getEntryVal(i);
+                  _nll.pars()->setRealValue(initPar->GetName(), val);
+                  emptyHist->Fill(x->get<RooAbsReal>()->getVal(), (nllVal2 - nllVal));
+               }
             }
+            // include the extendedTerm, distributed evenly over the bins
+            // probably should be somehow dependent on data density though (i.e. bins with more data get more of it?)
+            auto val = _nll.pars()->getRealValue(initPar->GetName());
+            if (ii>1) _nll.pars()->setRealValue(initPar->GetName(), valueToDo);
+            auto _extTerm = _nll.extendedTerm();
+            _nll.pars()->setRealValue(initPar->GetName(), initPar->getVal());
+            auto _extTerm2 = _nll.extendedTerm();
+            _nll.pars()->setRealValue(initPar->GetName(), val);
+            for (int i = 1; i <= emptyHist->GetNbinsX(); i++) {
+               emptyHist->SetBinContent(i,
+                                        emptyHist->GetBinContent(i) + (_extTerm2 - _extTerm) / emptyHist->GetNbinsX());
+               emptyHist->SetBinError(i, 0);
+            }
+            emptyHist->GetYaxis()->SetTitle("log (L(#theta)/L(#theta_{0}))");
+            emptyHist->SetTitle(TString::Format("#theta = %g",(ii>1) ? valueToDo : val));
+            if (ii==1) emptyHist->SetLineColor(kBlack);
+            if (ii==2) emptyHist->SetLineColor(kRed);
+            else if(ii==3) emptyHist->SetLineColor(kBlue);
+            emptyHist->Draw(_drawn ? "same" : "");
+            _drawn = true;
          }
-         auto val = _nll.pars()->getRealValue(initPar->GetName());
-         auto _extTerm = _nll.extendedTerm();
-         _nll.pars()->setRealValue(initPar->GetName(), initPar->getVal());
-         auto _extTerm2 = _nll.extendedTerm();
-         _nll.pars()->setRealValue(initPar->GetName(), val);
-         for (int i = 1; i <= emptyHist->GetNbinsX(); i++) {
-            emptyHist->SetBinContent(i, emptyHist->GetBinContent(i) + (_extTerm2 - _extTerm) / emptyHist->GetNbinsX());
-            emptyHist->SetBinError(i, 0);
-         }
-         emptyHist->GetYaxis()->SetTitle("log (L(#theta)/L(#theta_{0}))");
-         emptyHist->Draw(_drawn ? "same" : "");
-         _drawn = true;
       }
       return;
    }
@@ -7943,6 +7985,13 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
 
 std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooNode &_fr) const
 {
+   if (fBinNumber != -1) {
+      if (binStart != binEnd || !fParent) {
+         throw std::runtime_error(TString::Format("%s is a bin - only has one value", GetName()));
+      }
+      return fParent->GetBinErrors(fBinNumber, fBinNumber);
+   }
+
    std::vector<double> out;
 
    auto o = dynamic_cast<RooAbsReal *>(get());

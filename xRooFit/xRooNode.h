@@ -260,6 +260,8 @@ public:
       operator=(obj);
       return true;
    }                               // populates the node's comp (creating if necessary)  from given object
+
+   // TODO: Rename SetContents to SetContent for consistency with GetContent
    bool SetContents(double value); // uses a RooConst
    bool SetContents(double value, const char *par, double parVal = 1); // shortcut to setting a variation content
    bool SetContents(const TObject &obj, const char *par, double parVal)
@@ -297,8 +299,8 @@ public:
    std::pair<double, double> IntegralAndError(const xRooNode &fr = "", const char *rangeName = nullptr) const;
 
    // methods to access default content and error
-   double GetContent() const { return GetBinContent(0); }
-   double GetError() const { return GetBinError(0); }
+   double GetContent() const { return GetBinContent(fBinNumber); }
+   double GetError(const xRooNode& fr = "") const { return GetBinError(fBinNumber, fr); }
 
    xRooNLLVar nll(const xRooNode &_data, std::initializer_list<RooCmdArg> nllOpts) const;
    xRooNLLVar nll(const xRooNode &_data, const RooLinkedList &nllOpts) const;
