@@ -20,7 +20,7 @@
 // Define XROOFIT_USE_PRAGMA_ONCE if you want to use "pragma once" instead of
 // header guards
 #ifndef XROOFIT_USE_PRAGMA_ONCE
-# define XROOFIT_USE_PRAGMA_ONCE
+#define XROOFIT_USE_PRAGMA_ONCE
 #endif
 
 #ifndef xRooFit_Config_h_xRooFit
