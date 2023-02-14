@@ -9,8 +9,7 @@
  * with or without modification, are permitted according to the terms
  * listed in LICENSE (http://roofit.sourceforge.net/license.txt)
  */
-
-#include "xRooFit/Config.h"
+#include "Config.h"
 
 // when not using the namespace will use the once pragma.
 // when using the namespace (as happens in the ROOT build of xRooFit) then
@@ -18,9 +17,16 @@
 #ifdef XROOFIT_USE_PRAGMA_ONCE
 #pragma once
 #endif
-#if !defined(XROOFIT_XROOFIT_H) || defined(XROOFIT_USE_PRAGMA_ONCE)
+#if !defined(XROOFIT_XROOFIT_H) || (defined(XROOFIT_USE_PRAGMA_ONCE) && !defined(XROOFIT_XROOFIT_H_XROOFIT))
 #ifndef XROOFIT_USE_PRAGMA_ONCE
 #define XROOFIT_XROOFIT_H
+#else
+// even with using pragma once, need include guard otherwise cannot include this header
+// as part of an interpreted file ... the other headers in xRooFit are similarly affected
+// however for now users of xRooFit should only need to include the main xRooFit header to use it all
+// in future we should try removing the pragma once altogether (undef XROOFIT_USE_PRAGMA_ONCE)
+// and see if it has negative consequences anywhere
+#define XROOFIT_XROOFIT_H_XROOFIT
 # endif
 
 /**
