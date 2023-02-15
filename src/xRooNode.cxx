@@ -4423,8 +4423,11 @@ xRooNode xRooNode::components() const
       //                }
       //            }
       //        }
+      std::set<RooAbsArg*> doneFuncs;
       for (auto &o : p2->funcList()) {
+         if(doneFuncs.count(o)) continue;
          out.emplace_back(std::make_shared<xRooNode>(*o, *this));
+         doneFuncs.insert(o);
       }
    } else if (auto p3 = get<RooAddition>(); p3) {
       for (auto &o : p3->list()) {
