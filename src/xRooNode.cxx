@@ -4402,8 +4402,12 @@ xRooNode xRooNode::components() const
    xRooNode out(".components", nullptr, *this);
 
    if (auto p = get<RooAddPdf>(); p) {
+      // only add each pdf once (the coefs will be accumulated in coefs() method) ...
+      std::set<RooAbsArg*> donePdfs;
       for (auto &o : p->pdfList()) {
+         if(donePdfs.count(o)) continue;
          out.emplace_back(std::make_shared<xRooNode>(*o, *this));
+         donePdfs.insert(o);
       }
    } else if (auto p2 = get<RooRealSumPdf>(); p2) {
       // check for common prefixes and suffixes, will use to define aliases to shorten names
@@ -6374,7 +6378,7 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
    } else {
       if (!create)
          return nullptr;
-      l = new TLegend(0.6, 1. - gPad->GetTopMargin() - 0.08, 1. - gPad->GetRightMargin(),
+      l = new TLegend(0.6, 1. - gPad->GetTopMargin() - 0.08, 0.75,
                       1. - gPad->GetTopMargin() - 0.08);
       l->SetBorderSize(0);
       if (l->GetTextSize()==0) l->SetTextSize(gStyle->GetTitleYSize());
@@ -6409,9 +6413,9 @@ void addLegendEntry(TObject *o, const char *title, const char *opt)
       nn *= (nn + 4);
       if (nObj > 1 && (nObj % nn) == 1) {
          l->SetNColumns(l->GetNColumns() + 1);
-      } else if (nObj <= nn && nObj >= l->GetNColumns() * l->GetNColumns()) {
-         l->SetY1NDC(l->GetY2NDC() - 0.05 * gPad->GetHNDC() * nObj);
+         l->SetX1NDC(l->GetX2NDC() - 0.15*l->GetNColumns());
       }
+      l->SetY1NDC(l->GetY2NDC() - 0.05 * gPad->GetHNDC() * std::ceil((double(nObj)/l->GetNColumns())));
    }
 
    getLegend(); // to mark modified
