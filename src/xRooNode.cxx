@@ -6236,14 +6236,25 @@ std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const
       return out;
    }
 
+   bool doIntegral = false;
+   if (binStart==binEnd && binStart==-1) { binStart=0;binEnd=0; doIntegral=true; } // return integral if request bin -1
    auto h = BuildHistogram(nullptr, false, false, binStart, binEnd);
    if (!h) {
       throw std::runtime_error(TString::Format("%s has no content", GetName()));
    }
-   if (binEnd == 0)
+   if (binEnd == 0) {
       binEnd = h->GetNbinsX();
-   for (int i = binStart; i <= binEnd; i++) {
-      out.push_back(h->GetBinContent(i));
+   }
+   if (doIntegral) {
+      double tot = 0;
+      for (int i = binStart; i <= binEnd; i++) {
+         tot += h->GetBinContent(i);
+      }
+      out.push_back(tot);
+   } else {
+      for (int i = binStart; i <= binEnd; i++) {
+         out.push_back(h->GetBinContent(i));
+      }
    }
    delete h;
    return out;
@@ -6446,7 +6457,9 @@ int PadRefresher::nExisting = 0;
 
 void xRooNode::Draw(Option_t *opt)
 {
-   if (!get() && !IsFolder())
+   TString sOpt2(opt);
+   sOpt2.ToLower();
+   if (!get() && !IsFolder() && !sOpt2.Contains("x="))
       return;
 
    if (auxFunctions.empty()) {
@@ -6483,8 +6496,49 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    TString sOpt(opt);
-   TString sOpt2(sOpt);
-   sOpt2.ToLower();
+
+   RooAbsLValue *v = nullptr;
+   std::vector<double> xPoints;
+   if(sOpt2.Contains("x=")) {
+      // specifying a particular var to scan over ...
+      int _idx = sOpt2.Index("x=");
+      int _eidx = sOpt2.Index(';',_idx);
+      TString varPart = sOpt(_idx+2,(_eidx<0 ? sOpt2.Length() : _eidx) -(_idx+2));
+      TString varName = varPart;
+      // if varName is of form str(num,num,num) then can infer scan points
+      if (auto _idx2 = varPart.Index("("); _idx2 > 0) {
+         varName = varPart(0,_idx2);
+         TStringToken pattern(TString(varPart(_idx2+1,varPart.Length()-_idx2-2)), ",");
+         double min,max; int nBins = 0; int ii=0;
+         while (pattern.NextToken()) {
+            TString s = pattern;
+            if (ii==0) nBins = s.Atoi();
+            else if(ii==1) min = s.Atof();
+            else if(ii==2) max = s.Atof();
+            ii++;
+         }
+         if (nBins>100) nBins=100; // limit scanning to 100 points
+         if (nBins>1) {
+            for(double x = min; x<= max; x += (max-min)/(nBins-1)) {
+               xPoints.push_back(x);
+            }
+         } else if(nBins==1) xPoints.push_back((min+max)/2.);
+      }
+      v = getObject<RooAbsRealLValue>(varName.Data()).get();
+      if (!v) {
+         throw std::runtime_error(TString::Format("Could not find variable %s",varName.Data()));
+      }
+      if (xPoints.empty()) {
+         double tmp = static_cast<RooAbsRealLValue*>(v)->getVal();
+         for(int i=0;i<v->numBins(GetName());i++) {
+            v->setBin(i,GetName());
+            xPoints.push_back(static_cast<RooAbsRealLValue*>(v)->getVal());
+         }
+         static_cast<RooAbsRealLValue*>(v)->setVal(tmp);
+      }
+      sOpt2 = TString(sOpt2(0,_idx)) + sOpt2(_idx+2+varPart.Length()+1,sOpt2.Length());
+      sOpt = TString(sOpt(0,_idx)) + sOpt(_idx+2+varPart.Length()+1,sOpt.Length());
+   }
    TString forceNames = "";
    if (sOpt2.Contains("force")) {
       // force plots show how much NLL changes wrt to a change of variables
@@ -6546,7 +6600,6 @@ void xRooNode::Draw(Option_t *opt)
    TVirtualPad *pad = gPad;
 
    TH1 *hAxis = nullptr;
-   RooAbsLValue *v = nullptr;
 
    auto clearPad = []() {
       gPad->Clear();
@@ -6577,7 +6630,7 @@ void xRooNode::Draw(Option_t *opt)
                break;
          }
       }
-      if (hAxis) {
+      if (hAxis && !v) {
          v = getObject<RooAbsLValue>(hAxis->GetXaxis()->GetName()).get();
       }
    }
@@ -6664,6 +6717,30 @@ void xRooNode::Draw(Option_t *opt)
       }
       return std::make_pair(ymin, ymax);
    };
+
+   if (!xPoints.empty()) {
+      // create a graph using GetContent
+      TGraphAsymmErrors* out = new TGraphAsymmErrors;
+      out->SetName(GetName());
+      out->SetTitle(GetTitle());
+      out->SetFillColor(out->GetLineColor());
+      out->SetMarkerStyle(0);
+      out->SetFillStyle(hasErrorOpt ? 3005 : 0);
+      double tmp = static_cast<RooAbsRealLValue*>(v)->getVal();
+      for(auto& x : xPoints) {
+         static_cast<RooAbsRealLValue*>(v)->setVal(x);
+         out->AddPoint(x,GetContent());
+         if (hasErrorOpt) {
+            out->SetPointEYlow(out->GetN()-1,GetError());
+            out->SetPointEYhigh(out->GetN()-1,out->GetErrorYlow(out->GetN()-1)); // symmetric error for now
+         }
+      }
+      static_cast<RooAbsRealLValue*>(v)->setVal(tmp);
+      out->GetHistogram()->GetXaxis()->SetTitle(static_cast<RooAbsRealLValue*>(v)->GetTitle());
+      out->SetBit(kCanDelete);
+      out->Draw(hasSame ? "L" : "AL");
+      return;
+   }
 
    if (hasFR) {
       // drawing the fitresult as a pull plot on a subpad, and rest of the draw elsewhere
