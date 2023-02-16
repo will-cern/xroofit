@@ -530,7 +530,7 @@ void xRooNode::Browse(TBrowser *b)
       }
       // ensure entry in folders for every folder type ...
       for (auto &v : *this) {
-         if (v->fFolder != "" && !_folders->find(v->fFolder)) {
+         if (v->fFolder != "" && !_folders->find(v->fFolder,false)) {
             _folders->emplace_back(std::make_shared<xRooNode>(v->fFolder.c_str(), nullptr, *this));
          }
       }
@@ -587,6 +587,12 @@ void xRooNode::Browse(TBrowser *b)
       }
       // v.fBrowsers.insert(b);
    }
+
+   // for top-level pdfs default to having the .vars browsable too
+   if (get<RooAbsPdf>() && fFolder=="!models" && !_IsShowVars_()) {
+      fBrowsables.push_back(std::make_shared<xRooNode>(vars()));
+   }
+
    // for pdfs, check for datasets too and add to list
    /*if (get<RooAbsPdf>()) {
        auto dsets = datasets();
@@ -2911,15 +2917,17 @@ void xRooNode::_fitTo_(const char *datasetName, const char *constParValues)
       if (!fr.get())
          throw std::runtime_error("Fit Failed");
       SetFitResult(fr.get());
-      if (fr->status() != 0)
-         new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Fit Finished",
-                      TString::Format("Fit Status Code = %d", fr->status()), kMBIconExclamation);
-      else
-         new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Fit Finished",
-                      TString::Format("Fit Status Code = %d", fr->status()));
+      const TGWindow* w = (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot();
+      if (fr->status() != 0) {
+         new TGMsgBox(gClient->GetRoot(), w, "Fit Finished with Bad Status Code",
+                      TString::Format("%s\nFit Status Code = %d", fr->GetName(), fr->status()), kMBIconExclamation, kMBOk);
+      } else {
+         new TGMsgBox(gClient->GetRoot(), w, "Fit Finished Successfully",
+                      TString::Format("%s\nFit Status Code = %d", fr->GetName(), fr->status()));
+      }
    } catch (const std::exception &e) {
       new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),
-                   kMBIconExclamation); // deletes self on dismiss?
+                   kMBIconExclamation, kMBOk); // deletes self on dismiss?
    }
 }
 
@@ -3378,10 +3386,10 @@ bool xRooNode::SetBinError(int bin, double value)
    throw std::runtime_error(TString::Format("%s SetBinError failed", GetName()));
 }
 
-std::shared_ptr<xRooNode> xRooNode::find(const std::string &name) const
+std::shared_ptr<xRooNode> xRooNode::find(const std::string &name, bool browseResult) const
 {
    try {
-      return at(name);
+      return at(name, browseResult);
    } catch (std::out_of_range &) {
       return nullptr;
    }
@@ -4333,11 +4341,11 @@ xRooNode xRooNode::vars() const
             if (c->getAttribute("global"))
                out.back()->fFolder = "!globs";
             else if (c->getAttribute("obs"))
-               out.back()->fFolder = "!obs";
-            else if (dynamic_cast<RooConstVar *>(c))
-               out.back()->fFolder = "!consts";
+               out.back()->fFolder = "!robs";
+            else if (dynamic_cast<RooConstVar *>(c) || (dynamic_cast<RooRealVar*>(c) && (!static_cast<RooRealVar*>(c)->hasMin() || !static_cast<RooRealVar*>(c)->hasMax()))) // pars without a min and max defined aren't floatables
+               out.back()->fFolder = "!nonfloatables";
             else
-               out.back()->fFolder = "!pars";
+               out.back()->fFolder = "!floatables";
          }
       }
    } else if (auto p2 = get<RooAbsData>(); p2) {
@@ -6526,7 +6534,8 @@ void xRooNode::Draw(Option_t *opt)
       }
       v = getObject<RooAbsRealLValue>(varName.Data()).get();
       if (!v) {
-         throw std::runtime_error(TString::Format("Could not find variable %s",varName.Data()));
+         Error("Draw","Could not find variable %s",varName.Data());
+         return; // don't throw because if happens in browser will cause ROOT to exit
       }
       if (xPoints.empty()) {
          double tmp = static_cast<RooAbsRealLValue*>(v)->getVal();
@@ -6554,7 +6563,8 @@ void xRooNode::Draw(Option_t *opt)
          sOpt = sOpt(0, sOpt2.Index("force"));
          sOpt2 = sOpt2(0, sOpt2.Index("force"));
       } else {
-         throw std::runtime_error("Can only compute forces with PDFs");
+         Error("Draw","Can only compute forces with PDFs");
+         return; // don't throw because will cause browser to exit if done from there
       }
    }
    bool hasOverlay = sOpt2.Contains("overlay");
@@ -6767,7 +6777,8 @@ void xRooNode::Draw(Option_t *opt)
       auto pullGraph =
          dynamic_cast<TGraphAsymmErrors *>(gPad->GetPrimitive(TString::Format("%s_pull", _fr->GetName())));
       if (!pullGraph) {
-         throw std::runtime_error("Couldn't find pull graph");
+         Error("Draw","Couldn't find pull graph");
+         return;
       }
       pullGraph->SetName("nominal");
       TMultiGraph *mg = new TMultiGraph;

@@ -141,12 +141,12 @@ public:
 
    RooArgList argList() const;
 
-   std::shared_ptr<xRooNode> find(const std::string &name) const;
+   std::shared_ptr<xRooNode> find(const std::string &name, bool browseResult = true) const; // same as at but return nullptr if not found
    bool contains(const std::string &name) const; // doesn't trigger a browse of the found object, unlike find
 
    // most users should use these methods: will do an initial browse and will browse the returned object too
    std::shared_ptr<xRooNode> operator[](size_t idx) { return at(idx); }
-   std::shared_ptr<xRooNode> operator[](const std::string &name); // will create a child node if not existing
+   std::shared_ptr<xRooNode> operator[](const std::string &name); // will create a new node if not existing, unlike 'at'
 
    // needed in pyROOT to avoid it creating iterators that follow the 'get' to death
    auto begin() const -> decltype(std::vector<std::shared_ptr<xRooNode>>::begin())
