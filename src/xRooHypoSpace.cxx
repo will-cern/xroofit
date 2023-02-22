@@ -882,8 +882,8 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pVal
       double y1 = gr->GetPointY(0);
       double m = (gr->GetPointY(1) - y1) / (gr->GetPointX(1) - x1);
       if (m == 0.)
-         return std::pair(2. * x1 - gr->GetPointX(1), std::numeric_limits<double>::infinity());
-      return std::pair((alpha - y1) / m + x1, std::numeric_limits<double>::infinity());
+         return std::pair(2. * x1 - gr->GetPointX(1), -std::numeric_limits<double>::infinity());
+      return std::pair((alpha - y1) / m + x1, -std::numeric_limits<double>::infinity());
    }
 }
 
