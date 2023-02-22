@@ -206,17 +206,17 @@ public:
 
    std::shared_ptr<TObject> convertForAcquisition(xRooNode &acquirer, const char *opt = "") const;
 
-   xRooNode vars() const;   // obs,globs,floats,args
+   xRooNode vars() const;   // obs,pars
    xRooNode obs() const;    // robs and globs
    xRooNode robs() const;   // just the regular obs
    xRooNode globs() const;  // just the global obs
-   xRooNode pars() const;   // floats and args/consts
-   xRooNode floats() const; // just floating pars
-   xRooNode args() const;   // just const pars
-   xRooNode consts() const { return args(); }
+   xRooNode pars() const;   // poi, np, and pp (prespecified pars)
+   xRooNode floats() const; // float poi or np
+   xRooNode consts() const;   // just const poi or np
 
    xRooNode poi() const; // parameters of interest
-   xRooNode np() const;  // nuisance parameters
+   xRooNode np() const;  // nuisance parameters (non-poi floatables)
+   xRooNode pp() const;  // preset/prespecified parameters
 
    xRooNode components() const; // additive children
    xRooNode factors() const;    // multiplicative children

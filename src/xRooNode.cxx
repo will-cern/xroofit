@@ -298,6 +298,8 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
                      _v->setMin(-1e-5);
                }
             }
+         } else if (TString(k).EndsWith("_NuisParams")) {
+            v.setAttribAll("np");
          }
       }
       if (!_allGlobs.empty() && GETWSSETS(_ws).count("globalObservables") == 0) {
@@ -3364,7 +3366,7 @@ bool xRooNode::SetBinError(int bin, double value)
                double _max = tau * (1. + 5. * sqrt(1. / tau));
                _glob->setRange(_min, _max);
                _glob->setVal(tau);
-               _constr.at(0)->args().at(0)->SetBinContent(0, tau);
+               _constr.at(0)->pp().at(0)->SetBinContent(0, tau);
                rrv->setStringAttribute("boundConstraint", _constr.at(0)->get()->GetName());
             }
             rrv->setRange(std::max((1. - 5. * sqrt(1. / tau)), 1e-15), 1. + 5. * sqrt(1. / tau));
@@ -4272,12 +4274,18 @@ xRooNode xRooNode::pars() const
    return out;
 }
 
-xRooNode xRooNode::args() const
+xRooNode xRooNode::consts() const
 {
-   xRooNode out(".args", std::make_shared<RooArgList>(), *this);
-   out.get<RooArgList>()->setName((GetPath() + ".args").c_str());
-   for (auto o : pars()) {
-      if (o->get<RooConstVar>() || o->get<RooAbsArg>()->getAttribute("Constant")) {
+   xRooNode out(".consts", std::make_shared<RooArgList>(), *this);
+   out.get<RooArgList>()->setName((GetPath() + ".consts").c_str());
+   for (auto o : poi()) {
+      if (o->get<RooAbsArg>()->getAttribute("Constant")) {
+         out.get<RooArgList>()->add(*o->get<RooAbsArg>());
+         out.emplace_back(o);
+      }
+   }
+   for (auto o : np()) {
+      if (o->get<RooAbsArg>()->getAttribute("Constant")) {
          out.get<RooArgList>()->add(*o->get<RooAbsArg>());
          out.emplace_back(o);
       }
@@ -4289,8 +4297,14 @@ xRooNode xRooNode::floats() const
 {
    xRooNode out(".floats", std::make_shared<RooArgList>(), *this);
    out.get<RooArgList>()->setName((GetPath() + ".floats").c_str());
-   for (auto o : pars()) {
-      if (!o->get<RooAbsArg>()->getAttribute("Constant") && !o->get<RooConstVar>()) {
+   for (auto o : poi()) {
+      if (!o->get<RooAbsArg>()->getAttribute("Constant")) {
+         out.get<RooArgList>()->add(*o->get<RooAbsArg>());
+         out.emplace_back(o);
+      }
+   }
+   for (auto o : np()) {
+      if (!o->get<RooAbsArg>()->getAttribute("Constant")) {
          out.get<RooArgList>()->add(*o->get<RooAbsArg>());
          out.emplace_back(o);
       }
@@ -4316,8 +4330,22 @@ xRooNode xRooNode::np() const
    xRooNode out(".np", std::make_shared<RooArgList>(), *this);
    out.get<RooArgList>()->setName((GetPath() + ".np").c_str());
    for (auto o : pars()) {
-      if (!o->get<RooAbsArg>()->getAttribute("Constant") && !o->get<RooAbsArg>()->getAttribute("poi") &&
-          !o->get<RooConstVar>()) {
+      if (o->get<RooAbsArg>()->getAttribute("np") || (!o->get<RooAbsArg>()->getAttribute("Constant") && !o->get<RooAbsArg>()->getAttribute("poi") &&
+          !o->get<RooConstVar>())) {
+         out.get<RooArgList>()->add(*o->get<RooAbsArg>());
+         out.emplace_back(o);
+      }
+   }
+   return out;
+}
+
+xRooNode xRooNode::pp() const
+{
+   xRooNode out(".pp", std::make_shared<RooArgList>(), *this);
+   out.get<RooArgList>()->setName((GetPath() + ".pp").c_str());
+   for (auto o : pars()) {
+      if (!o->get<RooAbsArg>()->getAttribute("np") && !o->get<RooAbsArg>()->getAttribute("poi") &&
+             (o->get<RooAbsArg>()->getAttribute("Constant") || o->get<RooConstVar>())) {
          out.get<RooArgList>()->add(*o->get<RooAbsArg>());
          out.emplace_back(o);
       }
@@ -4342,10 +4370,15 @@ xRooNode xRooNode::vars() const
                out.back()->fFolder = "!globs";
             else if (c->getAttribute("obs"))
                out.back()->fFolder = "!robs";
-            else if (dynamic_cast<RooConstVar *>(c) || (dynamic_cast<RooRealVar*>(c) && (!static_cast<RooRealVar*>(c)->hasMin() || !static_cast<RooRealVar*>(c)->hasMax()))) // pars without a min and max defined aren't floatables
-               out.back()->fFolder = "!nonfloatables";
+            else if (c->getAttribute("poi"))
+               out.back()->fFolder = "!poi";
+            else if (c->getAttribute("np") || (!c->getAttribute("Constant") && !c->getAttribute("poi") &&
+                                               c->IsA()!=RooConstVar::Class()))
+               out.back()->fFolder = "!np";
+            else if(!c->getAttribute("Constant") && c->IsA()!=RooConstVar::Class())
+               out.back()->fFolder = "!floats";
             else
-               out.back()->fFolder = "!floatables";
+               out.back()->fFolder = "!pp";
          }
       }
    } else if (auto p2 = get<RooAbsData>(); p2) {
@@ -5235,7 +5268,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
             _v->removeError();
          }
       }
-      auto _args = args().argList();
+      auto _args = consts().argList();_args.add(pp().argList());
       // global obs are added to constPars list too
       auto _globs = globs(); // keep alive as may own glob
       _args.add(_globs.argList());
@@ -5288,7 +5321,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
                   fr->setCovarianceMatrix(cov);
                }
 
-               auto _args = args().argList();
+               auto _args = consts().argList(); _args.add(pp().argList());
                // global obs are added to constPars list too
                auto _globs = globs(); // keep alive as may own glob
                _args.add(_globs.argList());
@@ -5337,7 +5370,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
    fr->setCovarianceMatrix(cov);
    fr->setCovQual(covQualBackup);
 
-   auto _args = args().argList();
+   auto _args = consts().argList(); _args.add(pp().argList());
    // global obs are added to constPars list too
    auto _globs = globs(); // keep alive as may own glob
    _args.add(_globs.argList());
