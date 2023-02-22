@@ -368,8 +368,8 @@ xRooNLLVar::generate(bool expected, int seed)
    return xRooFit::generateFrom(*fPdf, fr, expected, seed);
 }
 
-xRooNLLVar::xRooFitResult::xRooFitResult(const std::shared_ptr<xRooNode> &in)
-   : std::shared_ptr<const RooFitResult>(std::dynamic_pointer_cast<const RooFitResult>(in->fComp)), fNode(in)
+xRooNLLVar::xRooFitResult::xRooFitResult(const std::shared_ptr<xRooNode> &in, const std::shared_ptr<xRooNLLVar>& nll)
+   : std::shared_ptr<const RooFitResult>(std::dynamic_pointer_cast<const RooFitResult>(in->fComp)), fNode(in), fNll(nll)
 {
 }
 const RooFitResult *xRooNLLVar::xRooFitResult::operator->() const
@@ -385,6 +385,86 @@ xRooNLLVar::xRooFitResult::operator const RooFitResult *() const
 void xRooNLLVar::xRooFitResult::Draw(Option_t *opt)
 {
    fNode->Draw(opt);
+}
+
+
+xRooNLLVar::xRooFitResult xRooNLLVar::xRooFitResult::cfit(const char* poiValues) {
+
+   // create a hypoPoint with ufit equal to this fit
+   // and poi equal to given poi
+   if (!fNll) throw std::runtime_error("xRooFitResult::cfit: Cannot create cfit without nll");
+
+   auto hp = fNll->hypoPoint(poiValues);
+   hp.fUfit = *this;
+   return xRooNLLVar::xRooFitResult(std::make_shared<xRooNode>(hp.cfit_null(),fNode->fParent),fNll);
+}
+xRooNLLVar::xRooFitResult xRooNLLVar::xRooFitResult::ifit(const char* np, bool up, bool prefit) {
+   RooRealVar* npVar = dynamic_cast<RooRealVar*>((prefit ? get()->floatParsInit() : get()->floatParsFinal()).find(np));
+   if (!npVar) throw std::runtime_error("xRooFitResult::ifit: par not found");
+   return cfit(TString::Format("%s=%f",np,npVar->getVal()+(up?npVar->getErrorHi():npVar->getErrorLo())));
+}
+double xRooNLLVar::xRooFitResult::impact(const char* poi, const char* np, bool up, bool prefit, bool covApprox) {
+   if (!covApprox) {
+      // get the ifit and get the difference between the postFit poi values
+      RooRealVar* poiHat = dynamic_cast<RooRealVar*>((get()->floatParsFinal()).find(poi));
+      if(!poiHat) throw std::runtime_error("xRooFitResult::impact: poi not found");
+      auto _ifit = ifit(np,up,prefit);
+      if (!_ifit) throw std::runtime_error("xRooFitResult::impact: null ifit");
+      if (_ifit->status()!=0) fNode->Warning("impact","ifit status code is %d",_ifit->status());
+      return _ifit->floatParsFinal().getRealValue(poi) - poiHat->getVal();
+   } else {
+      // estimate impact from the covariance matrix ....
+      int iPoi = get()->floatParsFinal().index(poi);
+      int iNp = get()->floatParsFinal().index(np);
+      if (iPoi==-1) throw std::runtime_error("xRooFitResult::impact: poi not found");
+      if (iNp==-1) throw std::runtime_error("xRooFitResult::impact: np not found");
+      RooRealVar* npVar = dynamic_cast<RooRealVar*>((prefit ? get()->floatParsInit() : get()->floatParsFinal()).find(np));
+      return get()->covarianceMatrix()(iPoi,iNp)/(up ? npVar->getErrorHi() : npVar->getErrorLo());
+   }
+   return std::numeric_limits<double>::quiet_NaN();
+}
+
+RooArgList xRooNLLVar::xRooFitResult::ranknp(const char* poi, bool up, bool prefit, double approxThreshold) {
+
+   RooRealVar* poiHat = dynamic_cast<RooRealVar*>((get()->floatParsFinal()).find(poi));
+   if(!poiHat) throw std::runtime_error("xRooFitResult::ranknp: poi not found");
+
+   std::vector<std::pair<std::string,double>> ranks;
+   // first do with the covariance approximation, since that's always available
+   for(auto par : get()->floatParsFinal()) {
+      if (par == poiHat) continue;
+      ranks.emplace_back(std::pair(par->GetName(),impact(poi,par->GetName(),up,prefit,true)));
+   }
+
+   std::sort(ranks.begin(),ranks.end(), [](auto &left, auto &right) {
+      if(std::isnan(left.second) && !std::isnan(right.second)) return false;
+      if(!std::isnan(left.second) && std::isnan(right.second)) return true;
+      return fabs(left.second) > fabs(right.second); });
+
+   // now redo the ones above the threshold
+   for(auto& [n,v] : ranks) {
+      if (v >= approxThreshold) {
+         try {
+            v = impact(poi,n.c_str(),up,prefit);
+         } catch(...) {
+            v = std::numeric_limits<double>::quiet_NaN();
+         };
+      }
+   }
+
+   // resort
+   std::sort(ranks.begin(),ranks.end(), [](auto &left, auto &right) {
+      if(std::isnan(left.second) && !std::isnan(right.second)) return false;
+      if(!std::isnan(left.second) && std::isnan(right.second)) return true;
+      return fabs(left.second) > fabs(right.second); });
+
+   RooArgList out; out.setName("rankings");
+   for(auto& [n,v] : ranks) {
+      out.addClone(*get()->floatParsFinal().find(n.c_str()));
+      auto vv = static_cast<RooRealVar*>(out.at(out.size()-1));
+      vv->setVal(v); vv->removeError(); vv->removeRange();
+   }
+   return out;
 }
 
 xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig> &_config)
@@ -420,7 +500,7 @@ xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::
       if (fGlobs)
          std::unique_ptr<RooAbsCollection>(out->constPars().selectCommon(*fGlobs))->setAttribAll("global", true);
    }
-   return xRooFitResult(std::make_shared<xRooNode>(out, fPdf));
+   return xRooFitResult(std::make_shared<xRooNode>(out, fPdf),std::make_shared<xRooNLLVar>(*this));
 }
 
 class AutoRestorer {
@@ -1424,7 +1504,7 @@ void xRooNLLVar::xRooHypoPoint::addAltToys(int nToys, int seed)
 }
 
 xRooNLLVar::xRooHypoPoint
-xRooNLLVar::hypoPoint(const char *parName, double value, double alt_value, const xRooFit::Asymptotics::PLLType &pllType)
+xRooNLLVar::hypoPoint(const char *poiValues, double alt_value, const xRooFit::Asymptotics::PLLType &pllType)
 {
    xRooHypoPoint out;
    // out.fPOIName = parName; out.fNullVal = value; out.fAltVal = alt_value;
@@ -1432,22 +1512,38 @@ xRooNLLVar::hypoPoint(const char *parName, double value, double alt_value, const
    if (!fFuncVars) {
       reinitialize();
    }
+   AutoRestorer snap(*fFuncVars);
 
    out.nllVar = std::make_shared<xRooNLLVar>(*this);
    out.data = getData();
 
-   auto poi = dynamic_cast<RooRealVar *>(fFuncVars->find(parName));
-   if (!poi)
-      return out;
-   AutoRestorer snap((RooArgSet(*poi)));
-   poi->setVal(value);
-   poi->setConstant();
+   TStringToken pattern(poiValues,",");
+   TString poiNames;
+   while(pattern.NextToken()) {
+      TString s= pattern.Data();
+      auto i = s.Index("=");
+      if (i==-1) throw std::runtime_error("poiValues must contain value");
+      TString cName = s(0,i);
+      TString cVal = s(i+1,s.Length());
+      if (!cVal.IsFloat()) throw std::runtime_error("poiValues must contain value");
+      auto v = dynamic_cast<RooRealVar*>(fFuncVars->find(cName));
+      if (!v) throw std::runtime_error("Cannot find poi");
+      v->setVal(cVal.Atof());
+      v->setConstant(); // because will select constants as coords
+      if(poiNames!="") {poiNames += ","; }
+      poiNames += cName;
+   }
+   if (poiNames=="") {
+      throw std::runtime_error("No poi");
+   }
    auto _snap = std::unique_ptr<RooAbsCollection>(fFuncVars->selectByAttrib("Constant", true))->snapshot();
-   _snap->find(poi->GetName())->setAttribute("poi", true);
+   _snap->setAttribAll("poi", false);
+   std::unique_ptr<RooAbsCollection> _poi(_snap->selectByName(poiNames));
+   _poi->setAttribAll("poi", true);
    if (std::isnan(alt_value))
-      _snap->find(poi->GetName())->setStringAttribute("altVal", nullptr);
+      for(auto a : *_poi) a->setStringAttribute("altVal", nullptr);
    else
-      _snap->find(poi->GetName())->setStringAttribute("altVal", TString::Format("%g", alt_value));
+      for(auto a : *_poi) a->setStringAttribute("altVal", TString::Format("%g", alt_value));
    if (fGlobs)
       _snap->remove(*fGlobs, true, true);
    out.coords.reset(_snap);
@@ -1457,7 +1553,7 @@ xRooNLLVar::hypoPoint(const char *parName, double value, double alt_value, const
       // decide based on values
       if (std::isnan(alt_value))
          _type = xRooFit::Asymptotics::TwoSided;
-      else if (value >= alt_value)
+      else if (dynamic_cast<RooRealVar*>(_poi->first())->getVal() >= alt_value)
          _type = xRooFit::Asymptotics::OneSidedPositive;
       else
          _type = xRooFit::Asymptotics::Uncapped;
@@ -1481,6 +1577,12 @@ xRooNLLVar::hypoPoint(double value, double alt_value, const xRooFit::Asymptotics
       throw std::runtime_error("Multiple POI specified in model");
    }
    return hypoPoint(_poi->first()->GetName(), value, alt_value, pllType);
+}
+
+xRooNLLVar::xRooHypoPoint
+xRooNLLVar::hypoPoint(const char *parName, double value, double alt_value, const xRooFit::Asymptotics::PLLType &pllType)
+{
+   return hypoPoint(TString::Format("%s=%f",parName,value),alt_value,pllType);
 }
 
 void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
@@ -1861,7 +1963,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
             weights.push_back(std::get<2>(t));
          }
       }
-      nullDetails.addClone(RooRealVar("badToys", "Number of bad Toys", badToys));
+      altDetails.addClone(RooRealVar("badToys", "Number of bad Toys", badToys));
 
       out.SetAltDistribution(new RooStats::SamplingDistribution("alt", "Alt dist", values, weights, tsTitle()));
       out.SetAltDetailedOutput(new RooDataSet("altDetails", "altDetails", altDetails));

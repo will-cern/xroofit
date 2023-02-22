@@ -86,12 +86,38 @@ public:
 
    class xRooFitResult : public std::shared_ptr<const RooFitResult> {
    public:
-      xRooFitResult(const std::shared_ptr<xRooNode> &in); // : fNode(in) { }
+      xRooFitResult(const std::shared_ptr<xRooNode> &in, const std::shared_ptr<xRooNLLVar>& nll = nullptr); // : fNode(in) { }
       const RooFitResult *operator->() const;
       //        operator std::shared_ptr<const RooFitResult>() const;
       operator const RooFitResult *() const;
       void Draw(Option_t *opt = "");
+
+      xRooNLLVar nll();
+      RooArgList poi() { return get() ? RooArgList(*std::unique_ptr<RooAbsCollection>(get()->floatParsFinal().selectByAttrib("poi",true))) : RooArgList(); }
+
+      // generate a conditional fit using the given poi set to the given values
+      xRooFitResult cfit(const char* poiValues);
+      // generate the conditional fit required for an impact calculation
+      xRooFitResult ifit(const char* np, bool up, bool prefit=false);
+      // calculate the impact on poi due to np. if approx is true, will use the covariance approximation instead
+      double impact(const char* poi, const char* np, bool up=true, bool prefit=false, bool approx=false);
+      double impact(const char* np, bool up=true, bool prefit=false, bool approx=false) {
+         auto _poi = poi(); if(_poi.size()!=1) throw std::runtime_error("xRooFitResult::impact: not one POI");
+         return impact(poi().contentsString().c_str(),up,prefit,approx);
+      }
+      // rank all the np based on impact ... will use the covariance approximation if full impact not available
+      // the approxThreshold sets the level below which the approximation will be returned
+      // e.g. set it to 0 to not do approximation
+      RooArgList ranknp(const char* poi, bool up=true, bool prefit=false, double approxThreshold=std::numeric_limits<double>::infinity());
+      // version that assumes only one parameter is poi
+      RooArgList ranknp(bool up=true, bool prefit=false, double approxThreshold=std::numeric_limits<double>::infinity()) {
+         auto _poi = poi(); if(_poi.size()!=1) throw std::runtime_error("xRooFitResult::ranknp: not one POI");
+         return ranknp(poi().contentsString().c_str(),up,prefit,approxThreshold);
+      }
+
+
       std::shared_ptr<xRooNode> fNode;
+      std::shared_ptr<xRooNLLVar> fNll;
    };
 
    xRooFitResult minimize(const std::shared_ptr<ROOT::Fit::FitConfig> & = nullptr);
@@ -191,6 +217,10 @@ public:
 
    // use alt_value = nan to skip the asimov calculations
    xRooHypoPoint hypoPoint(const char *parName, double value,
+                           double alt_value = std::numeric_limits<double>::quiet_NaN(),
+                           const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
+   // same as above but specify parNames and values in a string
+   xRooHypoPoint hypoPoint(const char *parValues,
                            double alt_value = std::numeric_limits<double>::quiet_NaN(),
                            const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
    // this next method requires poi to be flagged in the model already (with "poi" attribute) .. must be exactly one
