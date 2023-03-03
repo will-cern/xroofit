@@ -5788,7 +5788,7 @@ xRooNode xRooNode::reduced(const std::string &_range) const
 
 class PdfWrapper : public RooAbsPdf {
 public:
-   PdfWrapper(RooAbsPdf &f, RooAbsReal *coef, bool expEvMode = false)
+   PdfWrapper(RooAbsReal &f, RooAbsReal *coef, bool expEvMode = false)
       : RooAbsPdf(Form("exp_%s", f.GetName())), fFunc("func", "func", this, f), fCoef("coef", "coef", this)
    {
       if (coef)
@@ -6061,6 +6061,9 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    } else if (!h) {
       h = new TH1D(rar->GetName(), rar->GetTitle(), v->numBins(rar->GetName()), 0, v->numBins(rar->GetName()));
    }
+   if(auto o = dynamic_cast<TObject*>(v)) {
+      h->GetXaxis()->SetTitle(o->GetTitle());
+   }
    TH1::AddDirectory(t);
    h->Sumw2();
    if (v)
@@ -6073,6 +6076,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    if (strlen(h->GetXaxis()->GetTitle()) == 0)
       h->GetXaxis()->SetTitle(vv->GetTitle());
    auto p = dynamic_cast<RooAbsPdf *>(rar);
+
+
 
    RooFitResult *fr = nullptr;
    if (errors) {
@@ -6143,6 +6148,17 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    if (!empty) {
       if (binEnd == 0)
          binEnd = h->GetNbinsX();
+
+      // check if we need to do any projecting of other observables
+      RooAbsReal* oldrar = nullptr;
+      auto _obs = robs();
+      if(auto a = dynamic_cast<RooAbsArg*>(v)) _obs.get<RooArgList>()->remove(*a);
+      if (!_obs.get<RooArgList>()->empty()) {
+         oldrar = rar;
+         rar = rar->createIntegral(*_obs.get<RooArgList>(),RooFit::NormSet(*robs().get<RooArgList>()));
+         normSet.add(*_obs.get<RooArgList>());
+      }
+
       bool needBinWidth = false;
       // may have MULTIPLE coefficients for the same pdf!
       auto _coefs = coefs();
@@ -6177,7 +6193,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             if (p) {
                // std::cout << "computing error of :" << h->GetBinCenter(i) << std::endl;
                // //fr->floatParsFinal().Print(); fr->covarianceMatrix().Print();
-               res = PdfWrapper(*p, _coefs.get<RooAbsReal>()).getSimplePropagatedError(*fr, normSet);
+               res = PdfWrapper((oldrar) ? *rar : *p, _coefs.get<RooAbsReal>()).getSimplePropagatedError(*fr, normSet);
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
                // improved normSet invalidity checking, so assuming no longer need this in 6.28 onwards
                p->_normSet = nullptr;
@@ -6224,6 +6240,12 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          gOldHandlerr = 0;
       }
       normSet = *snap;
+
+      if (oldrar) {
+         delete rar;
+         rar = oldrar;
+      }
+
    }
 
    if (!p) {
@@ -6237,6 +6259,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
    if (errors)
       delete fr;
+
+
 
    return h;
 }
@@ -6570,7 +6594,7 @@ void xRooNode::Draw(Option_t *opt)
          Error("Draw","Could not find variable %s",varName.Data());
          return; // don't throw because if happens in browser will cause ROOT to exit
       }
-      if (xPoints.empty()) {
+      if (xPoints.empty() && !obs().find(varName.Data())) { // will draw obs as regular (e.g. hist)
          double tmp = static_cast<RooAbsRealLValue*>(v)->getVal();
          for(int i=0;i<v->numBins(GetName());i++) {
             v->setBin(i,GetName());
@@ -7606,6 +7630,16 @@ void xRooNode::Draw(Option_t *opt)
          }
       }
    } else {
+      auto _style = style(h);
+      if(_style) {
+         (TAttLine &)(*h) = *_style;
+         (TAttFill &)(*h) = *_style;
+         (TAttMarker &)(*h) = *_style;
+         if (errHist) {
+            (TAttLine &)(*errHist) = *h;
+            errHist->SetFillColor(h->GetLineColor());
+         }
+      }
       h->Draw(dOpt + sOpt);
    }
 
