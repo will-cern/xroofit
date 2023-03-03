@@ -324,6 +324,7 @@ void xRooNLLVar::reinitialize()
       if (std::shared_ptr<RooAbsReal>::get())
          attribs = std::shared_ptr<RooAbsReal>::get()->attributes();
       this->reset(fPdf->createNLL(*fData, *fOpts));
+      std::shared_ptr<RooAbsReal>::get()->SetName(TString::Format("nll_%s/%s",fPdf->GetName(),fData->GetName()));
       // RooFit only swaps in what it calls parameters, this misses out the RooConstVars which we treat as pars as well
       // so swap those in ... question: is recursiveRedirectServers usage in RooAbsOptTestStatic (and here) a memory
       // leak?? where do the replaced servers get deleted??
@@ -365,7 +366,7 @@ xRooNLLVar::generate(bool expected, int seed)
    const_cast<RooArgList&>(fr->constPars()).setAttribAll("global", false);
    if (fGlobs)
       std::unique_ptr<RooAbsCollection>(fr->constPars().selectCommon(*fGlobs))->setAttribAll("global", true);
-   return xRooFit::generateFrom(*fPdf, fr, expected, seed);
+   return xRooFit::generateFrom(*fPdf, *fr, expected, seed);
 }
 
 xRooNLLVar::xRooFitResult::xRooFitResult(const std::shared_ptr<xRooNode> &in, const std::shared_ptr<xRooNLLVar>& nll)
@@ -1235,6 +1236,8 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit(bool readOnl
       // rename nll so if caching fit results will cache into subdir
       nllVar->get()->SetName(
          TString::Format("%s/%s_%s", nllVar->get()->GetName(), fGenFit->GetName(), (isExpected) ? "asimov" : "toys"));
+      if(!isExpected) nllVar->get()->SetName(TString::Format("%s/%s",nllVar->get()->GetName(),data.first->GetName()));
+
    } else if (!std::isnan(fAltVal())) {
       // guess data given is expected to align with alt value
       nllVar->fFuncVars->setRealValue(fPOIName(), fAltVal());
@@ -1279,9 +1282,11 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null(bool re
       nllVar->fFuncGlobs->setAttribAll("Constant", true);
    nllVar->fFuncVars->find(fPOIName())
       ->setStringAttribute("altVal", (!std::isnan(fAltVal())) ? TString::Format("%g", fAltVal()) : nullptr);
-   if (fGenFit)
+   if (fGenFit) {
       nllVar->get()->SetName(
          TString::Format("%s/%s_%s", nllVar->get()->GetName(), fGenFit->GetName(), (isExpected) ? "asimov" : "toys"));
+      if(!isExpected) nllVar->get()->SetName(TString::Format("%s/%s",nllVar->get()->GetName(),data.first->GetName()));
+   }
    nllVar->get()->setStringAttribute("fitresultTitle", collectionContents(poi()).c_str());
    return (fNull_cfit = nllVar->minimize());
 }
@@ -1307,9 +1312,11 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt(bool rea
    if (nllVar->fFuncGlobs)
       nllVar->fFuncGlobs->setAttribAll("Constant", true);
    *nllVar->fFuncVars = alt_poi();
-   if (fGenFit)
-      nllVar->get()->SetName(
-         TString::Format("%s/%s_%s", nllVar->get()->GetName(), fGenFit->GetName(), (isExpected) ? "asimov" : "toys"));
+   if (fGenFit) {
+      nllVar->get()->SetName(TString::Format("%s/%s_%s", nllVar->get()->GetName(), fGenFit->GetName(),
+                                             (isExpected) ? "asimov" : "toys"));
+      if(!isExpected) nllVar->get()->SetName(TString::Format("%s/%s",nllVar->get()->GetName(),data.first->GetName()));
+   }
    nllVar->get()->setStringAttribute("fitresultTitle", collectionContents(alt_poi()).c_str());
    return (fAlt_cfit = nllVar->minimize());
 }
@@ -1399,7 +1406,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateNull(int seed)
       nllVar->reinitialize();
    //*nllVar->fFuncVars = cfit_null()->floatParsFinal();
    //*nllVar->fFuncVars = cfit_null()->constPars();
-   out.data = xRooFit::generateFrom(*nllVar->fPdf, cfit_null(), false, seed); // nllVar->generate(false,seed);
+   out.data = xRooFit::generateFrom(*nllVar->fPdf, *cfit_null(), false, seed); // nllVar->generate(false,seed);
    out.fGenFit = cfit_null();
    return out;
 }
@@ -1418,7 +1425,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed)
       nllVar->reinitialize();
    //*nllVar->fFuncVars = cfit_alt()->floatParsFinal();
    //*nllVar->fFuncVars = cfit_alt()->constPars();
-   out.data = xRooFit::generateFrom(*nllVar->fPdf, cfit_alt(), false, seed); // out.data = nllVar->generate(false,seed);
+   out.data = xRooFit::generateFrom(*nllVar->fPdf, *cfit_alt(), false, seed); // out.data = nllVar->generate(false,seed);
    out.fGenFit = cfit_alt();
    return out;
 }

@@ -112,11 +112,12 @@ std::shared_ptr<const RooFitResult> xRooFit::fitTo(RooAbsPdf &pdf,
 }
 
 std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>>
-xRooFit::generateFrom(RooAbsPdf &pdf, const std::shared_ptr<const RooFitResult> &fr, bool expected, int seed)
+xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, int seed)
 {
 
    std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> out;
 
+   auto fr = &_fr;
    if (!fr)
       return out;
 
@@ -310,10 +311,10 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const std::shared_ptr<const RooFitResult> 
          auto r = dynamic_cast<RooRealVar *>(o);
          if (!r)
             continue;
-         if (_pdf->isBinnedDistribution(*r)) {
+         if (auto res = _pdf->binBoundaries(*r, -std::numeric_limits<double>::infinity(),
+                                            std::numeric_limits<double>::infinity())) {
             binnings[r] = std::shared_ptr<RooAbsBinning>(r->getBinning().clone(r->getBinning().GetName()));
-            auto res = _pdf->binBoundaries(*r, -std::numeric_limits<double>::infinity(),
-                                           std::numeric_limits<double>::infinity());
+
             std::vector<double> boundaries;
             boundaries.reserve(res->size());
             for (auto &rr : *res) {
@@ -371,7 +372,7 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const std::shared_ptr<const RooFitResult> 
    };
 
    out = genSubPdf(&pdf);
-   out.first->SetName(uuid);
+   out.first->SetName(expected ? (TString(fr->GetName())+"_asimov") : uuid);
 
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
    // store fitResult name on the weightVar
@@ -923,6 +924,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       if (status == 0 && minos) {
          std::unique_ptr<RooAbsCollection> pars(floatPars->selectByAttrib("minos", true));
          for (auto p : *pars) {
+            Info("minimize","Computing minos error for %s",p->GetName());
             xRooFit::minos(nll, *out, p->GetName(), myFitConfig);
          }
          if (!pars->empty())

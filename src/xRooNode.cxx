@@ -1276,7 +1276,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             auto _fr = std::dynamic_pointer_cast<const RooFitResult>(fParent->fitResult().fComp);
             if (strlen(_fr->GetName()) == 0)
                std::const_pointer_cast<RooFitResult>(_fr)->SetName(TUUID().AsString());
-            auto asi = xRooFit::generateFrom(*fParent->get<RooAbsPdf>(), _fr, sOpt == "asimov");
+            auto asi = xRooFit::generateFrom(*fParent->get<RooAbsPdf>(), *_fr, sOpt == "asimov");
             if (strlen(child.GetName()))
                asi.first->SetName(child.GetName());
             if (asi.first) {
@@ -5472,7 +5472,7 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
       if (strlen(_data.GetName()) == 0) {
          // create the EXPECTED (asimov) dataset with the observables
          auto asi = xRooFit::generateFrom(*get<RooAbsPdf>(),
-                                          std::dynamic_pointer_cast<const RooFitResult>(fitResult().fComp), true);
+                                          *(fitResult().get<RooFitResult>()), true);
          _d = std::make_shared<xRooNode>(asi.first, *this);
          _d->emplace_back(
             std::make_shared<xRooNode>(".globs", std::const_pointer_cast<RooAbsCollection>(asi.second), *_d));
