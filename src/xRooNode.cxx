@@ -4088,7 +4088,7 @@ xRooNode &xRooNode::browse()
          } else {
             emplace_back(c);
          }
-         if (TString(c->GetName()) != ".coef")
+         if (!TString(c->GetName()).BeginsWith(".coef"))
             out++; // don't count .coef as a child, as technically part of parent
       }
       return out;
@@ -4714,6 +4714,7 @@ xRooNode xRooNode::bins() const
 xRooNode xRooNode::coefs() const
 {
    RooArgList coefs;
+   bool isResidual = false;
 
    // if parent is a sumpdf or addpdf then include the coefs
    // if func appears multiple times then coefs must be combined into a RooAddition temporary
@@ -4722,7 +4723,12 @@ xRooNode xRooNode::coefs() const
          int i = 0;
          for (auto &o : p->funcList()) {
             if (o == get()) {
-               coefs.add(*p->coefList().at(i));
+               if (i>=p->coefList().size()) {
+                  isResidual = true;
+                  coefs.add(p->coefList());
+               } else {
+                  coefs.add(*p->coefList().at(i));
+               }
             }
             i++;
          }
@@ -4730,14 +4736,21 @@ xRooNode xRooNode::coefs() const
          int i = 0;
          for (auto &o : p2->pdfList()) {
             if (o == get()) {
-               coefs.add(*p2->coefList().at(i));
+               if (i>=p2->coefList().size()) {
+                  isResidual = true;
+                  coefs.add(p2->coefList());
+               } else {
+                  coefs.add(*p2->coefList().at(i));
+               }
             }
             i++;
          }
       }
    }
-   xRooNode out(".coefs", coefs.empty() ? nullptr : std::make_shared<RooAddition>(".coefs", "Coefficients of", coefs),
+   auto coefSum = coefs.empty() ? nullptr : std::make_shared<RooAddition>(".coefs", "Coefficients of", coefs);
+   xRooNode out(".coefs", (isResidual) ? std::dynamic_pointer_cast<RooAbsArg>(std::make_shared<RooFormulaVar>(".coefs","1-sum(coefs)","1. - @0",*coefSum)) : coefSum ,
                 *this);
+   if (isResidual) out.push_back(std::make_shared<xRooNode>(".otherCoefs",coefSum,out));
    if (!coefs.empty())
       out.browse();
 
@@ -6155,8 +6168,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       if(auto a = dynamic_cast<RooAbsArg*>(v)) _obs.get<RooArgList>()->remove(*a);
       if (!_obs.get<RooArgList>()->empty()) {
          oldrar = rar;
-         rar = rar->createIntegral(*_obs.get<RooArgList>(),RooFit::NormSet(*robs().get<RooArgList>()));
          normSet.add(*_obs.get<RooArgList>());
+         rar = rar->createIntegral(*_obs.get<RooArgList>(),RooFit::NormSet(normSet));
       }
 
       bool needBinWidth = false;
@@ -6244,13 +6257,14 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       if (oldrar) {
          delete rar;
          rar = oldrar;
+         xRooNode(*rar).sterilize(); // need to clear the cache of the created integral
       }
 
    }
 
-   if (!p) {
+   if (!p && !rar->getAttribute("density")) {
       h->GetYaxis()->SetTitle(rar->getStringAttribute("units"));
-   } else if (p->canBeExtended()) {
+   } else if (p && p->canBeExtended()) {
       h->GetYaxis()->SetTitle("Events");
    } else {
       h->GetYaxis()->SetTitle("Probability Mass");
@@ -7451,15 +7465,24 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    auto rar = get<RooAbsReal>();
+   const xRooNode* rarNode = this;
    if (!rar) {
       get()->Draw();
       return;
+   }
+   RooAbsReal* sf = nullptr;
+   if (get()->InheritsFrom("RooExtendPdf")) {
+      browse();
+      rarNode = find(".pdf").get();
+      //rar = rarNode->get<RooAbsReal>();
+      sf = find(".n")->get<RooAbsReal>();
    }
 
    auto h = BuildHistogram(v, false, hasErrorOpt);
    if (!h)
       return;
    h->SetBit(kCanDelete);
+
    if (!v)
       v = getObject<RooAbsLValue>(h->GetXaxis()->GetName()).get();
    RooAbsArg *vv = (v) ? dynamic_cast<RooAbsArg *>(v) : rar;
@@ -7643,7 +7666,7 @@ void xRooNode::Draw(Option_t *opt)
       h->Draw(dOpt + sOpt);
    }
 
-   if (!hasOverlay && (rar->InheritsFrom("RooRealSumPdf") || rar->InheritsFrom("RooAddPdf"))) {
+   if (!hasOverlay && (rarNode->get()->InheritsFrom("RooRealSumPdf") || rarNode->get()->InheritsFrom("RooAddPdf"))) {
       // build a stack
       THStack *stack = new THStack(TString::Format("%s_stack", rar->GetName()),
                                    TString::Format("%s;%s", rar->GetTitle(), h->GetXaxis()->GetTitle()));
@@ -7653,11 +7676,11 @@ void xRooNode::Draw(Option_t *opt)
       bool titleMatchName = true;
       std::map<std::string, TH1 *> histGroups;
       std::vector<TH1 *> hhs;
-      if (components().size() == 1) {
+      if (rarNode->components().size() == 1) {
          // support for CMS model case where has single component containing many coeffs
          // will build stack by setting each coeff equal to 0 in turn, rebuilding the histogram
          // the difference from the "full" histogram will be the component
-         auto comps = components()[0];
+         auto comps = rarNode->components()[0];
          RooArgList coefs;
          for (auto &c : *comps) {
             if (c->fFolder == "!.coeffs")
@@ -7675,6 +7698,7 @@ void xRooNode::Draw(Option_t *opt)
                // zero.setAttribute(Form("ORIGNAME:%s",c->GetName()),false); (commented out so that on next iteration
                // will still replace all prev)
                auto hh = xRooNode(*f, *this).BuildHistogram(v);
+               if (sf) hh->Scale(sf->getVal());
                if (strlen(hh->GetTitle()) == 0)
                   hh->SetTitle(c->GetName()); // ensure all hists has titles
                titleMatchName &= (TString(c->GetName()) == hh->GetTitle() ||
@@ -7687,8 +7711,9 @@ void xRooNode::Draw(Option_t *opt)
             }
          }
       } else {
-         for (auto &samp : components()) {
+         for (auto &samp : rarNode->components()) {
             auto hh = samp->BuildHistogram(v);
+            if (sf) hh->Scale(sf->getVal());
             hhs.push_back(hh);
             if (strlen(hh->GetTitle()) == 0)
                hh->SetTitle(samp->GetName()); // ensure all hists has titles
@@ -8118,6 +8143,7 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
          out; // coef value ... not included in Error of integral we just created (doesn't have coefs() return)
       out *= f->getVal();
       err = tmp * xRooNode(f, *this).GetBinError(-1, fr);
+      xRooNode(*p2).sterilize(); // needed so that we can forget properly about the integral we just created (and are deleting)
    } else if (get<RooAbsData>()) {
       out = 0;
       auto vals = GetBinContents(1, 0); // returns all bins
