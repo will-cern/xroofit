@@ -585,7 +585,7 @@ void xRooNode::Browse(TBrowser *b)
          dynamic_cast<TQObject *>(b->GetBrowserImp())
             ->Connect("Checked(TObject *, Bool_t)", ClassName(), v.get(), "Checked(TObject *, Bool_t)");
          if (auto _fr = v->get<RooFitResult>(); _fr && _fr->status())
-            v->GetTreeItem(b)->SetColor(kRed);
+            v->GetTreeItem(b)->SetColor(_fr->numStatusHistory() ? kRed : kBlue);
       }
       // v.fBrowsers.insert(b);
    }
@@ -4088,8 +4088,8 @@ xRooNode &xRooNode::browse()
          } else {
             emplace_back(c);
          }
-         if (!TString(c->GetName()).BeginsWith(".coef"))
-            out++; // don't count .coef as a child, as technically part of parent
+//         if (!TString(c->GetName()).BeginsWith(".coef"))
+//            out++; // don't count .coef as a child, as technically part of parent
       }
       return out;
    };
@@ -4132,6 +4132,28 @@ xRooNode &xRooNode::browse()
       addedChildren += appendChildren(components());
       if (!get<RooWorkspace>())
          addedChildren += appendChildren(factors());
+      // include coefs if any
+      auto _coefs = coefs();
+      if (!_coefs.empty()) {
+         if (_coefs.size() == 1) {
+            if (strcmp(_coefs.at(0)->GetName(), "1") != 0 &&
+                strcmp(_coefs.at(0)->GetName(), "ONE") != 0) { // don't add the "1"
+               if (auto existing = findByObj(_coefs.at(0)); existing) {
+                  existing->fTimes++;
+                  existing->fFolder = _coefs.at(0)->fFolder; // transfer folder assignment
+               } else {
+                  emplace_back(std::make_shared<xRooNode>(".coef", *_coefs.at(0)->get(), *this));
+               }
+            }
+         } else {
+            if (auto existing = find(_coefs.GetName()); existing) {
+               existing->fTimes++;
+               existing->fFolder = _coefs.fFolder; // transfer folder assignment
+            } else {
+               emplace_back(std::make_shared<xRooNode>(_coefs));
+            }
+         }
+      }
       addedChildren += appendChildren(variations());
       if (get<ParamHistFunc>() || get<RooSimultaneous>())
          addedChildren += appendChildren(bins());
@@ -4804,18 +4826,7 @@ xRooNode xRooNode::factors() const
       }
    }
 
-   // include coefs if any
-   auto _coefs = coefs();
-   if (!_coefs.empty()) {
-      if (_coefs.size() == 1) {
-         if (strcmp(_coefs.at(0)->GetName(), "1") != 0 &&
-             strcmp(_coefs.at(0)->GetName(), "ONE") != 0) { // don't add the "1"
-            out.emplace_back(std::make_shared<xRooNode>(".coef", *_coefs.at(0)->get(), *this));
-         }
-      } else {
-         out.emplace_back(std::make_shared<xRooNode>(_coefs));
-      }
-   }
+
    /*
        // if parent is a sumpdf or addpdf then include the coefs
        // if func appears multiple times then coefs must be combined into a RooAddition temporary
@@ -5362,6 +5373,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
    auto fr = std::make_shared<RooFitResult>("");
    fr->SetTitle(TString::Format("%s uncorrelated parameter snapshot", GetName()));
    fr->setFinalParList(*_pars);
+   fr->setStatus(-1);
 
    TMatrixDSym cov(fr->floatParsFinal().getSize());
    TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(fr.get(),_VM));
