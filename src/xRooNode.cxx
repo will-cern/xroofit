@@ -5946,7 +5946,7 @@ void buildHistogramInterrupt(int signum)
    }
 }
 
-void xRooNode::sterilize()
+void xRooNode::sterilize() const
 {
    auto _doSterilize = [](RooAbsArg *obj) {
 
@@ -5957,6 +5957,11 @@ void xRooNode::sterilize()
       }
       if (RooAbsPdf *p = dynamic_cast<RooAbsPdf *>(obj); p) {
          p->setNormRange(nullptr);
+      }
+      if(RooAbsReal* p = dynamic_cast<RooAbsReal*>(obj); p) {
+         // need to forget about any normSet that was passed to getVal(...)
+         p->setProxyNormSet(nullptr) ;
+         p->_lastNSet = nullptr;
       }
 
 
@@ -6270,6 +6275,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          delete rar;
          rar = oldrar;
          xRooNode(*rar).sterilize(); // need to clear the cache of the created integral
+      } else {
+         sterilize(); // needed to forget about the normSet that was passed to getVal()
       }
 
    }
@@ -8129,17 +8136,17 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
       _pars = _fr->constPars();
    }
 
-   auto _obs = obs().argList();
+   auto _obs = obs();
    auto _coefs = coefs(); // need here to keep alive owned RooProduct
    if (auto c = _coefs.get<RooAbsReal>(); c) {
-      out = c->getVal(_obs); // assumes independent of observables!
+      out = c->getVal(*_obs.get<RooArgList>()); // assumes independent of observables!
    }
 
    if (auto p = dynamic_cast<RooAbsPdf *>(get()); p) {
       // prefer to use expectedEvents for integrals of RooAbsPdf e.g. for RooProdPdf wont include constraint terms
       if (rangeName)
          p->setNormRange(rangeName);
-      out *= p->expectedEvents(_obs);
+      out *= p->expectedEvents(*_obs.get<RooArgList>());
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       // improved normSet invalidity checking, so assuming no longer need this in 6.28 onwards
       p->_normSet = nullptr;
@@ -8149,13 +8156,13 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
          p->setNormRange(nullptr);
    } else if (auto p2 = dynamic_cast<RooAbsReal *>(get()); p2) {
       // only integrate over observables we actually depend on
-      auto f = std::shared_ptr<RooAbsReal>(p2->createIntegral(*std::unique_ptr<RooArgSet>(p2->getObservables(_obs)),
+      auto f = std::shared_ptr<RooAbsReal>(p2->createIntegral(*std::unique_ptr<RooArgSet>(p2->getObservables(*_obs.get<RooArgList>())),
                                                               rangeName)); // did use x here before using obs
       double tmp =
          out; // coef value ... not included in Error of integral we just created (doesn't have coefs() return)
       out *= f->getVal();
       err = tmp * xRooNode(f, *this).GetBinError(-1, fr);
-      xRooNode(*p2).sterilize(); // needed so that we can forget properly about the integral we just created (and are deleting)
+      sterilize(); // needed so that we can forget properly about the integral we just created (and are deleting)
    } else if (get<RooAbsData>()) {
       out = 0;
       auto vals = GetBinContents(1, 0); // returns all bins
@@ -8258,7 +8265,8 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
    bool doBinWidth = false;
    auto ax = (binStart == -1 && binEnd == -1) ? nullptr : GetXaxis();
 
-   RooArgList normSet = obs().argList();
+   auto _obs = obs(); // may own an obs so keep alive here
+   RooArgList normSet = _obs.argList();
    // to give consistency with BuildHistogram method, should be only the axis var if defined
    if (ax) {
       normSet.clear();
