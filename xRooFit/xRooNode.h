@@ -300,7 +300,7 @@ public:
 
    // methods to access default content and error
    double GetContent() const { return GetBinContent(fBinNumber); }
-   double GetError(const xRooNode& fr = "") const { return GetBinError(fBinNumber, fr); }
+   double GetError(const xRooNode& fr = "") const { return (fBinNumber==-1) ? IntegralAndError(fr).second : GetBinError(fBinNumber, fr); }
 
    xRooNLLVar nll(const xRooNode &_data, std::initializer_list<RooCmdArg> nllOpts) const;
    xRooNLLVar nll(const xRooNode &_data, const RooLinkedList &nllOpts) const;
@@ -374,7 +374,7 @@ public:
 
    std::shared_ptr<xRooNode> parentPdf() const; // find first parent that is a pdf
 
-   void sterilize();
+   void sterilize() const;
 
    std::vector<std::shared_ptr<xRooNode>> fBrowsables;   // will appear in the browser tree but are not actual children
    std::function<xRooNode(xRooNode *)> fBrowseOperation; // a way to specify a custom browsing operation
