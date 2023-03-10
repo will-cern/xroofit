@@ -4089,7 +4089,7 @@ xRooNode &xRooNode::browse()
             emplace_back(c);
          }
 //         if (!TString(c->GetName()).BeginsWith(".coef"))
-//            out++; // don't count .coef as a child, as technically part of parent
+            out++; // don't count .coef as a child, as technically part of parent
       }
       return out;
    };
