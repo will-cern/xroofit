@@ -6560,6 +6560,22 @@ void xRooNode::Draw(Option_t *opt)
    if (!get() && !IsFolder() && !sOpt2.Contains("x="))
       return;
 
+   if (sOpt2=="pcls" && get<RooRealVar>() && fParent && fParent->get<RooAbsPdf>()) {
+      // use the first selected dataset
+      auto _dsets = fParent->datasets();
+      // bool _drawn=false;
+      TString dsetName = "";
+      for (auto &d : _dsets) {
+         if (d->get()->TestBit(1 << 20)) {
+            dsetName = d->get()->GetName();
+            break;
+         }
+      }
+      auto hs = fParent->nll(dsetName.Data()).hypoSpace(get<RooRealVar>()->GetName());
+      hs.limits("cls visualize");
+      return;
+   }
+
    if (auxFunctions.empty()) {
       // add the defaults: Ratio and Signif
       SetAuxFunction(
