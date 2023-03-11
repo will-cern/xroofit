@@ -5469,8 +5469,25 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, std::initializer_list<RooCmdArg>
 xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
 {
 
-   if (!get<RooAbsPdf>())
+   if (!get<RooAbsPdf>()) {
+      // before giving up, if this is a workspace we can proceed if we only have one model
+      if (get<RooWorkspace>()) {
+         std::shared_ptr<xRooNode> mainModel;
+         for(auto& c : *this) {
+            if (c->get<RooAbsPdf>()) {
+               if (!mainModel) {
+                  mainModel = c;
+               } else {
+                  throw std::runtime_error(
+                     TString::Format("Workspace has multiple models, you must specify which to build nll with (found at least %s and %s)",mainModel->GetName(),c->GetName()));
+               }
+            }
+         }
+         if(mainModel) return mainModel->nll(_data,opts);
+      }
       throw std::runtime_error(TString::Format("%s is not a pdf", GetName()));
+   }
+
 
    // if simultaneous and any channels deselected then reduce and return
    if (get<RooSimultaneous>()) {
