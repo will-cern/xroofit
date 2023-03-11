@@ -45,6 +45,7 @@ class RooCmdArg;
 
 class TGraph;
 class TGraphErrors;
+class TMultiGraph;
 
 namespace RooStats {
 class HypoTestResult;
@@ -264,6 +265,9 @@ public:
       //  toys: pvalues from available toys
       //  readonly: don't compute anything, just return available values
       std::shared_ptr<TGraphErrors> BuildGraph(const char *opt);
+
+      // return a TMultiGraph containing the set of graphs for a particular visualization
+      std::shared_ptr<TMultiGraph> graphs(const char* opt);
 
       // estimates where corresponding pValues graph becomes equal to 0.05
       // linearly interpolates log(pVal) when obtaining limits.

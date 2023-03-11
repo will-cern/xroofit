@@ -28,6 +28,7 @@
 #include "TKey.h"
 #include "TFile.h"
 #include "TGraphErrors.h"
+#include "TMultiGraph.h"
 #include "TH1F.h"
 #include "TStyle.h"
 #include "TLegend.h"
@@ -215,7 +216,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
             Info("limits", "No physical range set for %s, setting to [0,inf]", p->GetName());
             dynamic_cast<RooRealVar *>(p)->setRange("physical", 0, std::numeric_limits<double>::infinity());
          }
-         if (!p->getStringAttribute("altVal")) {
+         if (!p->getStringAttribute("altVal") || !strlen(p->getStringAttribute("altVal"))) {
             Info("limits", "No altVal set for %s, setting to 0", p->GetName());
             p->setStringAttribute("altVal", "0");
          }
@@ -244,7 +245,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
       memFile = std::make_shared<TMemFile>("memory", "RECREATE");
    }
    for (int nSigma : {0, 1, 2, -1, -2}) {
-      auto lim = FindLimit(TString::Format("%s exp%s%d", opt, nSigma > 0 ? "+" : "", nSigma), relUncert);
+      auto lim = FindLimit(TString::Format("p%s exp%s%d", opt, nSigma > 0 ? "+" : "", nSigma), relUncert);
       if (lim.second < 0)
          lim.second = -lim.second; // make errors positive for this method
       out[TString::Format("%d", nSigma).Data()] = matchPrecision(lim);
@@ -265,7 +266,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
       doObs = false;
 #endif
    if (doObs) {
-      auto lim = FindLimit(TString::Format("%s obs", opt), relUncert);
+      auto lim = FindLimit(TString::Format("p%s obs", opt), relUncert);
       if (lim.second < 0)
          lim.second = -lim.second;
       out["obs"] = matchPrecision(lim);
@@ -710,6 +711,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
 
    auto out = std::make_shared<TGraphErrors>();
    out->SetName(GetName());
+   out->SetEditable(false);
    const char *sCL = (doCLs) ? "CLs" : "null";
 
    TString title =
@@ -729,7 +731,8 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
          out->SetNameTitle("obs_ts", TString::Format("Observed;%s;Test Statistic", _axes.at(0)->GetTitle()));
    } else {
       out->SetNameTitle(TString::Format("exp%d_p%s", int(nSigma), sCL), title);
-      out->SetMarkerStyle(0);
+      if(nSigma==0) {out->SetMarkerStyle(24);out->SetMarkerSize(0.4);}
+      else {out->SetMarkerStyle(0);}
       out->SetLineStyle(2 + int(nSigma));
       if (expBand && nSigma) {
          out->SetFillColor((nSigma == 2) ? kYellow : kGreen);
@@ -822,6 +825,84 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
    return out;
 }
 
+std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) {
+   TString sOpt(opt);
+   std::shared_ptr<TMultiGraph> out;
+   if (sOpt.Contains("pcls") || sOpt.Contains("pnull")) {
+
+      auto exp2 = BuildGraph(sOpt + " exp2");
+      auto exp1 = BuildGraph(sOpt + " exp1");
+      auto exp = BuildGraph(sOpt + " exp");
+      auto obs = BuildGraph(sOpt);
+
+      out = std::make_shared<TMultiGraph>(GetName(),GetTitle());
+      if (exp2 && exp2->GetN()>1) out->Add(static_cast<TGraph*>(exp2->Clone()),"FP");
+      if (exp1 && exp1->GetN()>1) out->Add(static_cast<TGraph*>(exp1->Clone()),"FP");
+      if (exp && exp->GetN()>1) out->Add(static_cast<TGraph*>(exp->Clone()),"LP");
+      if (obs && obs->GetN()>1) out->Add(static_cast<TGraph*>(obs->Clone()),"LP");
+
+      if(!out->GetListOfGraphs()) {
+         return nullptr;
+      }
+
+      TGraph* line = new TGraph; line->SetName("alpha");
+      line->SetLineStyle(2);
+      line->SetMarkerStyle(0);
+      line->SetPoint(0,out->GetHistogram()->GetXaxis()->GetXmin(),0.05);
+      line->SetPoint(1,out->GetHistogram()->GetXaxis()->GetXmax(),0.05);
+      out->GetListOfFunctions()->Add(line,"L");
+
+      out->GetHistogram()->GetXaxis()->SetTitle(exp->GetHistogram()->GetXaxis()->GetTitle());
+      out->GetHistogram()->GetYaxis()->SetTitle(exp->GetHistogram()->GetYaxis()->GetTitle());
+
+      auto leg = new TLegend(1. - gStyle->GetPadRightMargin() - 0.3, 1. - gStyle->GetPadTopMargin() - 0.3,
+                             1. - gStyle->GetPadRightMargin() - 0.05, 1. - gStyle->GetPadTopMargin() - 0.05);
+      leg->SetName("legend");
+      leg->SetBit(kCanDelete);
+
+      out->GetListOfFunctions()->Add(leg);
+      //out->GetListOfFunctions()->Add(out->GetHistogram()->Clone(".axis"),"sameaxis"); // redraw axis
+
+      for(auto g : *out->GetListOfGraphs()) {
+         if (auto o = dynamic_cast<TGraph*>(g)->GetListOfFunctions()->FindObject("down")) {
+            leg->AddEntry(o,"","F");
+         } else {
+            leg->AddEntry(g, "", "LPE");
+         }
+      }
+      // add current limit estimates to legend
+      if (exp2 && exp2->GetN()>1) {
+         auto l = matchPrecision(GetLimit(*BuildGraph(sOpt + "exp-2")));
+         leg->AddEntry((TObject*)nullptr,TString::Format("-2#sigma: %g +/- %g", l.first,l.second),"");
+      }
+      if (exp1 && exp1->GetN()>1) {
+         auto l = matchPrecision(GetLimit(*BuildGraph(sOpt + "exp-1")));
+         leg->AddEntry((TObject*)nullptr,TString::Format("-1#sigma: %g +/- %g", l.first,l.second),"");
+      }
+      if (exp && exp->GetN()>1) {
+         auto l = matchPrecision(GetLimit(*exp));
+         leg->AddEntry((TObject*)nullptr,TString::Format("0#sigma: %g +/- %g", l.first,l.second),"");
+      }
+      if (exp1 && exp1->GetN()>1) {
+         auto l = matchPrecision(GetLimit(*BuildGraph(sOpt + "exp+1")));
+         leg->AddEntry((TObject*)nullptr,TString::Format("+1#sigma: %g +/- %g", l.first,l.second),"");
+      }
+      if (exp2 && exp2->GetN()>1) {
+         auto l = matchPrecision(GetLimit(*BuildGraph(sOpt + "exp+2")));
+         leg->AddEntry((TObject*)nullptr,TString::Format("+2#sigma: %g +/- %g", l.first,l.second),"");
+      }
+      if (obs && obs->GetN()>1) {
+         auto l = matchPrecision(GetLimit(*obs));
+         leg->AddEntry((TObject*)nullptr,TString::Format("Observed: %g +/- %g", l.first,l.second),"");
+      }
+
+
+   }
+
+   return out;
+
+}
+
 std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pValues, double target)
 {
 
@@ -889,7 +970,21 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pVal
 
 std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, double relUncert)
 {
-   std::shared_ptr<TGraphErrors> gr = BuildGraph(TString(opt) + " readonly");
+   TString sOpt(opt);
+   bool visualize = sOpt.Contains("visualize");
+   sOpt.ReplaceAll("visualize","");
+   std::shared_ptr<TGraphErrors> gr = BuildGraph(sOpt + " readonly");
+
+   if (visualize) {
+      auto gra = graphs("pcls readonly");
+      if (gra) {
+         if(gPad) gPad->Clear();
+         gra->DrawClone("A");
+         gPad->RedrawAxis();
+         gSystem->ProcessEvents();
+      }
+
+   }
 
    // resync parameter boundaries from nlls (may have been modified by fits)
    for (auto p : poi()) {
@@ -907,7 +1002,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       double muMax = std::min(v->getMax(), v->getMax("physical"));
       double muMin = std::max(v->getMin("physical"), v->getMin());
       if (!gr || gr->GetN() < 1) {
-         if (std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), muMin)).getVal(opt).first)) {
+         if (std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), muMin)).getVal(sOpt).first)) {
             // first point failed ... give up
             return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
          }
@@ -915,7 +1010,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       }
 
       if (std::isnan(
-             AddPoint(TString::Format("%s=%g", v->GetName(), muMin + (muMax - muMin) / 50)).getVal(opt).first)) {
+             AddPoint(TString::Format("%s=%g", v->GetName(), muMin + (muMax - muMin) / 50)).getVal(sOpt).first)) {
          // second point failed ... give up
          return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
       }
@@ -956,8 +1051,8 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
    // got here need a new point .... evaluate the estimated lim location +/- the relUncert (signed error takes care of
    // direction)
 
-   Info("FindLimit", "%s -- Testing new point @ %s=%g", opt, v->GetName(), nextPoint);
-   if (std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(opt).first)) {
+   Info("FindLimit", "%s -- Testing new point @ %s=%g", sOpt.Data(), v->GetName(), nextPoint);
+   if (std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
       return lim;
    }
 
@@ -1104,47 +1199,12 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
    }
 
    if (sOpt.Contains("pcls") || sOpt.Contains("pnull")) {
-      // bool doCLs = (sOpt.Contains("cls"));
-      // const char* sCL = (doCLs) ? "CLs" : "null";
-
-      auto exp2 = BuildGraph(sOpt + " exp2");
-      auto exp1 = BuildGraph(sOpt + " exp1");
-      auto exp = BuildGraph(sOpt + " exp");
-      auto obs = BuildGraph(sOpt);
-
+      auto gra = graphs(sOpt + " readonly");
       if (!sOpt.Contains("same") && gPad) {
          gPad->Clear();
       }
-      auto g = dynamic_cast<TGraphErrors *>(exp2->DrawClone("AF"));
-      g->SetBit(kCanDelete);
-      g->GetHistogram()->SetName(".axis");
-      g->GetHistogram()->SetTitle("");
-      g->GetHistogram()->SetBit(TH1::kNoTitle);
-      exp2->DrawClone("F")->SetBit(kCanDelete);
-      exp1->DrawClone("F")->SetBit(kCanDelete);
-      exp->DrawClone("LP")->SetBit(kCanDelete);
-      obs->DrawClone("LP")->SetBit(kCanDelete);
-      TLine l;
-      l.SetLineStyle(2);
-      l.DrawLine(g->GetHistogram()->GetXaxis()->GetXmin(), 0.05, g->GetHistogram()->GetXaxis()->GetXmax(), 0.05);
-      // auto l = gPad->BuildLegend(gPad->GetLeftMargin()+0.05,
-      // gPad->GetBottomMargin()+0.05,gPad->GetLeftMargin()+0.35,gPad->GetBottomMargin()+0.25);l->SetName("legend");
-
-      auto leg = new TLegend(1. - gPad->GetRightMargin() - 0.3, 1. - gPad->GetTopMargin() - 0.3,
-                             1. - gPad->GetRightMargin() - 0.05, 1. - gPad->GetTopMargin() - 0.05);
-      leg->SetName("legend");
-      leg->AddEntry(g->GetListOfFunctions()->FindObject("down"), "", "F");
-      leg->AddEntry(
-         dynamic_cast<TGraph *>(gPad->GetPrimitive(exp1->GetName()))->GetListOfFunctions()->FindObject("down"), "",
-         "F");
-      leg->AddEntry(gPad->GetPrimitive(exp->GetName()), "", "LPE");
-      leg->AddEntry(gPad->GetPrimitive(obs->GetName()), "", "LPE");
-      leg->Draw();
-      leg->SetBit(kCanDelete);
-
-      g->GetHistogram()->Draw("sameaxis"); // redraw axis
-
-      if (!sOpt.Contains("same")) {
+      if(gra) gra->DrawClone("A");
+      if (!sOpt.Contains("same") && gPad) {
          gPad->SetGrid(0, 0);
          gPad->SetLogy(1);
       }
