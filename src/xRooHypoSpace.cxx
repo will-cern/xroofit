@@ -207,7 +207,7 @@ std::pair<double, double> matchPrecision(const std::pair<double, double> &in)
    return out;
 }
 
-std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limits(const char *opt, double relUncert)
+std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limits(const char *opt,const std::vector<double>& nSigmas, double relUncert)
 {
    TString sOpt(opt);
    if (sOpt.Contains("cls")) {
@@ -244,7 +244,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
    if (!gDirectory->IsWritable()) {
       memFile = std::make_shared<TMemFile>("memory", "RECREATE");
    }
-   for (int nSigma : {0, 1, 2, -1, -2}) {
+   for (int nSigma : nSigmas) {
       auto lim = FindLimit(TString::Format("p%s exp%s%d", opt, nSigma > 0 ? "+" : "", nSigma), relUncert);
       if (lim.second < 0)
          lim.second = -lim.second; // make errors positive for this method
@@ -731,7 +731,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
          out->SetNameTitle("obs_ts", TString::Format("Observed;%s;Test Statistic", _axes.at(0)->GetTitle()));
    } else {
       out->SetNameTitle(TString::Format("exp%d_p%s", int(nSigma), sCL), title);
-      out->SetMarkerStyle(0);
+      out->SetMarkerStyle(0);out->SetMarkerSize(0.5);
       out->SetLineStyle(2 + int(nSigma));
       if (expBand && nSigma) {
          out->SetFillColor((nSigma == 2) ? kYellow : kGreen);
@@ -761,8 +761,8 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
          badPoints2->SetBit(kCanDelete);
          badPoints2->SetName("badPoints");
          badPoints2->SetMarkerStyle(5);
-         badPoints2->SetMarkerColor(kRed);
-         badPoints2->SetMarkerSize(out->GetMarkerSize());
+         badPoints2->SetMarkerColor(std::isnan(nSigma) ? kRed : kBlue);
+         badPoints2->SetMarkerSize(1);
          out->GetListOfFunctions()->Add(badPoints2, "P");
       }
       return badPoints2;
@@ -774,8 +774,10 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
       auto pval = p.getVal(sOpt);
       auto idx = out->GetN() - nPointsDown;
 
-      if (std::isnan(pval.first)) {
-         badPoints()->SetPoint(badPoints()->GetN(), _x, 0);
+      if (std::isnan(pval.first) ) {
+         if(p.status()!=0) { // if status is 0 then bad pval is really just absence of fits, not bad fits
+            badPoints()->SetPoint(badPoints()->GetN(), _x, 0);
+         }
       } else {
          out->InsertPointBefore(idx, _x, pval.first);
          out->SetPointError(idx, 0, pval.second);
@@ -786,7 +788,9 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
          sOpt2.ReplaceAll("exp", "exp-");
          pval = p.getVal(sOpt2);
          if (std::isnan(pval.first)) {
-            badPoints()->SetPoint(badPoints()->GetN(), _x, 0);
+            if(p.status()!=0) { // if status is 0 then bad pval is really just absence of fits, not bad fits
+               badPoints()->SetPoint(badPoints()->GetN(), _x, 0);
+            }
          } else {
             out->InsertPointBefore(idx + 1, _x, pval.first);
             out->SetPointError(idx + 1, 0, pval.second);
@@ -802,6 +806,12 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
 
    if (!expBand) {
       out->Sort();
+      if (out->GetListOfFunctions()->FindObject("badPoints")) {
+         // try to interpolate the points
+         for(int i=0; i< badPoints()->GetN();i++) {
+            badPoints()->SetPointY(i,out->Eval(badPoints()->GetPointX(i)));
+         }
+      }
    } else {
       out->Sort(&TGraph::CompareX, true, 0, out->GetN() - nPointsDown - 1);            // sort first half
       out->Sort(&TGraph::CompareX, false, out->GetN() - nPointsDown, out->GetN() - 1); // reverse sort second half
