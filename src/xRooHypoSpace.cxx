@@ -726,13 +726,12 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
 
    if (std::isnan(nSigma)) {
       out->SetNameTitle(TString::Format("obs_p%s", sCL), title);
-      out->SetMarkerStyle(20);
+      out->SetMarkerStyle(20);out->SetMarkerSize(0.5);
       if (sOpt.Contains("ts"))
          out->SetNameTitle("obs_ts", TString::Format("Observed;%s;Test Statistic", _axes.at(0)->GetTitle()));
    } else {
       out->SetNameTitle(TString::Format("exp%d_p%s", int(nSigma), sCL), title);
-      if(nSigma==0) {out->SetMarkerStyle(24);out->SetMarkerSize(0.4);}
-      else {out->SetMarkerStyle(0);}
+      out->SetMarkerStyle(0);
       out->SetLineStyle(2 + int(nSigma));
       if (expBand && nSigma) {
          out->SetFillColor((nSigma == 2) ? kYellow : kGreen);
@@ -846,10 +845,16 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
       }
 
       TGraph* line = new TGraph; line->SetName("alpha");
-      line->SetLineStyle(2);
-      line->SetMarkerStyle(0);
-      line->SetPoint(0,out->GetHistogram()->GetXaxis()->GetXmin(),0.05);
-      line->SetPoint(1,out->GetHistogram()->GetXaxis()->GetXmax(),0.05);
+      line->SetLineStyle(2);line->SetEditable(false);
+      line->SetPoint(line->GetN(),out->GetHistogram()->GetXaxis()->GetXmin()-10,0.05);
+      TGraph* testedPoints = new TGraph; testedPoints->SetName("hypoPoints");testedPoints->SetEditable(false);
+      testedPoints->SetMarkerStyle(24);testedPoints->SetMarkerSize(0.4); // use line to indicate tested points
+      if(exp) {
+         for(int i=0;i<exp->GetN();i++) {
+            testedPoints->SetPoint(testedPoints->GetN(),exp->GetPointX(i),0.05);
+         }
+      }
+      line->SetPoint(line->GetN(),out->GetHistogram()->GetXaxis()->GetXmax()+10,0.05);
       out->GetListOfFunctions()->Add(line,"L");
 
       out->GetHistogram()->GetXaxis()->SetTitle(exp->GetHistogram()->GetXaxis()->GetTitle());
@@ -896,6 +901,7 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
          leg->AddEntry((TObject*)nullptr,TString::Format("Observed: %g +/- %g", l.first,l.second),"");
       }
 
+      out->Add(testedPoints,"P");
 
    }
 
@@ -980,7 +986,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       if (gra) {
          if(gPad) gPad->Clear();
          gra->DrawClone("A");
-         gPad->RedrawAxis();
+         gPad->RedrawAxis();gPad->Modified();
          gSystem->ProcessEvents();
       }
 
