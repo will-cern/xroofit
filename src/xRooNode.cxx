@@ -45,10 +45,6 @@
 
 #else
 
-#define protected public
-#include "RooAbsReal.h"
-#undef protected
-
 #include "RooAbsArg.h"
 #include "RooWorkspace.h"
 #include "RooFitResult.h"
@@ -5979,11 +5975,15 @@ void xRooNode::sterilize() const
       if (RooAbsPdf *p = dynamic_cast<RooAbsPdf *>(obj); p) {
          p->setNormRange(nullptr);
       }
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       if(RooAbsReal* p = dynamic_cast<RooAbsReal*>(obj); p) {
          // need to forget about any normSet that was passed to getVal(...)
+         // doesn't seem necessary in 6.28
+
          p->setProxyNormSet(nullptr) ;
          p->_lastNSet = nullptr;
       }
+#endif
 
 
 
