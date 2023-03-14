@@ -45,6 +45,10 @@
 
 #else
 
+#define protected public
+#include "RooAbsReal.h"
+#undef protected
+
 #include "RooAbsArg.h"
 #include "RooWorkspace.h"
 #include "RooFitResult.h"
@@ -299,7 +303,7 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
                }
             }
          } else if (TString(k).EndsWith("_NuisParams")) {
-            v.setAttribAll("np");
+            const_cast<RooArgSet&>(v).setAttribAll("np");
          }
       }
       if (!_allGlobs.empty() && GETWSSETS(_ws).count("globalObservables") == 0) {
