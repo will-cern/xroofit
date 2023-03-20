@@ -296,7 +296,7 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
    xRooHypoPoint out;
 
    out.nllVar = fNlls[_pdf];
-   out.data = fNlls[_pdf]->getData();
+   out.fData = fNlls[_pdf]->getData();
 
    out.coords.reset(fPars->snapshot()); // should already have altVal prop on poi, and poi labelled
    // ensure all poi are marked const ... required by xRooHypoPoint behaviour
@@ -320,7 +320,43 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
 
    out.fPllType = _type;
 
-   // TODO: Check for equivalent point before adding
+   // look for a matching point
+   for(auto& p : *this) {
+      if(p.nllVar != out.nllVar) continue;
+      if(p.fData != out.fData) continue;
+      if(!p.alt_poi().equals(out.alt_poi())) continue;
+      bool match=true;
+      for(auto c : p.alt_poi()) {
+         if(auto v = dynamic_cast<RooAbsReal*>(c); v && std::abs(v->getVal() - out.alt_poi().getRealValue(v->GetName()))>1e-12) {
+            match = false; break;
+         }
+      }
+      if (!match) continue;
+      if(!p.coords->equals(*out.coords)) continue;
+      for(auto c : *p.coords) {
+         if (c->getAttribute("poi")) {
+            continue; // check poi below
+         }
+         if(auto v = dynamic_cast<RooAbsReal*>(c); v && std::abs(v->getVal() - out.coords->getRealValue(v->GetName()))>1e-12) {
+            match = false; break;
+         }
+      }
+      if (!match) continue;
+      // if reached here we can copy over the asimov dataset to save re-generating it
+      if(p.asimov(true) && p.asimov(true)->fData.first && !out.asimov(true)) {
+         out.asimov()->fData = p.asimov(true)->fData;
+      }
+      if(!p.poi().equals(out.poi())) continue;
+      for(auto c : p.poi()) {
+         if(auto v = dynamic_cast<RooAbsReal*>(c); v && std::abs(v->getVal() - out.poi().getRealValue(v->GetName()))>1e-12) {
+            match = false; break;
+         }
+      }
+      if (match) {
+         // found a duplicate point, return that!
+         return p;
+      }
+   }
 
    return emplace_back(out);
 }
@@ -865,6 +901,7 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
          }
       }
       line->SetPoint(line->GetN(),out->GetHistogram()->GetXaxis()->GetXmax()+10,0.05);
+      line->SetBit(kCanDelete);
       out->GetListOfFunctions()->Add(line,"L");
 
       out->GetHistogram()->GetXaxis()->SetTitle(exp->GetHistogram()->GetXaxis()->GetTitle());
@@ -967,11 +1004,13 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pVal
    if ((above && gr->GetPointY(gr->GetN() - 1) <= gr->GetPointY(0)) ||
        (!above && gr->GetPointY(gr->GetN() - 1) >= gr->GetPointY(0))) {
       // extrapolating above based on last two points
-      double x1 = gr->GetPointX(gr->GetN() - 2);
-      double y1 = gr->GetPointY(gr->GetN() - 2);
+      // in fact, if 2nd last point is a p=1 (log(p)=0) then go back
+      int offset = 2; while(offset < gr->GetN() && gr->GetPointY(gr->GetN()-offset)==0) offset++;
+      double x1 = gr->GetPointX(gr->GetN() - offset);
+      double y1 = gr->GetPointY(gr->GetN() - offset);
       double m = (gr->GetPointY(gr->GetN() - 1) - y1) / (gr->GetPointX(gr->GetN() - 1) - x1);
       if (m == 0.)
-         return std::pair(2. * gr->GetPointX(gr->GetN() - 1) - x1, std::numeric_limits<double>::infinity());
+         return std::pair(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
       return std::pair((alpha - y1) / m + x1, std::numeric_limits<double>::infinity());
    } else {
       // extrapolating below based on first two points
@@ -979,24 +1018,26 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pVal
       double y1 = gr->GetPointY(0);
       double m = (gr->GetPointY(1) - y1) / (gr->GetPointX(1) - x1);
       if (m == 0.)
-         return std::pair(2. * x1 - gr->GetPointX(1), -std::numeric_limits<double>::infinity());
+         return std::pair(-std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity());
       return std::pair((alpha - y1) / m + x1, -std::numeric_limits<double>::infinity());
    }
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, double relUncert)
+std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, double relUncert, unsigned int maxTries)
 {
    TString sOpt(opt);
    bool visualize = sOpt.Contains("visualize");
    sOpt.ReplaceAll("visualize","");
    std::shared_ptr<TGraphErrors> gr = BuildGraph(sOpt + " readonly");
-
    if (visualize) {
       auto gra = graphs("pcls readonly");
       if (gra) {
-         if(gPad) gPad->Clear();
+         if (!gPad) gra->Draw(); // in 6.28 DrawClone wont make the gPad defined :( ... so Draw then clear and Draw Clone
+         gPad->Clear();
          gra->DrawClone("A");
          gPad->RedrawAxis();gPad->Modified();
+         gra->GetHistogram()->SetMinimum(1e-9);
+         gra->GetHistogram()->GetYaxis()->SetRangeUser(1e-9,1);
          gSystem->ProcessEvents();
       }
 
@@ -1018,19 +1059,37 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       double muMax = std::min(v->getMax(), v->getMax("physical"));
       double muMin = std::max(v->getMin("physical"), v->getMin());
       if (!gr || gr->GetN() < 1) {
-         if (std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), muMin)).getVal(sOpt).first)) {
+         if (maxTries==0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), muMin)).getVal(sOpt).first)) {
             // first point failed ... give up
             return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
          }
-         return FindLimit(opt, relUncert); // do this to resync parameter limits
+         gr.reset();
+         return FindLimit(opt, relUncert,maxTries-1); // do this to resync parameter limits
       }
 
-      if (std::isnan(
-             AddPoint(TString::Format("%s=%g", v->GetName(), muMin + (muMax - muMin) / 50)).getVal(sOpt).first)) {
+      // can approximate expected limit using
+      // mu_hat + sigma_mu*ROOT::Math::gaussian_quantile(1.-alpha/2.,1) for cls
+      // or mu_hat + sigma_mu*ROOT::Math::gaussian_quantile((1.-alpha),1) for cls+b
+      // get a very first estimate of sigma_mu from ufit to expected data, take error on mu as sigma_mu
+      double nextPoint =  muMin + (muMax - muMin) / 50;
+      auto point = (sOpt.Contains("exp")) ? back().asimov() : std::shared_ptr<xRooHypoPoint>(&back(),[](xRooHypoPoint*){});
+      point = nullptr;
+      if( point && point->ufit() ) {
+         double rough_sigma_mu = point->mu_hat().getError();
+         double another_estimate = point->mu_hat().getVal() + rough_sigma_mu*ROOT::Math::gaussian_quantile(0.95,1);
+         //if (another_estimate < nextPoint) {
+            nextPoint = another_estimate;
+            Info("FindLimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
+         //}
+      }
+
+      if (maxTries == 0 || std::isnan(
+             AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
          // second point failed ... give up
          return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
       }
-      return FindLimit(opt, relUncert);
+      gr.reset();
+      return FindLimit(opt, relUncert,maxTries-1);
    }
 
    auto lim = GetLimit(*gr);
@@ -1039,18 +1098,39 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       return lim;
    }
 
-   if (std::abs(lim.second) <= relUncert * std::abs(lim.first))
-      return lim;
-
-   double nextPoint;
    auto v = dynamic_cast<RooRealVar *>(poi().first());
    double maxMu = std::min(v->getMax("physical"), v->getMax());
    double minMu = std::max(v->getMin("physical"), v->getMin());
+
+   if (lim.first > -std::numeric_limits<double>::infinity() && lim.first < std::numeric_limits<double>::infinity() && std::abs(lim.second) <= relUncert * std::abs(lim.first))
+      return lim;
+
+   double nextPoint;
+
+
    if (lim.second == std::numeric_limits<double>::infinity()) {
       // limit was found by extrapolating to right
       nextPoint = lim.first;
-      if (nextPoint > v->getMax("physical"))
+      if (nextPoint == std::numeric_limits<double>::infinity() || nextPoint > v->getMax("physical")) {
          nextPoint = gr->GetPointX(gr->GetN() - 1) + (maxMu - minMu) / 50;
+      }
+
+      // prefer extrapolation with sigma_mu, if available, if it takes us further
+      // as shape of p-value curve is usually
+      auto point = (sOpt.Contains("exp")) ? back().asimov() : std::shared_ptr<xRooHypoPoint>(&back(),[](xRooHypoPoint*){});
+      point = nullptr;
+      if( point && point->ufit() ) {
+         double rough_sigma_mu = point->mu_hat().getError();
+         double another_estimate = point->mu_hat().getVal() + rough_sigma_mu*ROOT::Math::gaussian_quantile(0.95,1);
+         //if (another_estimate < nextPoint) {
+         nextPoint = std::max(nextPoint,another_estimate);
+         Info("FindLimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
+         //}
+      }
+      nextPoint += nextPoint*relUncert*0.99; // ensure we step over location
+
+
+
       if (nextPoint > v->getMax("physical"))
          return lim;
    } else if (lim.second == -std::numeric_limits<double>::infinity()) {
@@ -1067,12 +1147,12 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
    // got here need a new point .... evaluate the estimated lim location +/- the relUncert (signed error takes care of
    // direction)
 
-   Info("FindLimit", "%s -- Testing new point @ %s=%g", sOpt.Data(), v->GetName(), nextPoint);
-   if (std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
+   Info("FindLimit", "%s -- Testing new point @ %s=%g (delta=%g)", sOpt.Data(), v->GetName(), nextPoint,lim.second);
+   if (maxTries == 0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
       return lim;
    }
-
-   return FindLimit(opt, relUncert);
+   gr.reset();
+   return FindLimit(opt, relUncert,maxTries-1);
 }
 
 void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)

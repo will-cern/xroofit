@@ -143,7 +143,8 @@ public:
       std::shared_ptr<const RooFitResult> cfit_null(bool readOnly = false);
       std::shared_ptr<const RooFitResult> cfit_alt(bool readOnly = false);
 
-      std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> data;
+      std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> fData;
+      std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> data();
 
       std::pair<double, double> getVal(const char *what);
 
@@ -276,7 +277,7 @@ public:
 
       // will evaluate more points until limit is below given relative uncert
 
-      std::pair<double, double> FindLimit(const char *opt, double relUncert = std::numeric_limits<double>::infinity());
+      std::pair<double, double> FindLimit(const char *opt, double relUncert = std::numeric_limits<double>::infinity(), unsigned int maxTries=20);
 
       // key is nSigma or "obs" for observed
       // will only do obs if "obs" dataset is not a generated dataset
