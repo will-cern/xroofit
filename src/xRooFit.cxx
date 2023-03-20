@@ -500,6 +500,10 @@ private:
 bool ProgressMonitor::fInterrupt = false;
 ProgressMonitor *ProgressMonitor::me = nullptr;
 
+xRooFit::StoredFitResult::StoredFitResult(RooFitResult* _fr) : TNamed(*_fr) {
+   fr.reset(_fr);
+}
+
 std::shared_ptr<const RooFitResult>
 xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &_fitConfig)
 {
@@ -556,7 +560,13 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
             for (auto &&k : *keys) {
                auto cl = TClass::GetClass(((TKey *)k)->GetClassName());
                if (cl->InheritsFrom("RooFitResult")) {
-                  if (auto cachedFit = nllDir->Get<RooFitResult>(k->GetName()); cachedFit) {
+                  StoredFitResult* storedFr = nllDir->GetList() ? dynamic_cast<StoredFitResult*>(nllDir->GetList()->FindObject(k->GetName())) : nullptr;
+                  if (auto cachedFit = (storedFr) ? storedFr->fr.get() : nllDir->Get<RooFitResult>(k->GetName()); cachedFit) {
+                     if (!storedFr) {
+                        storedFr = new StoredFitResult(cachedFit);
+                        nllDir->Add(storedFr);
+                        //std::cout << "Loaded " << nllDir->GetPath() << "/" << k->GetName() << " : " << k->GetTitle() << std::endl;
+                     }
                      bool match = true;
                      if (!cachedFit->floatParsFinal().equals(*floatPars)) {
                         match = false;
@@ -578,9 +588,11 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
                         }
                      }
                      if (match) {
-                        return std::shared_ptr<RooFitResult>(cachedFit); // return a copy;
+                        return storedFr->fr;
+                        //return std::shared_ptr<RooFitResult>(cachedFit,[](RooFitResult*){}); // dir owns the fitResult - this means dir needs to stay open for fits to be valid
+                        //return std::make_shared<RooFitResult>(*cachedFit); // return a copy ... dir doesn't need to stay open, but fit result isn't shared
                      } else {
-                        delete cachedFit;
+                        //delete cachedFit;
                      }
                   }
                }
@@ -941,6 +953,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
    }
 
    if (out && cacheDir && cacheDir->IsWritable()) {
+      //std::cout << "Saving " << out->GetName() << " " << out->GetTitle() << " to " << nll.GetName() << std::endl;
       // save a copy of fit result to relevant dir
       if (!cacheDir->GetDirectory(nll.GetName()))
          cacheDir->mkdir(nll.GetName());
@@ -959,8 +972,11 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          // add the fitConfig name into the fit result before writing, so can retrieve in future
          const_cast<RooArgList &>(out->constPars())
             .addOwned(*new RooStringVar(".fitConfigName", "fitConfigName", configName.c_str()));
-
          dir->WriteObject(out, out->GetName());
+         auto sfr = new StoredFitResult(out);
+         dir->Add(sfr);
+         return sfr->fr;
+         //return std::shared_ptr<const RooFitResult>(out, [](const RooFitResult*){}); // disowned shared_ptr
       }
    }
 

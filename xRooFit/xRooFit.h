@@ -45,6 +45,7 @@ class RooWorkspace;
 #include "Fit/FitConfig.h"
 
 #include "RooCmdArg.h"
+#include "TNamed.h"
 
 class TCanvas;
 
@@ -92,6 +93,14 @@ public:
    minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &fitConfig = nullptr);
    static int minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parName = "",
                     const std::shared_ptr<ROOT::Fit::FitConfig> &_fitConfig = nullptr);
+
+   class StoredFitResult : public TNamed {
+   public:
+      StoredFitResult(RooFitResult* _fr);
+   public:
+      std::shared_ptr<RooFitResult> fr; //!
+      ClassDef(StoredFitResult, 0)
+   };
 
    class Asymptotics {
 
