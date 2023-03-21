@@ -1034,7 +1034,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       if (gra) {
          if (!gPad) gra->Draw(); // in 6.28 DrawClone wont make the gPad defined :( ... so Draw then clear and Draw Clone
          gPad->Clear();
-         gra->DrawClone("A");
+         gra->DrawClone("A")->SetBit(kCanDelete);
          gPad->RedrawAxis();gPad->Modified();
          gra->GetHistogram()->SetMinimum(1e-9);
          gra->GetHistogram()->GetYaxis()->SetRangeUser(1e-9,1);
@@ -1299,7 +1299,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
       if (!sOpt.Contains("same") && gPad) {
          gPad->Clear();
       }
-      if(gra) gra->DrawClone("A");
+      if(gra) gra->DrawClone("A")->SetBit(kCanDelete);
       if (!sOpt.Contains("same") && gPad) {
          gPad->SetGrid(0, 0);
          gPad->SetLogy(1);
