@@ -4742,7 +4742,7 @@ xRooNode xRooNode::coefs() const
    // if func appears multiple times then coefs must be combined into a RooAddition temporary
    if (fParent) {
       if (auto p = fParent->get<RooRealSumPdf>(); p) {
-         int i = 0;
+         std::size_t i = 0;
          for (auto &o : p->funcList()) {
             if (o == get()) {
                if (i>=p->coefList().size()) {
@@ -4755,7 +4755,7 @@ xRooNode xRooNode::coefs() const
             i++;
          }
       } else if (auto p2 = fParent->get<RooAddPdf>(); p2) {
-         int i = 0;
+         std::size_t i = 0;
          for (auto &o : p2->pdfList()) {
             if (o == get()) {
                if (i>=p2->coefList().size()) {
@@ -6445,8 +6445,6 @@ Bool_t TopRightPlaceBox(TPad *p, TObject *o, Double_t w, Double_t h, Double_t &x
 
 TPaveText* getPave(const char* name = "labels",bool create=true, bool doPaint=false) {
    if (auto p = dynamic_cast<TPaveText *>(gPad->GetPrimitive(name)); p) {
-      double x, y;
-      double w = p->GetX2NDC() - p->GetX1NDC(), h = p->GetY2NDC() - p->GetY1NDC();
       if (doPaint)
          gPad->PaintModified(); //-- slows down x11 so trying to avoid
       return p;
@@ -6644,7 +6642,7 @@ void xRooNode::Draw(Option_t *opt)
       if (auto _idx2 = varPart.Index("("); _idx2 > 0) {
          varName = varPart(0,_idx2);
          TStringToken pattern(TString(varPart(_idx2+1,varPart.Length()-_idx2-2)), ",");
-         double min,max; int nBins = 0; int ii=0;
+         double min(0),max(0); int nBins = 0; int ii=0;
          while (pattern.NextToken()) {
             TString s = pattern;
             if (ii==0) nBins = s.Atoi();
