@@ -104,7 +104,7 @@ public:
       double impact(const char* poi, const char* np, bool up=true, bool prefit=false, bool approx=false);
       double impact(const char* np, bool up=true, bool prefit=false, bool approx=false) {
          auto _poi = poi(); if(_poi.size()!=1) throw std::runtime_error("xRooFitResult::impact: not one POI");
-         return impact(poi().contentsString().c_str(),up,prefit,approx);
+         return impact(poi().contentsString().c_str(),np,up,prefit,approx);
       }
       // rank all the np based on impact ... will use the covariance approximation if full impact not available
       // the approxThreshold sets the level below which the approximation will be returned
