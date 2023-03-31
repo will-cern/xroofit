@@ -241,7 +241,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
 
    std::map<std::string, std::pair<double, double>> out;
    std::shared_ptr<TMemFile> memFile;
-   if (!gDirectory->IsWritable()) {
+   if (!gDirectory->IsWritable() && !sOpt.Contains("toys")) {
       memFile = std::make_shared<TMemFile>("memory", "RECREATE");
    }
    for (int nSigma : nSigmas) {
@@ -1030,7 +1030,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
    sOpt.ReplaceAll("visualize","");
    std::shared_ptr<TGraphErrors> gr = BuildGraph(sOpt + " readonly");
    if (visualize) {
-      auto gra = graphs("pcls readonly");
+      auto gra = graphs(sOpt.Contains("toys") ? "pcls readonly toys" : "pcls readonly");
       if (gra) {
          if (!gPad) gra->Draw(); // in 6.28 DrawClone wont make the gPad defined :( ... so Draw then clear and Draw Clone
          gPad->Clear();
@@ -1102,7 +1102,8 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
    double maxMu = std::min(v->getMax("physical"), v->getMax());
    double minMu = std::max(v->getMin("physical"), v->getMin());
 
-   if (lim.first > -std::numeric_limits<double>::infinity() && lim.first < std::numeric_limits<double>::infinity() && std::abs(lim.second) <= relUncert * std::abs(lim.first))
+   //static double MIN_LIMIT_UNCERT = 1e-4; // stop iterating once uncert gets this small
+   if (lim.first > -std::numeric_limits<double>::infinity() && lim.first < std::numeric_limits<double>::infinity() && (std::abs(lim.second) <= relUncert * std::abs(lim.first)/* || std::abs(lim.second)<MIN_LIMIT_UNCERT*/))
       return lim;
 
    double nextPoint;

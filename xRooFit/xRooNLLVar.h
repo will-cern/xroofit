@@ -163,9 +163,12 @@ public:
             return std::pair(1, 0); // by construction
          auto null = pNull_toys(nSigma);
          auto alt = pAlt_toys(nSigma);
-         double pval = (null.first == 0) ? 0 : null.first / alt.first;
-         // TODO: should do error calculation like for asymp (calulate up and down separately and then take err)
-         return std::make_pair(pval, pval * sqrt(pow(null.second / null.first, 2) + pow(alt.second / alt.first, 2)));
+         double nom = (null.first == 0) ? 0 : null.first / alt.first;
+         double up = (null.first + null.second == 0) ? 0 : (null.first + null.second)/(alt.first - alt.second);
+         double down = (null.first - null.second == 0) ? 0 : (null.first - null.second)/(alt.first + alt.second);
+         // old way ... now doing like in pCLs_asymp by calculating the two variations
+         //return std::make_pair(pval, pval * sqrt(pow(null.second / null.first, 2) + pow(alt.second / alt.first, 2)));
+         return std::pair(nom,std::max(std::abs(up - nom), std::abs(down - nom)));
       }
       std::pair<double, double>
       ts_toys(double nSigma = std::numeric_limits<double>::quiet_NaN()); // test statistic value
@@ -176,8 +179,8 @@ public:
       xRooHypoPoint generateNull(int seed = 0);
       xRooHypoPoint generateAlt(int seed = 0);
 
-      void addNullToys(int nToys = 1, int seed = 0); // if seed=0 will use a random seed
-      void addAltToys(int nToys = 1, int seed = 0);  // if seed=0 will use a random seed
+      void addNullToys(int nToys = 1, int seed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN()); // if seed=0 will use a random seed
+      void addAltToys(int nToys = 1, int seed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN());  // if seed=0 will use a random seed
 
       RooArgList poi();
       RooArgList alt_poi(); // values of the poi in the alt hypothesis (will be nans if not defined)
@@ -212,7 +215,7 @@ public:
 
    private:
       std::pair<double, double> pX_toys(bool alt, double nSigma = std::numeric_limits<double>::quiet_NaN());
-      void addToys(bool alt, int nToys, int initialSeed = 0);
+      void addToys(bool alt, int nToys, int initialSeed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN());
 
       TString tsTitle();
    };
@@ -223,8 +226,8 @@ public:
                            const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
    // same as above but specify parNames and values in a string
    xRooHypoPoint hypoPoint(const char *parValues,
-                           double alt_value = std::numeric_limits<double>::quiet_NaN(),
-                           const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
+                           double alt_value,
+                           const xRooFit::Asymptotics::PLLType &pllType);
    // this next method requires poi to be flagged in the model already (with "poi" attribute) .. must be exactly one
    xRooHypoPoint hypoPoint(double value, double alt_value = std::numeric_limits<double>::quiet_NaN(),
                            const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);

@@ -15,7 +15,7 @@
 #include <fstream>
 
 struct cout_redirect {
-   cout_redirect(std::string &_out, size_t bufSize = 102 * 1024) : out(_out), buffer2(nullptr), fp(nullptr)
+   cout_redirect(std::string &_out, size_t bufSize = 102 * 1024) : buffer2(nullptr), fp(nullptr), out(_out)
    {
 
       filename = "xRooFit-logging-";

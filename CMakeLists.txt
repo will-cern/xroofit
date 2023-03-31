@@ -45,7 +45,7 @@ target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)
 target_include_directories(xRooFit BEFORE PRIVATE ${CMAKE_BINARY_DIR}/versioning)
 add_dependencies(xRooFit xRooFit_version)
-
+target_compile_options(xRooFit PRIVATE -Wall)
 
 
 if (ENABLE_TESTS)

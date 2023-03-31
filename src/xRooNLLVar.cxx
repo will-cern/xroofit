@@ -395,7 +395,7 @@ xRooNLLVar::xRooFitResult xRooNLLVar::xRooFitResult::cfit(const char* poiValues)
    // and poi equal to given poi
    if (!fNll) throw std::runtime_error("xRooFitResult::cfit: Cannot create cfit without nll");
 
-   auto hp = fNll->hypoPoint(poiValues);
+   auto hp = fNll->hypoPoint(poiValues,std::numeric_limits<double>::quiet_NaN(),xRooFit::Asymptotics::Unknown);
    hp.fUfit = *this;
    return xRooNLLVar::xRooFitResult(std::make_shared<xRooNode>(hp.cfit_null(),fNode->fParent),fNll);
 }
@@ -471,31 +471,11 @@ RooArgList xRooNLLVar::xRooFitResult::ranknp(const char* poi, bool up, bool pref
 xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::FitConfig> &_config)
 {
    auto &nll = *get();
-   auto out = xRooFit::minimize(nll, (_config) ? _config : fitConfig());
+   auto out = xRooFit::minimize(nll, (_config) ? _config : fitConfig(),fOpts);
    // add any pars that are const here that aren't in constPars list because they may have been
    // const-optimized and their values cached with the dataset, so if subsequently floated the
    // nll wont evaluate correctly
    // fConstVars.reset( fFuncVars->selectByAttrib("Constant",true) );
-
-   // if saving fits, check the nllOpts have been saved as well ...
-
-   // TODO: Need to skip this if loaded fit from the cache
-   // commenting out until can figure out a way to do that
-//   if (out && !nll.getAttribute("readOnly")) {
-//      if (strlen(fOpts->GetName()) == 0)
-//         fOpts->SetName(TUUID().AsString());
-//      auto cacheDir = gDirectory;
-//      if (cacheDir && cacheDir->IsWritable()) {
-//         // save a copy of fit result to relevant dir
-//         if (!cacheDir->GetDirectory(nll.GetName()))
-//            cacheDir->mkdir(nll.GetName());
-//         if (auto dir = cacheDir->GetDirectory(nll.GetName()); dir) {
-//            if (!dir->FindKey(fOpts->GetName())) {
-//               dir->WriteObject(fOpts.get(), fOpts->GetName());
-//            }
-//         }
-//      }
-//   }
 
    // before returning, flag which of the constPars were actually global observables
    if (out) {
@@ -901,9 +881,17 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::getVal(const char *what)
                       : std::numeric_limits<double>::quiet_NaN();
 
    bool toys = sWhat.Contains("toys");
+
    // bool asymp = sWhat.Contains("asymp");
 
    bool readOnly = sWhat.Contains("readonly");
+
+   if(sWhat.Contains("toys=") && !readOnly) {
+      // extract number of toys required
+      int nToys = TString(sWhat(sWhat.Index("toys=")+5,sWhat.Length())).Atoi();
+      if (nullToys.size() < nToys) { addNullToys(nToys - nullToys.size());}
+      if (altToys.size() < nToys) { addAltToys(nToys - altToys.size()); }
+   }
 
    struct RestoreNll {
       RestoreNll(std::shared_ptr<xRooNLLVar> &v, bool r) : rr(r), var(v)
@@ -1102,14 +1090,15 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma)
    auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
    if (!first_poi)
       return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
-   double nom = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first, fNullVal(), fNullVal(), sigma_mu().first,
+   auto _sigma_mu = sigma_mu();
+   double nom = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first, fNullVal(), fNullVal(), _sigma_mu.first,
                                              first_poi->getMin("physical"), first_poi->getMax("physical"));
    double up =
       xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first + ts_asymp(nSigma).second, fNullVal(), fNullVal(),
-                                   sigma_mu().first, first_poi->getMin("physical"), first_poi->getMax("physical"));
+                                   _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
    double down =
       xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first - ts_asymp(nSigma).second, fNullVal(), fNullVal(),
-                                   sigma_mu().first, first_poi->getMin("physical"), first_poi->getMax("physical"));
+                                   _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
    return std::pair(nom, std::max(std::abs(up - nom), std::abs(down - nom)));
 }
 
@@ -1120,15 +1109,15 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma)
    auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
    if (!first_poi)
       return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
-
-   double nom = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first, fNullVal(), fAltVal(), sigma_mu().first,
+   auto _sigma_mu = sigma_mu();
+   double nom = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first, fNullVal(), fAltVal(), _sigma_mu.first,
                                              first_poi->getMin("physical"), first_poi->getMax("physical"));
    double up =
       xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first + ts_asymp(nSigma).second, fNullVal(), fAltVal(),
-                                   sigma_mu().first, first_poi->getMin("physical"), first_poi->getMax("physical"));
+                                   _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
    double down =
       xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first - ts_asymp(nSigma).second, fNullVal(), fAltVal(),
-                                   sigma_mu().first, first_poi->getMin("physical"), first_poi->getMax("physical"));
+                                   _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
 
    return std::pair(nom, std::max(std::abs(up - nom), std::abs(down - nom)));
 }
@@ -1155,7 +1144,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma)
    double down1 =
       xRooFit::Asymptotics::PValue(fPllType, _ts_asymp.first - _ts_asymp.second, fNullVal(), fNullVal(),
                                    _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
-   double nom2 = xRooFit::Asymptotics::PValue(fPllType, _ts_asymp.first, fNullVal(), fAltVal(), sigma_mu().first,
+   double nom2 = xRooFit::Asymptotics::PValue(fPllType, _ts_asymp.first, fNullVal(), fAltVal(), _sigma_mu.first,
                                               first_poi->getMin("physical"), first_poi->getMax("physical"));
    double up2 =
       xRooFit::Asymptotics::PValue(fPllType, _ts_asymp.first + _ts_asymp.second, fNullVal(), fAltVal(),
@@ -1173,18 +1162,19 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma)
 
 std::pair<double, double> xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma)
 {
-   auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
-   if (!first_poi || (!std::isnan(nSigma) && std::isnan(sigma_mu().first)))
-      return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
    if (std::isnan(nSigma))
       return pll();
+   auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
+   auto _sigma_mu = sigma_mu();
+   if (!first_poi || (!std::isnan(nSigma) && std::isnan(_sigma_mu.first)))
+      return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
    double nom = xRooFit::Asymptotics::k(fPllType, ROOT::Math::gaussian_cdf(nSigma), fNullVal(), fAltVal(),
-                                        sigma_mu().first, first_poi->getMin("physical"), first_poi->getMax("physical"));
+                                        _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
    double up = xRooFit::Asymptotics::k(fPllType, ROOT::Math::gaussian_cdf(nSigma), fNullVal(), fAltVal(),
-                                       sigma_mu().first + sigma_mu().second, first_poi->getMin("physical"),
+                                       _sigma_mu.first + _sigma_mu.second, first_poi->getMin("physical"),
                                        first_poi->getMax("physical"));
    double down = xRooFit::Asymptotics::k(fPllType, ROOT::Math::gaussian_cdf(nSigma), fNullVal(), fAltVal(),
-                                         sigma_mu().first - sigma_mu().second, first_poi->getMin("physical"),
+                                         _sigma_mu.first - _sigma_mu.second, first_poi->getMin("physical"),
                                          first_poi->getMax("physical"));
    return std::pair<double, double>(nom, std::max(std::abs(nom - up), std::abs(nom - down)));
 }
@@ -1397,10 +1387,16 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pX_toys(bool alt, double nS
    auto _ts = ts_toys(nSigma);
    if (std::isnan(_ts.first))
       return _ts;
+   if (fPllType != xRooFit::Asymptotics::Uncapped && _ts.first == 0)
+      return std::pair(1, 0); // don't need toys to compute this point!
 
    TEfficiency eff("", "", 1, 0, 1);
 
    auto &_theToys = (alt) ? altToys : nullToys;
+
+   if (_theToys.empty()) {
+      return std::pair(0.5,std::numeric_limits<double>::infinity());
+   }
 
    // loop over toys, count how many are > ts value
    // nans (mean bad ts evaluations) will count towards uncertainty
@@ -1448,6 +1444,9 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pNull_toys(double nSigma)
 
 std::pair<double, double> xRooNLLVar::xRooHypoPoint::pAlt_toys(double nSigma)
 {
+   if (!std::isnan(nSigma)) {
+      return std::pair(ROOT::Math::gaussian_cdf(nSigma),0); // by construction
+   }
    return pX_toys(true, nSigma);
 }
 
@@ -1490,10 +1489,22 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed)
    return out;
 }
 
-void xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed)
+void xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, double target, double target_nSigma)
 {
    if ((alt && !cfit_alt()) || (!alt && !cfit_null())) {
       throw std::runtime_error("Cannot add toys, invalid conditional fit");
+   }
+   if (!std::isnan(target) && std::isnan(ts_toys(target_nSigma).first)) {
+      if (std::isnan(target_nSigma)) {
+         throw std::runtime_error("Cannot target obs p-value because ts value unavailable");
+      }
+      // try generating 100 alt toys
+      Info("addToys","First generating 100 alt toys in order to determine expected ts value");
+      addToys(true,100,initialSeed);
+      // if still null then exit
+      if (std::isnan(ts_toys(target_nSigma).first)) {
+         throw std::runtime_error("Unable to determine expected ts value");
+      }
    }
    auto &toys = (alt) ? altToys : nullToys;
    int nans = 0;
@@ -1504,33 +1515,52 @@ void xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed)
    s2.Start();
    TStopwatch s;
    s.Start();
-   for (auto i = 0; i < nToys; i++) {
-      if (i == 0 && initialSeed != 0)
-         RooRandom::randomGenerator()->SetSeed(initialSeed);
-      int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
-      toys.push_back(std::make_tuple(seed, ((alt) ? generateAlt(seed) : generateNull(seed)).pll().first, 1.));
-      if (std::isnan(std::get<1>(toys.back())))
-         nans++;
-      times[i] = s.RealTime() - lastTime; // stops the clock
-      lastTime = s.RealTime();
-      if (s.RealTime() > 10) {
-         std::cout << "\r"
-                   << TString::Format("Generated %d/%d %s hypothesis toys [%.2f toys/s]...", i + 1, nToys,
-                                      alt ? "alt" : "null", double(i - lasti) / s.RealTime())
-                   << std::flush;
-         lasti = i;
-         s.Reset();
-         s.Start();
-         // std::cout << "Generated " << i << "/" << nToys << (alt ? " alt " : " null ") << " hypothesis toys " ..." <<
-         // std::endl;
+   auto condition = [&]() {
+      if(std::isnan(target)) return true;
+      double diff = std::numeric_limits<double>::infinity();
+      double err = std::numeric_limits<double>::infinity();
+      auto obs = pNull_toys(target_nSigma);
+      if (!std::isnan(obs.first)) {
+         diff = std::abs(obs.first-target);
+         err = obs.second;
+         if (err > 1e-4 && diff < 1.5*obs.second) return true; // more toys needed
       }
-      s.Continue();
+      return false;
+   };
+   while(condition()) {
+      for (auto i = 0; i < nToys; i++) {
+         if (i == 0 && initialSeed != 0)
+            RooRandom::randomGenerator()->SetSeed(initialSeed);
+         int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
+         toys.push_back(std::make_tuple(seed, ((alt) ? generateAlt(seed) : generateNull(seed)).pll().first, 1.));
+         if (std::isnan(std::get<1>(toys.back())))
+            nans++;
+         times[i] = s.RealTime() - lastTime; // stops the clock
+         lastTime = s.RealTime();
+         if (s.RealTime() > 10) {
+            std::cout << "\r"
+                      << TString::Format("Generated %d/%d %s hypothesis toys [%.2f toys/s]...", i + 1, nToys,
+                                         alt ? "alt" : "null", double(i - lasti) / s.RealTime())
+                      << std::flush;
+            lasti = i;
+            s.Reset();
+            s.Start();
+            // std::cout << "Generated " << i << "/" << nToys << (alt ? " alt " : " null ") << " hypothesis toys " ..." << std::endl;
+         }
+         s.Continue();
+      }
+      if (lasti)
+         std::cout << "\r"
+                   << TString::Format("Generated %d/%d %s hypothesis toys [%.2f toys/s overall]...Done!", nToys, nToys,
+                                      alt ? "alt" : "null", double(nToys) / s2.RealTime())
+                   << std::endl;
+      if (std::isnan(target)) {
+         break; // no more toys if not doing a target
+      }
+      if(condition()) {
+         Info("addToys","Generating more toys to determine p-value ... currently: %f +/- %f",pNull_toys(target_nSigma).first,pNull_toys(target_nSigma).second);
+      }
    }
-   if (lasti)
-      std::cout << "\r"
-                << TString::Format("Generated %d/%d %s hypothesis toys [%.2f toys/s overall]...Done!", nToys, nToys,
-                                   alt ? "alt" : "null", double(nToys) / s2.RealTime())
-                << std::endl;
    auto g = gDirectory->Get<TGraph>("toyTime");
    if (!g) {
       g = new TGraph;
@@ -1561,13 +1591,13 @@ void xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed)
       std::cout << "Warning: " << nans << " toys were bad" << std::endl;
 }
 
-void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys, int seed)
+void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys, int seed, double target, double target_nSigma)
 {
-   addToys(false, nToys, seed);
+   addToys(false, nToys, seed, target, target_nSigma);
 }
-void xRooNLLVar::xRooHypoPoint::addAltToys(int nToys, int seed)
+void xRooNLLVar::xRooHypoPoint::addAltToys(int nToys, int seed, double target, double target_nSigma)
 {
-   addToys(true, nToys, seed);
+   addToys(true, nToys, seed, target, target_nSigma);
 }
 
 xRooNLLVar::xRooHypoPoint
@@ -1785,7 +1815,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       axis->Reset("ICES");
       axis->SetMinimum(1e-7);
       axis->SetMaximum(h->GetMaximum());
-      axis->SetTitle(TString::Format("HypoPoint"));
+      axis->SetTitle(TString::Format("%s HypoPoint",collectionContents(poi()).c_str()));
       axis->SetLineWidth(0);
       axis->Draw(""); // h->Draw("axis"); cant use axis option if want title drawn
       hAxis = axis;
@@ -1845,7 +1875,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
 
    // draw observed points
    TLine ll;
-   ll.SetLineStyle(2);
+   ll.SetLineStyle(1);ll.SetLineWidth(3);
    // for(auto p : fObs) {
    auto tl = ll.DrawLine(pll().first, hAxis->GetMinimum(), pll().first, 0.1);
    auto label = TString::Format("obs ts = %.4f", pll().first);
@@ -1864,7 +1894,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       label += " p_{toy}=(";
       label += (std::isnan(pNull.first)) ? "-" : TString::Format("%.4f #pm %.4f", pNull.first, pNull.second);
       label += (std::isnan(pAlt.first)) ? ",-" : TString::Format(",%.4f #pm %.4f", pAlt.first, pAlt.second);
-      label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format(",%.4f #pm %.4f", pCLs.first, pCLs.second);
+      label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format(",%.4f #pm %.4f)", pCLs.first, pCLs.second);
    }
    if (label.Length() > 0)
       l->AddEntry("", label, "");
@@ -1874,7 +1904,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       label += " p_{asymp}=(";
       label += (std::isnan(pNullA.first)) ? "-" : TString::Format("%.4f #pm %.4f", pNullA.first, pNullA.second);
       label += (std::isnan(pAltA.first)) ? ",-" : TString::Format(",%.4f #pm %.4f", pAltA.first, pAltA.second);
-      label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format(",%.4f #pm %.4f", pCLs.first, pCLs.second);
+      label += (std::isnan(pCLs.first)) ? ",-)" : TString::Format(",%.4f #pm %.4f)", pCLs.first, pCLs.second);
    }
    if (label.Length() > 0)
       l->AddEntry("", label, "");

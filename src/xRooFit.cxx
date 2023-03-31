@@ -505,7 +505,7 @@ xRooFit::StoredFitResult::StoredFitResult(RooFitResult* _fr) : TNamed(*_fr) {
 }
 
 std::shared_ptr<const RooFitResult>
-xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &_fitConfig)
+xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &_fitConfig, const std::shared_ptr<RooLinkedList>& nllOpts)
 {
 
    auto myFitConfig = _fitConfig ? _fitConfig : createFitConfig();
@@ -634,6 +634,15 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          if (!cacheDir->GetDirectory(nll.GetName()))
             cacheDir->mkdir(nll.GetName());
          if (auto dir = cacheDir->GetDirectory(nll.GetName()); dir) {
+            // save NLL opts if was given one, unless already present
+            if(nllOpts) {
+               if (strlen(nllOpts->GetName()) == 0) {
+                  nllOpts->SetName(TUUID().AsString());
+               }
+               if (!dir->FindKey(nllOpts->GetName())) {
+                  dir->WriteObject(nllOpts.get(), nllOpts->GetName());
+               }
+            }
             dir->WriteObject(result.get(), result->GetName());
          }
       }
@@ -958,6 +967,15 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       if (!cacheDir->GetDirectory(nll.GetName()))
          cacheDir->mkdir(nll.GetName());
       if (auto dir = cacheDir->GetDirectory(nll.GetName()); dir) {
+         // save NLL opts if was given one, unless already present
+         if(nllOpts) {
+            if (strlen(nllOpts->GetName()) == 0) {
+               nllOpts->SetName(TUUID().AsString());
+            }
+            if (!dir->FindKey(nllOpts->GetName())) {
+               dir->WriteObject(nllOpts.get(), nllOpts->GetName());
+            }
+         }
 
          // also save the fitConfig ... unless one with same name already present
          std::string configName;
