@@ -3388,13 +3388,11 @@ bool xRooNode::SetBinError(int bin, double value)
    throw std::runtime_error(TString::Format("%s SetBinError failed", GetName()));
 }
 
-std::shared_ptr<xRooNode> xRooNode::find(const std::string &name, bool browseResult) const
+std::shared_ptr<xRooNode> xRooNode::at(const std::string &name, bool browseResult) const
 {
-   try {
-      return at(name, browseResult);
-   } catch (std::out_of_range &) {
-      return nullptr;
-   }
+   auto res = find(name,browseResult);
+   if (res==nullptr) throw std::out_of_range(name + " does not exist");
+   return res;
 }
 
 RooWorkspace *xRooNode::ws() const
@@ -3921,7 +3919,7 @@ bool xRooNode::contains(const std::string &name) const
    }
 }
 
-std::shared_ptr<xRooNode> xRooNode::at(const std::string &name, bool browseResult) const
+std::shared_ptr<xRooNode> xRooNode::find(const std::string &name, bool browseResult) const
 {
    std::string partname = (name.find('/') != std::string::npos) ? name.substr(0, name.find('/')) : name;
    auto _s = (!get() && fParent) ? fParent->get<RooSimultaneous>()
@@ -3962,7 +3960,7 @@ std::shared_ptr<xRooNode> xRooNode::at(const std::string &name, bool browseResul
       }
       return child2;
    }
-   throw std::out_of_range(name + " does not exist");
+   return nullptr;
 }
 
 std::shared_ptr<xRooNode> xRooNode::operator[](const std::string &name)
@@ -5856,9 +5854,14 @@ public:
              (dynamic_cast<RooAbsPdf *>(fFunc.absArg())->expectedEvents(_normSet)) * (fCoef.absArg() ? fCoef : 1.);
    }
 
+   bool selfNormalized() const override { return true; } // so that doesn't try to do an integral because we are passing integration onto fFunc in evaluate
+
    // faster than full evaluation because doesnt make the integral dependent on the full expression
    Double_t getSimplePropagatedError(const RooFitResult &fr, const RooArgSet &nset_in) const
    {
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 28, 00)
+      //return getPropagatedError(fr,nset_in); // method was improved in 6.28 so use this instead
+#endif
 
       // Strip out parameters with zero error
       RooArgList fpf_stripped;
@@ -5871,8 +5874,8 @@ public:
       }
 
       // Clone self for internal use
-      RooAbsReal *cloneFunc = (RooAbsReal *)fFunc.absArg()->cloneTree();
-      RooAbsPdf *clonePdf = dynamic_cast<RooAbsPdf *>(cloneFunc);
+      RooAbsReal *cloneFunc = const_cast<PdfWrapper*>(this);// (RooAbsReal *)fFunc.absArg()->cloneTree();
+      //RooAbsPdf *clonePdf = dynamic_cast<RooAbsPdf *>(cloneFunc);
       RooArgSet *errorParams = cloneFunc->getObservables(fpf_stripped);
 
       RooArgSet *nset =
@@ -5905,16 +5908,20 @@ public:
 
          // Make Plus variation
          ((RooRealVar *)paramList.at(ivar))->setVal(cenVal + errVal);
-         plusVar.push_back((fExpectedEventsMode ? 1. : cloneFunc->getVal(nset)) *
-                           (clonePdf ? clonePdf->expectedEvents(nset) : 1.));
+         //plusVar.push_back((fExpectedEventsMode ? 1. : cloneFunc->getVal(nset)) *
+         //                  (clonePdf ? clonePdf->expectedEvents(nset) : 1.));
+         plusVar.push_back(cloneFunc->getVal(nset));
 
          // Make Minus variation
          ((RooRealVar *)paramList.at(ivar))->setVal(cenVal - errVal);
-         minusVar.push_back((fExpectedEventsMode ? 1. : cloneFunc->getVal(nset)) *
-                            (clonePdf ? clonePdf->expectedEvents(nset) : 1.));
+         //minusVar.push_back((fExpectedEventsMode ? 1. : cloneFunc->getVal(nset)) *
+         //                   (clonePdf ? clonePdf->expectedEvents(nset) : 1.));
+         minusVar.push_back(cloneFunc->getVal(nset));
 
          ((RooRealVar *)paramList.at(ivar))->setVal(cenVal);
       }
+
+      getVal(nset); // reset state
 
       TMatrixDSym C(paramList.getSize());
       std::vector<double> errVec(paramList.getSize());
@@ -5935,7 +5942,7 @@ public:
       // Calculate error in linear approximation from variations and correlation coefficient
       Double_t sum = F * (C * F);
 
-      delete cloneFunc;
+      //delete cloneFunc;
       delete errorParams;
       delete nset;
 
@@ -6023,15 +6030,12 @@ void xRooNode::sterilize() const
    func = [&](RooAbsArg *a) {
       if (!a)
          return;
-      auto itr = a->clientIterator();
-      TObject *obj;
-      while ((obj = itr->Next())) {
+      for(auto obj : a->clients()) {
          _doSterilize(dynamic_cast<RooAbsArg *>(obj));
          if (RooAbsArg *arg = dynamic_cast<RooAbsArg *>(obj); arg) {
             func(arg);
          }
       }
-      delete itr;
    };
    func(dynamic_cast<RooAbsArg *>(get()));
    _doSterilize(dynamic_cast<RooAbsArg *>(get())); // sterilize self
@@ -6250,11 +6254,12 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                p->_normSet = nullptr;
 #endif
             } else {
-               res = rar->getPropagatedError(*fr, normSet);
-               // TODO: What if coef has error? - probably need a FuncWrapper class
-               if (auto c = _coefs.get<RooAbsReal>(); c) {
-                  res *= c->getVal(normSet);
-               }
+//               res = rar->getPropagatedError(*fr, normSet);
+//               // TODO: What if coef has error? - probably need a FuncWrapper class
+//               if (auto c = _coefs.get<RooAbsReal>(); c) {
+//                  res *= c->getVal(normSet);
+//               }
+               res = RooProduct("errorEval","errorEval",RooArgList(*rar,_coefs.empty() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>())).getPropagatedError(*fr,normSet);
             }
             if (needBinWidth) {
                res *= h->GetBinWidth(i);
@@ -8193,10 +8198,9 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
       // only integrate over observables we actually depend on
       auto f = std::shared_ptr<RooAbsReal>(p2->createIntegral(*std::unique_ptr<RooArgSet>(p2->getObservables(*_obs.get<RooArgList>())),
                                                               rangeName)); // did use x here before using obs
-      double tmp =
-         out; // coef value ... not included in Error of integral we just created (doesn't have coefs() return)
+      RooProduct pr("int_x_coef","int_x_coef",RooArgList(*f,_coefs.empty() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>()));
       out *= f->getVal();
-      err = tmp * xRooNode(f, *this).GetBinError(-1, fr);
+      err = xRooNode(pr, *this).GetBinError(-1, fr);
       sterilize(); // needed so that we can forget properly about the integral we just created (and are deleting)
    } else if (get<RooAbsData>()) {
       out = 0;
@@ -8332,11 +8336,12 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
          p->_normSet = nullptr;
 #endif
       } else {
-         res = o->getPropagatedError(*fr, normSet);
-         // TODO: What if coef has error? - probably need a FuncWrapper class
-         if (auto c = _coefs.get<RooAbsReal>(); c) {
-            res *= c->getVal(normSet);
-         }
+//         res = o->getPropagatedError(*fr, normSet);
+//         // TODO: What if coef has error? - probably need a FuncWrapper class
+//         if (auto c = _coefs.get<RooAbsReal>(); c) {
+//            res *= c->getVal(normSet);
+//         }
+         res = RooProduct("errorEval","errorEval",RooArgList(*o,_coefs.empty() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>())).getPropagatedError(*fr,normSet);
       }
       if (doBinWidth) {
          res *= ax->GetBinWidth(bin);
