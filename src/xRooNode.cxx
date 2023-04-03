@@ -5975,7 +5975,7 @@ void buildHistogramInterrupt(int signum)
 void xRooNode::sterilize() const
 {
    auto _doSterilize = [](RooAbsArg *obj) {
-
+      if (!obj) return;
       for(int i=0;i<obj->numCaches();i++) {
          if(auto cache = dynamic_cast<RooObjCacheManager*>(obj->getCache(i))) {
             cache->reset();
