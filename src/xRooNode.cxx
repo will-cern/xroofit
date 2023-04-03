@@ -3465,8 +3465,8 @@ xRooNode xRooNode::constraints() const
 
    // finish by removing any constraint that contains another constraint for the same par
    // and consolidate common pars
-   auto it = out.begin();
-   while (it != out.end()) {
+   auto it = out.std::vector<std::shared_ptr<xRooNode>>::begin();
+   while (it != out.std::vector<std::shared_ptr<xRooNode>>::end()) {
       bool removeIt = false;
       for (auto &c : out) {
          if (c.get() == it->get())
@@ -4070,7 +4070,8 @@ xRooNode &xRooNode::browse()
    // alternative could have been to mandate that the 'components' of a collection node are the children it has.
 
    auto findByObj = [&](const std::shared_ptr<xRooNode> &n) {
-      for (auto &c : *this) {
+      std::vector<std::shared_ptr<xRooNode>>& nn(*this);
+      for (auto &c : nn) {
          if (c->get() == n->get() && strcmp(n->GetName(), c->GetName()) == 0)
             return c;
       }
@@ -4079,7 +4080,8 @@ xRooNode &xRooNode::browse()
 
    auto appendChildren = [&](const xRooNode &n) {
       size_t out = 0;
-      for (auto &c : n) {
+      const std::vector<std::shared_ptr<xRooNode>>& nn(n);
+      for (auto &c : nn) {
          if (auto existing = findByObj(c); existing) {
             existing->fTimes++;
             existing->fFolder = c->fFolder; // transfer folder assignment
@@ -4195,8 +4197,8 @@ xRooNode &xRooNode::browse()
    }
 
    // clear anything that has fTimes = 0 still
-   auto it = begin();
-   while (it != end()) {
+   auto it = std::vector<std::shared_ptr<xRooNode>>::begin();
+   while (it != std::vector<std::shared_ptr<xRooNode>>::end()) {
       if (it->get()->fTimes == 0) {
          for (auto o : *gROOT->GetListOfBrowsers()) {
             auto b = dynamic_cast<TBrowser *>(o);

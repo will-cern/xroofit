@@ -148,15 +148,46 @@ public:
    std::shared_ptr<xRooNode> operator[](size_t idx) { return at(idx); }
    std::shared_ptr<xRooNode> operator[](const std::string &name); // will create a new node if not existing, unlike 'at'
 
+   // custom iterator to ensure children are auto-browsed as we iterate through
+   class xRooNodeIterator : public std::vector<std::shared_ptr<xRooNode>>::const_iterator {
+   public:
+      xRooNodeIterator(std::vector<std::shared_ptr<xRooNode>>::const_iterator itr) : std::vector<std::shared_ptr<xRooNode>>::const_iterator(itr) { }
+      std::shared_ptr<xRooNode> const & operator* () const {
+         auto& out = std::vector<std::shared_ptr<xRooNode>>::const_iterator::operator*();
+         if (out->get() && out->empty()) out->browse();
+         return out;
+      }
+      bool operator!= (xRooNodeIterator const& b) const {
+         const std::vector<std::shared_ptr<xRooNode>>::const_iterator& aa = (*this);
+         const std::vector<std::shared_ptr<xRooNode>>::const_iterator& bb = b;
+         return aa != bb;
+      };
+      xRooNodeIterator const & operator++() {
+         std::vector<std::shared_ptr<xRooNode>>::const_iterator::operator++();
+         return *this;
+      }
+
+   };
+   auto begin() const -> xRooNodeIterator
+   {
+      return xRooNodeIterator(std::vector<std::shared_ptr<xRooNode>>::begin());
+   }
+   auto end() const -> xRooNodeIterator
+   {
+      return xRooNodeIterator(std::vector<std::shared_ptr<xRooNode>>::end());
+   }
+
    // needed in pyROOT to avoid it creating iterators that follow the 'get' to death
-   auto begin() const -> decltype(std::vector<std::shared_ptr<xRooNode>>::begin())
-   {
-      return std::vector<std::shared_ptr<xRooNode>>::begin();
-   }
-   auto end() const -> decltype(std::vector<std::shared_ptr<xRooNode>>::end())
-   {
-      return std::vector<std::shared_ptr<xRooNode>>::end();
-   }
+//   auto begin() const -> decltype(std::vector<std::shared_ptr<xRooNode>>::begin())
+//   {
+//      return std::vector<std::shared_ptr<xRooNode>>::begin();
+//   }
+//   auto end() const -> decltype(std::vector<std::shared_ptr<xRooNode>>::end())
+//   {
+//      return std::vector<std::shared_ptr<xRooNode>>::end();
+//   }
+
+
 
    void Browse(TBrowser *b = nullptr) override; // will browse the children that aren't "null" nodes
    bool IsFolder() const override;
