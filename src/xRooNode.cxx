@@ -3912,11 +3912,7 @@ bool xRooNode::SetXaxis(const RooAbsBinning &binning)
 
 bool xRooNode::contains(const std::string &name) const
 {
-   try {
-      return at(name, false) != nullptr;
-   } catch (std::out_of_range &) {
-      return false;
-   }
+   return find(name,false) != nullptr;
 }
 
 std::shared_ptr<xRooNode> xRooNode::find(const std::string &name, bool browseResult) const
@@ -5852,8 +5848,9 @@ public:
 
    double evaluate() const override
    {
+      auto _pdf = dynamic_cast<RooAbsPdf *>(fFunc.absArg());
       return (fExpectedEventsMode ? 1. : fFunc) *
-             (dynamic_cast<RooAbsPdf *>(fFunc.absArg())->expectedEvents(_normSet)) * (fCoef.absArg() ? fCoef : 1.);
+             (_pdf ? _pdf->expectedEvents(_normSet) : 1.) * (fCoef.absArg() ? fCoef : 1.);
    }
 
    bool selfNormalized() const override { return true; } // so that doesn't try to do an integral because we are passing integration onto fFunc in evaluate
@@ -5862,7 +5859,7 @@ public:
    Double_t getSimplePropagatedError(const RooFitResult &fr, const RooArgSet &nset_in) const
    {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 28, 00)
-      //return getPropagatedError(fr,nset_in); // method was improved in 6.28 so use this instead
+      return getPropagatedError(fr,nset_in); // method was improved in 6.28 so use this instead
 #endif
 
       // Strip out parameters with zero error
@@ -6043,6 +6040,24 @@ void xRooNode::sterilize() const
    _doSterilize(dynamic_cast<RooAbsArg *>(get())); // sterilize self
 }
 
+// observables not in the axisVars are automatically projected over
+xRooNode xRooNode::histo(const xRooNode& vars, bool content, bool errors) const {
+
+   xRooNode out(TString::Format("%s.histo",GetName()),nullptr,*this);
+
+
+   if (vars.empty()) {
+      out.fComp = std::shared_ptr<TH1>(BuildHistogram(nullptr,!content,errors,-1,-1));
+   } else if(vars.size()==1) {
+      out.fComp = std::shared_ptr<TH1>(BuildHistogram(vars.at(0)->get<RooAbsLValue>(),!content,errors));
+   } else {
+      throw std::runtime_error("multi-dim histo not yet supported");
+   }
+
+   return out;
+
+}
+
 TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binStart, int binEnd) const
 {
    auto rar = get<RooAbsReal>();
@@ -6055,8 +6070,10 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    TH1::AddDirectory(false);
    TH1 *h = nullptr;
    if (!v) {
-      if (auto _ax = GetXaxis())
-         v = dynamic_cast<RooAbsLValue *>(_ax->GetParent());
+      if(binStart != -1 || binEnd != -1) { // allow v to stay nullptr if doing integral (binStart=binEnd=-1)
+         if (auto _ax = GetXaxis())
+            v = dynamic_cast<RooAbsLValue *>(_ax->GetParent());
+      }
       if (v)
          vv = dynamic_cast<TObject *>(v);
       else {
@@ -6186,34 +6203,46 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          fr->setCovQual(covQualBackup);
       }
 
-      // need to remove v from result as we are plotting as function of v
-      if (auto _p = fr->floatParsFinal().find(dynamic_cast<TObject *>(v)->GetName()); _p) {
-         RooArgList _pars = fr->floatParsFinal();
-         _pars.remove(*_p, true);
-         auto _tmp = fr->reducedCovarianceMatrix(_pars);
-         int covQualBackup = fr->covQual();
-         fr->setCovarianceMatrix(_tmp);
-         fr->setCovQual(covQualBackup);
-         const_cast<RooArgList&>(fr->floatParsFinal()).remove(*_p, true);
+      if(v) {
+         // need to remove v from result as we are plotting as function of v
+         if (auto _p = fr->floatParsFinal().find(dynamic_cast<TObject *>(v)->GetName()); _p) {
+            RooArgList _pars = fr->floatParsFinal();
+            _pars.remove(*_p, true);
+            auto _tmp = fr->reducedCovarianceMatrix(_pars);
+            int covQualBackup = fr->covQual();
+            fr->setCovarianceMatrix(_tmp);
+            fr->setCovQual(covQualBackup);
+            const_cast<RooArgList &>(fr->floatParsFinal()).remove(*_p, true);
+         }
       }
    }
 
-   RooArgSet normSet;
-   if (v)
-      normSet.add(*dynamic_cast<RooAbsArg *>(v));
+
 
    if (!empty) {
+      RooArgSet normSet;
+      if (v)
+         normSet.add(*dynamic_cast<RooAbsArg *>(v));
+
       if (binEnd == 0)
          binEnd = h->GetNbinsX();
 
       // check if we need to do any projecting of other observables
       RooAbsReal* oldrar = nullptr;
       auto _obs = robs();
+
+      for(auto o : _obs) {
+         if(o->get<RooRealVar>() && o->get<RooRealVar>()->hasRange("coordRange")) {
+            o->get<RooRealVar>()->removeRange("coordRange");
+         }
+      }
+      coords(); // loads current coordinates and populates coordRange, if any
+
       if(auto a = dynamic_cast<RooAbsArg*>(v)) _obs.get<RooArgList>()->remove(*a);
       if (!_obs.get<RooArgList>()->empty()) {
          oldrar = rar;
          normSet.add(*_obs.get<RooArgList>());
-         rar = rar->createIntegral(*_obs.get<RooArgList>(),RooFit::NormSet(normSet));
+         rar = (p) ? p->createProjection(*_obs.get<RooArgList>()/*,RooFit::Range("coordRange")*/ ) : rar->createIntegral(*_obs.get<RooArgList>(),RooFit::NormSet(normSet)/*,RooFit::Range("coordRange")*/);
       }
 
       bool needBinWidth = false;
@@ -6227,12 +6256,14 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       TStopwatch timeIt;
       std::vector<double> lapTimes;
       bool warned = false;
+      if(binStart==-1 && binEnd==-1) {binEnd = 1;}
       for (int i = std::max(1, binStart); i <= std::min(h->GetNbinsX(), binEnd); i++) {
          timeIt.Start(true);
          if (x)
             x->setVal(h->GetBinCenter(i));
          else if (v)
             v->setBin(i - 1);
+         if (x && !x->inRange("coordRange")) continue;
          double r = /*(p && p->selfNormalized())*/ rar->getVal(normSet);
          if (r && !_coefs.empty()) {
             r *= _coefs.get<RooAbsReal>()->getVal(normSet);

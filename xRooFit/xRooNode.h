@@ -363,6 +363,9 @@ public:
    void Checked(TObject *obj, bool val);
    void SetChecked(bool val = true) { Checked(this, val); }
 
+   xRooNode histo(const xRooNode& vars, bool content = true, bool errors = true) const;
+   xRooNode histo(bool content = true, bool errors = true) const { return histo(obs(),content,errors); }
+
    TGraph *BuildGraph(RooAbsLValue *v = nullptr, bool includeZeros = false, TVirtualPad *fromPad = nullptr) const;
    TH1 *BuildHistogram(RooAbsLValue *v = nullptr, bool empty = false, bool errors = false, int binStart = 1,
                        int binEnd = 0) const;
