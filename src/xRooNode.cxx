@@ -1817,9 +1817,6 @@ xRooNode xRooNode::shallowCopy(const std::string &name, std::shared_ptr<xRooNode
             out.acquire(std::shared_ptr<TObject>(main->Clone((name + "_pdf").c_str()))));
          pdf->replaceServer(*pdf->pdfList().find(main->GetName()), *newMain, true, true);
          const_cast<RooArgList&>(pdf->pdfList()).replace(*pdf->pdfList().find(main->GetName()), *newMain);
-//         pdf->_cacheMgr.reset();
-//         pdf->setValueDirty();
-//         pdf->setNormRange(0);
       }
       out.fComp = pdf;
       out.sterilize();
@@ -2385,11 +2382,7 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
 #else
             p2->addPdfs(RooArgSet(*_pdf));
 #endif
-         // TODO: any more cleanup?
          sterilize();
-//         p2->_cacheMgr.reset();
-//         p2->setValueDirty();
-//         p2->setNormRange(0);
          browse();
          return xRooNode(_pdf, *this);
       }
@@ -4066,7 +4059,7 @@ xRooNode &xRooNode::browse()
    // alternative could have been to mandate that the 'components' of a collection node are the children it has.
 
    auto findByObj = [&](const std::shared_ptr<xRooNode> &n) {
-      std::vector<std::shared_ptr<xRooNode>>& nn(*this);
+      std::vector<std::shared_ptr<xRooNode>>& nn = *this;
       for (auto &c : nn) {
          if (c->get() == n->get() && strcmp(n->GetName(), c->GetName()) == 0)
             return c;
@@ -4084,7 +4077,7 @@ xRooNode &xRooNode::browse()
          } else {
             emplace_back(c);
          }
-//         if (!TString(c->GetName()).BeginsWith(".coef"))
+         if (!TString(c->GetName()).BeginsWith(".coef"))
             out++; // don't count .coef as a child, as technically part of parent
       }
       return out;
@@ -4134,11 +4127,12 @@ xRooNode &xRooNode::browse()
          if (_coefs.size() == 1) {
             if (strcmp(_coefs.at(0)->GetName(), "1") != 0 &&
                 strcmp(_coefs.at(0)->GetName(), "ONE") != 0) { // don't add the "1"
-               if (auto existing = findByObj(_coefs.at(0)); existing) {
+               auto coef = std::make_shared<xRooNode>(".coef", *_coefs.at(0)->get(), *this);
+               if (auto existing = findByObj(coef); existing) {
                   existing->fTimes++;
                   existing->fFolder = _coefs.at(0)->fFolder; // transfer folder assignment
                } else {
-                  emplace_back(std::make_shared<xRooNode>(".coef", *_coefs.at(0)->get(), *this));
+                  emplace_back(coef);
                }
             }
          } else {
@@ -4737,7 +4731,18 @@ xRooNode xRooNode::coefs() const
    // if parent is a sumpdf or addpdf then include the coefs
    // if func appears multiple times then coefs must be combined into a RooAddition temporary
    if (fParent) {
-      if (auto p = fParent->get<RooRealSumPdf>(); p) {
+      // handle case where filters are applied .. need to pass through these
+      // do this by iterating while fComp is null
+      auto parent = fParent;
+      if (!parent->fComp) {
+         while (!parent->fComp && parent->fParent) {
+            parent = parent->fParent;
+         }
+         // parent should now be node above the filters ... need parent of that
+         parent = parent->fParent;
+         if (!parent) parent = fParent; // revert t original parent in case something went wrong
+      }
+      if (auto p = parent->get<RooRealSumPdf>(); p) {
          std::size_t i = 0;
          for (auto &o : p->funcList()) {
             if (o == get()) {
@@ -4750,7 +4755,7 @@ xRooNode xRooNode::coefs() const
             }
             i++;
          }
-      } else if (auto p2 = fParent->get<RooAddPdf>(); p2) {
+      } else if (auto p2 = parent->get<RooAddPdf>(); p2) {
          std::size_t i = 0;
          for (auto &o : p2->pdfList()) {
             if (o == get()) {
@@ -5826,16 +5831,21 @@ xRooNode xRooNode::reduced(const std::string &_range) const
 
 class PdfWrapper : public RooAbsPdf {
 public:
-   PdfWrapper(RooAbsReal &f, RooAbsReal *coef, bool expEvMode = false)
-      : RooAbsPdf(Form("exp_%s", f.GetName())), fFunc("func", "func", this, f), fCoef("coef", "coef", this)
+   PdfWrapper(RooAbsReal &f, RooAbsReal *coef, bool expEvMode = false, RooAbsPdf* expPdf = nullptr)
+      : RooAbsPdf(Form("exp_%s", f.GetName())), fFunc("func", "func", this, f), fCoef("coef", "coef", this),
+        fExpPdf("expPdf","expPdf",this)
    {
-      if (coef)
-         fCoef.setArg(*coef);
+      if (coef) { fCoef.setArg(*coef); }
+      if (expPdf) { fExpPdf.setArg(*expPdf); }
+      else if(dynamic_cast<RooAbsPdf*>(&f)) {
+         fExpPdf.setArg(f); // using self for expectation
+      }
       fExpectedEventsMode = expEvMode;
    }
    virtual ~PdfWrapper(){};
    PdfWrapper(const PdfWrapper &other, const char *name = 0)
       : RooAbsPdf(other, name), fFunc("func", this, other.fFunc), fCoef("coef", this, other.fCoef),
+        fExpPdf("expPdf",this,other.fExpPdf),
         fExpectedEventsMode(other.fExpectedEventsMode)
    {
    }
@@ -5848,9 +5858,9 @@ public:
 
    double evaluate() const override
    {
-      auto _pdf = dynamic_cast<RooAbsPdf *>(fFunc.absArg());
       return (fExpectedEventsMode ? 1. : fFunc) *
-             (_pdf ? _pdf->expectedEvents(_normSet) : 1.) * (fCoef.absArg() ? fCoef : 1.);
+             ((fExpPdf.absArg()) ? static_cast<RooAbsPdf*>(fExpPdf.absArg())->expectedEvents(_normSet) : 1.) *
+             (fCoef.absArg() ? fCoef : 1.);
    }
 
    bool selfNormalized() const override { return true; } // so that doesn't try to do an integral because we are passing integration onto fFunc in evaluate
@@ -5951,6 +5961,7 @@ public:
 private:
    RooRealProxy fFunc;
    RooRealProxy fCoef;
+   RooRealProxy fExpPdf;
    bool fExpectedEventsMode = false;
 };
 
@@ -6058,6 +6069,10 @@ xRooNode xRooNode::histo(const xRooNode& vars, bool content, bool errors) const 
 
 }
 
+xRooNode xRooNode::filter(const xRooNode& range) const {
+   return xRooNode(fComp,xRooNode(range.GetName(),nullptr,*this));
+}
+
 TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binStart, int binEnd) const
 {
    auto rar = get<RooAbsReal>();
@@ -6153,73 +6168,75 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
 
 
-   RooFitResult *fr = nullptr;
-   if (errors) {
-      fr = dynamic_cast<RooFitResult *>(fitResult().get()->Clone());
-      if (!GETDMP(fr,_finalPars)) {
-         fr->setFinalParList(RooArgList());
-      }
-
-
-      /// Oct2022: No longer doing this because want to allow fitResult to be used to get partial error
-      //        // need to add any floating parameters not included somewhere already in the fit result ...
-      //        RooArgList l;
-      //        for(auto& p : pars()) {
-      //            auto vv = p->get<RooRealVar>();
-      //            if (!vv) continue;
-      //            if (vv == dynamic_cast<RooRealVar*>(v)) continue;
-      //            if (vv->isConstant()) continue;
-      //            if (fr->floatParsFinal().find(vv->GetName())) continue;
-      //            if (fr->_constPars && fr->_constPars->find(vv->GetName())) continue;
-      //            l.add(*vv);
-      //        }
-      //
-      //        if (!l.empty()) {
-      //            RooArgList l2; l2.addClone(fr->floatParsFinal());
-      //            l2.addClone(l);
-      //            fr->setFinalParList(l2);
-      //        }
-
-      TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(fr,_VM));
-
-      if (!prevCov || size_t(fr->covarianceMatrix().GetNcols()) < fr->floatParsFinal().size()) {
-         TMatrixDSym cov(fr->floatParsFinal().getSize());
-         if (prevCov) {
-            for (int i = 0; i < prevCov->GetNcols(); i++) {
-               for (int j = 0; j < prevCov->GetNrows(); j++) {
-                  cov(i, j) = (*prevCov)(i, j);
-               }
-            }
-         }
-         int i = 0;
-         for (auto &p2 : fr->floatParsFinal()) {
-            if (!prevCov || i >= prevCov->GetNcols()) {
-               cov(i, i) = pow(dynamic_cast<RooRealVar *>(p2)->getError(), 2);
-            }
-            i++;
-         }
-         int covQualBackup = fr->covQual();
-         fr->setCovarianceMatrix(cov);
-         fr->setCovQual(covQualBackup);
-      }
-
-      if(v) {
-         // need to remove v from result as we are plotting as function of v
-         if (auto _p = fr->floatParsFinal().find(dynamic_cast<TObject *>(v)->GetName()); _p) {
-            RooArgList _pars = fr->floatParsFinal();
-            _pars.remove(*_p, true);
-            auto _tmp = fr->reducedCovarianceMatrix(_pars);
-            int covQualBackup = fr->covQual();
-            fr->setCovarianceMatrix(_tmp);
-            fr->setCovQual(covQualBackup);
-            const_cast<RooArgList &>(fr->floatParsFinal()).remove(*_p, true);
-         }
-      }
-   }
-
-
 
    if (!empty) {
+
+      auto _coefs = coefs();
+
+      RooFitResult *fr = nullptr;
+      if (errors) {
+         // must ensure the fit result we obtain includes pars from coefficients if present
+         fr = dynamic_cast<RooFitResult *>((_coefs.empty() ? *this : xRooNode(RooProduct("tmp","tmp",RooArgList(*rar,*_coefs.get<RooAbsReal>())))).fitResult().get()->Clone());
+         if (!GETDMP(fr, _finalPars)) {
+            fr->setFinalParList(RooArgList());
+         }
+
+         /// Oct2022: No longer doing this because want to allow fitResult to be used to get partial error
+         //        // need to add any floating parameters not included somewhere already in the fit result ...
+         //        RooArgList l;
+         //        for(auto& p : pars()) {
+         //            auto vv = p->get<RooRealVar>();
+         //            if (!vv) continue;
+         //            if (vv == dynamic_cast<RooRealVar*>(v)) continue;
+         //            if (vv->isConstant()) continue;
+         //            if (fr->floatParsFinal().find(vv->GetName())) continue;
+         //            if (fr->_constPars && fr->_constPars->find(vv->GetName())) continue;
+         //            l.add(*vv);
+         //        }
+         //
+         //        if (!l.empty()) {
+         //            RooArgList l2; l2.addClone(fr->floatParsFinal());
+         //            l2.addClone(l);
+         //            fr->setFinalParList(l2);
+         //        }
+
+         TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t> *>(GETDMP(fr, _VM));
+
+         if (!prevCov || size_t(fr->covarianceMatrix().GetNcols()) < fr->floatParsFinal().size()) {
+            TMatrixDSym cov(fr->floatParsFinal().getSize());
+            if (prevCov) {
+               for (int i = 0; i < prevCov->GetNcols(); i++) {
+                  for (int j = 0; j < prevCov->GetNrows(); j++) {
+                     cov(i, j) = (*prevCov)(i, j);
+                  }
+               }
+            }
+            int i = 0;
+            for (auto &p2 : fr->floatParsFinal()) {
+               if (!prevCov || i >= prevCov->GetNcols()) {
+                  cov(i, i) = pow(dynamic_cast<RooRealVar *>(p2)->getError(), 2);
+               }
+               i++;
+            }
+            int covQualBackup = fr->covQual();
+            fr->setCovarianceMatrix(cov);
+            fr->setCovQual(covQualBackup);
+         }
+
+         if (v) {
+            // need to remove v from result as we are plotting as function of v
+            if (auto _p = fr->floatParsFinal().find(dynamic_cast<TObject *>(v)->GetName()); _p) {
+               RooArgList _pars = fr->floatParsFinal();
+               _pars.remove(*_p, true);
+               auto _tmp = fr->reducedCovarianceMatrix(_pars);
+               int covQualBackup = fr->covQual();
+               fr->setCovarianceMatrix(_tmp);
+               fr->setCovQual(covQualBackup);
+               const_cast<RooArgList &>(fr->floatParsFinal()).remove(*_p, true);
+            }
+         }
+      }
+
       RooArgSet normSet;
       if (v)
          normSet.add(*dynamic_cast<RooAbsArg *>(v));
@@ -6228,26 +6245,49 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          binEnd = h->GetNbinsX();
 
       // check if we need to do any projecting of other observables
-      RooAbsReal* oldrar = nullptr;
+      RooAbsReal *oldrar = nullptr;
       auto _obs = robs();
 
-      for(auto o : _obs) {
-         if(o->get<RooRealVar>() && o->get<RooRealVar>()->hasRange("coordRange")) {
-            o->get<RooRealVar>()->removeRange("coordRange");
+      for (auto o : _obs) {
+         if (auto rr = o->get<RooRealVar>(); rr && rr->hasRange("coordRange")) {
+            rr->removeRange("coordRange");
          }
       }
       coords(); // loads current coordinates and populates coordRange, if any
 
-      if(auto a = dynamic_cast<RooAbsArg*>(v)) _obs.get<RooArgList>()->remove(*a);
+      if (auto a = dynamic_cast<RooAbsArg *>(v))
+         _obs.get<RooArgList>()->remove(*a);
       if (!_obs.get<RooArgList>()->empty()) {
          oldrar = rar;
          normSet.add(*_obs.get<RooArgList>());
-         rar = (p) ? p->createProjection(*_obs.get<RooArgList>()/*,RooFit::Range("coordRange")*/ ) : rar->createIntegral(*_obs.get<RooArgList>(),RooFit::NormSet(normSet)/*,RooFit::Range("coordRange")*/);
+         // check if any obs are restricted range
+         bool hasRange = false;
+         for (auto o : normSet) {
+            if (auto rr = dynamic_cast<RooRealVar *>(o); rr && rr->hasRange("coordRange")) {
+               hasRange = true;
+               break;
+            }
+         }
+         if (p) {
+            rar = p->createProjection(*_obs.get<RooArgList>());
+            if (hasRange) {
+               dynamic_cast<RooAbsPdf *>(rar)->setNormRange("coordRange");
+               p->setNormRange("coordRange"); // should ge cleared when we sterilize
+            }
+
+         } else {
+            if (hasRange) {
+               rar =
+                  rar->createIntegral(*_obs.get<RooArgList>(), RooFit::NormSet(normSet), RooFit::Range("coordRange"));
+            } else {
+               rar = rar->createIntegral(*_obs.get<RooArgList>(), RooFit::NormSet(normSet));
+            }
+         }
       }
 
       bool needBinWidth = false;
       // may have MULTIPLE coefficients for the same pdf!
-      auto _coefs = coefs();
+
       if ((p || !_coefs.empty() || rar->getAttribute("density")) && x) {
          // pdfs of samples embedded in a sumpdf (aka have a coef) will convert their density value to a content
          needBinWidth = true;
@@ -6256,14 +6296,17 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       TStopwatch timeIt;
       std::vector<double> lapTimes;
       bool warned = false;
-      if(binStart==-1 && binEnd==-1) {binEnd = 1;}
+      if (binStart == -1 && binEnd == -1) {
+         binEnd = 1;
+      }
       for (int i = std::max(1, binStart); i <= std::min(h->GetNbinsX(), binEnd); i++) {
          timeIt.Start(true);
          if (x)
             x->setVal(h->GetBinCenter(i));
          else if (v)
             v->setBin(i - 1);
-         if (x && !x->inRange("coordRange")) continue;
+         if (x && !x->inRange("coordRange"))
+            continue;
          double r = /*(p && p->selfNormalized())*/ rar->getVal(normSet);
          if (r && !_coefs.empty()) {
             r *= _coefs.get<RooAbsReal>()->getVal(normSet);
@@ -6272,6 +6315,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             r *= h->GetBinWidth(i);
          }
          if (p && p->canBeExtended()) {
+            // std::cout << r << " exp = " << p->expectedEvents(normSet) << " for normRange " << (p->normRange() ? p->normRange() : "null") << std::endl;
             r *= (p->expectedEvents(normSet));
          } // do in here in case dependency on var
          h->SetBinContent(i, r);
@@ -6281,18 +6325,16 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             if (p) {
                // std::cout << "computing error of :" << h->GetBinCenter(i) << std::endl;
                // //fr->floatParsFinal().Print(); fr->covarianceMatrix().Print();
-               res = PdfWrapper((oldrar) ? *rar : *p, _coefs.get<RooAbsReal>()).getSimplePropagatedError(*fr, normSet);
+               res = PdfWrapper((oldrar) ? *rar : *p, _coefs.get<RooAbsReal>(), !v, oldrar ? p : nullptr)
+                        .getSimplePropagatedError(*fr, normSet);
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
                // improved normSet invalidity checking, so assuming no longer need this in 6.28 onwards
                p->_normSet = nullptr;
 #endif
             } else {
-//               res = rar->getPropagatedError(*fr, normSet);
-//               // TODO: What if coef has error? - probably need a FuncWrapper class
-//               if (auto c = _coefs.get<RooAbsReal>(); c) {
-//                  res *= c->getVal(normSet);
-//               }
-               res = RooProduct("errorEval","errorEval",RooArgList(*rar,_coefs.empty() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>())).getPropagatedError(*fr,normSet);
+               res = RooProduct("errorEval", "errorEval",
+                                RooArgList(*rar, _coefs.empty() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>()))
+                        .getPropagatedError(*fr, normSet);
             }
             if (needBinWidth) {
                res *= h->GetBinWidth(i);
@@ -6338,22 +6380,19 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          sterilize(); // needed to forget about the normSet that was passed to getVal()
       }
 
+      if (!p && !rar->getAttribute("density") && !needBinWidth) {
+         h->GetYaxis()->SetTitle(rar->getStringAttribute("units"));
+      } else if ((p && p->canBeExtended()) || (!p && needBinWidth)) {
+         h->GetYaxis()->SetTitle("Events");
+      } else {
+         h->GetYaxis()->SetTitle("Probability Mass");
+      }
+      h->GetYaxis()->SetMaxDigits(3);
+
+      if (errors) {
+         delete fr;
+      }
    }
-
-   if (!p && !rar->getAttribute("density")) {
-      h->GetYaxis()->SetTitle(rar->getStringAttribute("units"));
-   } else if (p && p->canBeExtended()) {
-      h->GetYaxis()->SetTitle("Events");
-   } else {
-      h->GetYaxis()->SetTitle("Probability Mass");
-   }
-   h->GetYaxis()->SetMaxDigits(3);
-
-   if (errors)
-      delete fr;
-
-
-
    return h;
 }
 
@@ -8280,10 +8319,17 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
    std::shared_ptr<RooFitResult> fr = std::dynamic_pointer_cast<RooFitResult>(_fr.fComp);
    //= dynamic_cast<RooFitResult*>( _fr.get<RooFitResult>() ? _fr->Clone() : fitResult()->Clone());
 
+
+
+   auto _coefs = coefs();
+
    if (!fr) {
+      // need to ensure coefs, if any, are included in fit result retrieval so all pars are loaded
+      auto frn = (_coefs.empty() ? *this : xRooNode(RooProduct("tmp","tmp",RooArgList(*o,*_coefs.get<RooAbsReal>())))).fitResult();
+      if (strlen(_fr.GetName())) frn = frn.reduced(_fr.GetName());
+
       // use name to reduce the fit result, if one given
-      fr = std::dynamic_pointer_cast<RooFitResult>(strlen(_fr.GetName()) ? fitResult().reduced(_fr.GetName()).fComp
-                                                                         : fitResult().fComp);
+      fr = std::dynamic_pointer_cast<RooFitResult>(frn.fComp);
    }
 
    if (!GETDMP(fr.get(),_finalPars)) {
@@ -8332,7 +8378,6 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
       fr->setCovQual(covQualBackup);
    }
 
-   auto _coefs = coefs();
 
    bool doBinWidth = false;
    auto ax = (binStart == -1 && binEnd == -1) ? nullptr : GetXaxis();

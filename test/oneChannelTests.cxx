@@ -8,6 +8,8 @@
 #include "TFile.h"
 #include "RooAbsData.h"
 #include "RooFitResult.h"
+#include "TSystem.h"
+#include <thread>
 #endif
 
 /**
@@ -259,6 +261,17 @@ TEST(test1,toyHypoTest) {
 
 }
 
+TEST(test1,coutCaptureTest) {
+   auto model = buildModel(20,16,0,1,0,0,0);
+   auto nll = model["simPdf"]->nll();
+   nll.fitConfig()->MinimizerOptions().SetPrintLevel(2); // increase print level so will generate some log content
+   nll.fitConfigOptions()->SetValue("LogSize", 1024); // and trigger capturing of log, otherwise don't get .log
+   auto fr = nll.minimize();
+   std::cout << " Captured Log: " << std::endl;
+   ASSERT_NE( fr->constPars().find(".log"), nullptr );
+   fr->constPars().find(".log")->Print();
+}
+
 #include "RooWorkspace.h"
 
 TEST(test1, binnedFormulaVarTest) {
@@ -320,8 +333,7 @@ TEST(test1, testSimpleModel) {
     auto fr = w["simPdf"]->nll("obsData").minimize();
     fr->Print();
 
-    ASSERT_LT(dynamic_cast<RooRealVar*>(fr->floatParsFinal().find("alpha"))->getError(),1.01);
-    ASSERT_GT(dynamic_cast<RooRealVar*>(fr->floatParsFinal().find("alpha"))->getError(),0.99);
+    ASSERT_NEAR(dynamic_cast<RooRealVar*>(fr->floatParsFinal().find("alpha"))->getError(),1,1e-2);
 
     // test creation of asimov datasets
     w.pars()["mu"]->get<RooRealVar>()->setVal(0);
@@ -337,7 +349,7 @@ TEST(test1, testSimpleModel) {
 
 TEST(test1,speedTest) {
 
-    xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-sa_install2/ttHws/hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
+    xRooNode w("~/Downloads/hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
     // no longer need to specify physical range as will default to 0->inf on POI
     //w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange("physical",0,std::numeric_limits<double>::infinity());
     w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange(-1,10);
@@ -363,19 +375,91 @@ TEST(test1,speedTest) {
 
     auto lim = hs.FindLimit("cls exp0",0.05);
     std::cout << lim.first << " +/- " << lim.second << std::endl;
+    hs.Print();
+    for(auto& hp : hs) hp.Print();
 
     f.Close();
 
     // verify can reproduce limit ....
     xRooHypoSpace hs2;
     hs2.LoadFits("hypoSpace400.root:nll_hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
-    hs2.Print();
+    hs2.Print();for(auto& hp : hs2) hp.Print();
 
     auto lim2 = hs2.FindLimit("cls exp0",0.05);
     std::cout << lim2.first << " +/- " << lim2.second << std::endl;
 
     ASSERT_LT(abs(lim.first-lim2.first),1e-3);
     ASSERT_LT(abs(lim.second-lim2.second),1e-3);
+
+}
+
+TEST(expensiveTest,fullLimitTest) {
+
+   auto printMem = []() {
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+      static ProcInfo_t info;
+      const float toMB = 1.f / 1024.f;
+      gSystem->GetProcInfo(&info);
+      printf(" res  memory = %g Mbytes\n", info.fMemResident * toMB);
+      printf(" vir  memory = %g Mbytes\n", info.fMemVirtual * toMB);
+   };
+
+   xRooNode w("~/Downloads/leptoquarks_combined_leptoquarks_model.root");
+
+
+
+
+   for(int i=0;i<1;i++) {
+      TFile f("/tmp/fits_saved2.root","RECREATE");
+      w.nll("obsData").hypoSpace().limits("cls visualize");
+      f.Close();
+      printMem();
+   }
+
+
+}
+
+TEST(test1,tomasYields) {
+
+   xRooNode w("~/Downloads/tomas.root");
+   std::stringstream s;
+   for(auto chan : *(w["simPdf"])) {
+      for(auto samp : *(chan->at("samples"))) {
+         s << samp->GetName() << " : " << samp->GetContent() << " +/- " << samp->GetError() << " [";
+         for(auto b : samp->bins()) {
+            s << b->GetContent() << ":" << b->GetError() << ",";
+         }
+         s << "]" << std::endl;
+      }
+   }
+
+   std::string ref = "ttlight_ljets_5j3b_HT_shapes : 461.591 +/- 53.2555 [57.2567:12.0941,170.595:31.7475,124.328:14.4948,57.4211:3.09746,23.7444:2.59176,28.2458:3.42683,]\n"
+                     "ttc_ljets_5j3b_HT_shapes : 151.569 +/- 15.8918 [16.4938:1.65735,54.4312:5.49183,38.2451:4.30843,23.8594:2.98895,7.8196:1.09518,10.7199:1.47873,]\n"
+                     "ttb_ljets_5j3b_HT_shapes : 245.005 +/- 35.7825 [26.6461:4.10973,81.8434:12.1511,62.8618:9.38281,34.1697:5.21509,19.3249:3.13204,20.1593:3.2222,]\n"
+                     "ttH_ljets_5j3b_HT_shapes : 22.3254 +/- 0.490244 [0.87798:0.0241488,6.11444:0.150628,6.14776:0.134624,4.33418:0.0895696,1.72547:0.0352729,3.12557:0.063892,]\n"
+                     "ttlight_ljets_6j4b_BDT_shapes : 287.744 +/- 51.5531 [84.2107:14.3093,75.5761:13.5134,50.0541:9.47436,33.8633:6.64575,30.8182:6.1262,13.2211:2.63727,]\n"
+                     "ttc_ljets_6j4b_BDT_shapes : 173.678 +/- 20.3483 [46.8037:11.1746,32.3972:7.20078,28.0243:4.12997,28.481:1.56541,20.0937:1.6901,17.8777:1.77447,]\n"
+                     "ttb_ljets_6j4b_BDT_shapes : 378.944 +/- 12.7098 [70.8606:4.60833,56.7989:2.91461,59.8209:3.03892,66.2953:3.50972,58.4558:3.28983,66.713:3.93514,]\n"
+                     "ttH_ljets_6j4b_BDT_shapes : 121.679 +/- 2.91801 [11.2774:0.270446,16.7343:0.401308,20.5886:0.493739,21.9574:0.526564,24.7161:0.592722,26.4055:0.633235,]\n";
+
+   ASSERT_STREQ(s.str().c_str(),ref.c_str());
+
+//   // test new histo method too
+   s.str("");
+   for(auto chan : *(w["simPdf"])) {
+      for(auto samp : *(chan->at("samples"))) {
+         auto hSamp = samp->histo(xRooNode());
+         s << samp->GetName() << " : " << hSamp.get<TH1>()->GetBinContent(1) << " +/- " << hSamp.get<TH1>()->GetBinError(1) << " [";
+         hSamp = samp->histo(samp->obs());
+         for(int i=1;i<=hSamp.get<TH1>()->GetNbinsX(); i++) {
+            s << hSamp.get<TH1>()->GetBinContent(i) << ":" << hSamp.get<TH1>()->GetBinError(i) << ",";
+         }
+         s << "]" << std::endl;
+      }
+   }
+
+   ASSERT_STREQ(s.str().c_str(),ref.c_str());
+
 
 }
 

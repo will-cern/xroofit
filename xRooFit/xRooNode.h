@@ -365,6 +365,7 @@ public:
 
    xRooNode histo(const xRooNode& vars, bool content = true, bool errors = true) const;
    xRooNode histo(bool content = true, bool errors = true) const { return histo(obs(),content,errors); }
+   xRooNode filter(const xRooNode& range) const;
 
    TGraph *BuildGraph(RooAbsLValue *v = nullptr, bool includeZeros = false, TVirtualPad *fromPad = nullptr) const;
    TH1 *BuildHistogram(RooAbsLValue *v = nullptr, bool empty = false, bool errors = false, int binStart = 1,
