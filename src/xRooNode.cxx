@@ -4381,15 +4381,20 @@ xRooNode xRooNode::vars() const
    if (auto p = get<RooAbsArg>(); p) {
       // also need to get all constPars so use leafNodeServerList .. will include self if is fundamental, which is what
       // we want
+      // ensure all globs appear after robs, as we rely on this ordering for picking "x" var in "reduced" method
+      xRooNode _globs;
       RooArgSet allLeafs;
       p->leafNodeServerList(&allLeafs);
       for (auto &c : allLeafs) {
          if (c->isFundamental() || (dynamic_cast<RooConstVar *>(c) && !TString(c->GetName()).IsFloat())) {
-            out.get<RooArgList>()->add(*c);
-            out.emplace_back(std::make_shared<xRooNode>(*c, *this));
-            if (c->getAttribute("global"))
-               out.back()->fFolder = "!globs";
-            else if (c->getAttribute("obs"))
+            if (!c->getAttribute("global")) {
+               out.get<RooArgList>()->add(*c);
+               out.emplace_back(std::make_shared<xRooNode>(*c, *this));
+            }
+            if (c->getAttribute("global")) {
+               _globs.emplace_back(std::make_shared<xRooNode>(*c, *this));
+               _globs.back()->fFolder = "!globs";
+            } else if (c->getAttribute("obs"))
                out.back()->fFolder = "!robs";
             else if (c->getAttribute("poi"))
                out.back()->fFolder = "!poi";
@@ -4401,6 +4406,10 @@ xRooNode xRooNode::vars() const
             else
                out.back()->fFolder = "!pp";
          }
+      }
+      for(auto g : _globs) {
+         out.get<RooArgList>()->add(*g->get<RooAbsArg>());
+         out.emplace_back(g);
       }
    } else if (auto p2 = get<RooAbsData>(); p2) {
       for (auto a : *p2->get()) {
@@ -6520,7 +6529,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
       // check if we need to do any projecting of other observables
       RooAbsReal *oldrar = nullptr;
-      auto _obs = robs();
+      auto _obs = obs();
 
       for (auto o : _obs) {
          if (auto rr = o->get<RooRealVar>(); rr && rr->hasRange("coordRange")) {
