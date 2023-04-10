@@ -271,7 +271,7 @@ public:
 
    xRooNode Combine(const xRooNode &rhs); // combine rhs with this node
 
-   xRooNode reduced(const std::string &range = "")
+   xRooNode reduced(const std::string &range = "", bool invert=false)
       const; // return a node representing reduced version of this node, will use the SetRange to reduce if blank
 
    // following versions are for the menu in the GUI
@@ -363,13 +363,12 @@ public:
    void Checked(TObject *obj, bool val);
    void SetChecked(bool val = true) { Checked(this, val); }
 
-   xRooNode histo(const xRooNode& vars, bool content = true, bool errors = true) const;
-   xRooNode histo(bool content = true, bool errors = true) const { return histo(obs(),content,errors); }
+   xRooNode histo(const xRooNode& vars = "x", const xRooNode& fr = "", bool content = true, bool errors = true) const;
    xRooNode filter(const xRooNode& range) const;
 
    TGraph *BuildGraph(RooAbsLValue *v = nullptr, bool includeZeros = false, TVirtualPad *fromPad = nullptr) const;
    TH1 *BuildHistogram(RooAbsLValue *v = nullptr, bool empty = false, bool errors = false, int binStart = 1,
-                       int binEnd = 0) const;
+                       int binEnd = 0, const xRooNode& fr = "") const;
    xRooNode mainChild() const;
    void Draw(Option_t *opt = "") override; // *MENU*
 
