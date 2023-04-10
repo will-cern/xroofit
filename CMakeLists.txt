@@ -45,7 +45,7 @@ target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)
 target_include_directories(xRooFit BEFORE PRIVATE ${CMAKE_BINARY_DIR}/versioning)
 add_dependencies(xRooFit xRooFit_version)
-target_compile_options(xRooFit PRIVATE -Wall)
+target_compile_options(xRooFit PRIVATE -Wall -Wpedantic -Wunused-variable)
 
 
 if (ENABLE_TESTS)
@@ -76,5 +76,28 @@ install( FILES ${CMAKE_CURRENT_BINARY_DIR}/libxRooFit.rootmap
         COMPONENT libraries)
 
 install(TARGETS xRooFit
+        EXPORT xRooFit-targets
         LIBRARY DESTINATION lib
-        COMPONENT libraries)
+        COMPONENT libraries
+        )
+install(EXPORT xRooFit-targets
+        DESTINATION lib)
+
+# Create and install package configuration and version files.
+configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/pkg/xroofit-config.cmake.in
+        ${CMAKE_BINARY_DIR}/pkg/xroofit-config.cmake @ONLY)
+
+execute_process(
+        COMMAND git describe --always --dirty --tags
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE version
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/xroofit-config-version.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/xroofit-config-version.cmake @ONLY)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkg/xroofit-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/xroofit-config-version.cmake
+        DESTINATION lib)
