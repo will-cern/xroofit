@@ -23,7 +23,7 @@ find_package( ROOT 6.26 QUIET COMPONENTS MathCore RIO Core Tree Hist TreePlayer 
 if (NOT ROOT_FOUND)
     find_package( ROOT 6.22 COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit RooFitCore Matrix Gpad Graf RooStats HistPainter HistFactory Gui Ged )
 endif()
-message(STATUS "Using ROOT From: ${ROOT_INCLUDE_DIRS}")
+message(STATUS "Using ROOT From: ${ROOT_DIR}")
 include(${ROOT_USE_FILE})
 
 include_directories(${ROOT_INCLUDE_DIRS})
@@ -100,4 +100,4 @@ configure_file(
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkg/xroofit-config.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/xroofit-config-version.cmake
-        DESTINATION lib)
+        DESTINATION lib/xroofit)
