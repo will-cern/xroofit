@@ -4586,7 +4586,7 @@ xRooNode xRooNode::components() const
          // if (o->hasClients()) continue;
          bool hasClients = false;
          for (auto &c : o->clients())
-            if (!c->InheritsFrom("RooRealIntegral") && c->workspace()==o->workspace()) {
+            if (!c->InheritsFrom("RooRealIntegral") && GETWS(c)==GETWS(o)) {
                hasClients = true;
                break;
             }
