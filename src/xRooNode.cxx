@@ -292,12 +292,12 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
                auto _v = dynamic_cast<RooRealVar *>(s);
                if (!_v)
                   continue;
-               if (!_v->hasRange("physical")) {
-                  _v->setRange("physical", 0, std::numeric_limits<double>::infinity());
-                  // ensure range of poi is also straddling 0
-                  if (_v->getMin() >= 0)
-                     _v->setMin(-1e-5);
-               }
+//               if (!_v->hasRange("physical")) {
+//                  _v->setRange("physical", 0, std::numeric_limits<double>::infinity());
+//                  // ensure range of poi is also straddling 0
+//                  if (_v->getMin() >= 0)
+//                     _v->setMin(-1e-5);
+//               }
             }
          } else if (TString(k).EndsWith("_NuisParams")) {
             const_cast<RooArgSet&>(v).setAttribAll("np");
