@@ -6676,7 +6676,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             for(auto _pdf : s->servers()) if(dynamic_cast<RooAbsPdf*>(_pdf)) extra.push_back(_pdf);
          }
          delete rar;
-         for(auto p : extra) delete p;
+         for(auto a : extra) delete a;
          rar = oldrar;
          xRooNode(*rar).sterilize(); // need to clear the cache of the created integral
       } else {

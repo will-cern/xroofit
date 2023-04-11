@@ -15,7 +15,7 @@
 #include <fstream>
 
 struct cout_redirect {
-   cout_redirect(std::string &_out, size_t bufSize = 102 * 1024) : buffer2(nullptr), fp(nullptr), out(_out)
+   cout_redirect(std::string &_out, size_t bufSize = 102 * 1024) : buffer2(nullptr), fp(nullptr), out(_out), fBufSize(bufSize)
    {
 
       filename = "xRooFit-logging-";
@@ -49,6 +49,7 @@ struct cout_redirect {
          out += buffer2;
          free(buffer2);
       }
+      if (out.length() > fBufSize) out.resize(fBufSize);
    }
 
 private:
@@ -59,4 +60,5 @@ private:
    FILE *old3; FILE *old4;
    std::string &out;
    TString filename;
+   size_t fBufSize;
 };

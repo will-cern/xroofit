@@ -888,7 +888,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::getVal(const char *what)
 
    if(sWhat.Contains("toys=") && !readOnly) {
       // extract number of toys required
-      int nToys = TString(sWhat(sWhat.Index("toys=")+5,sWhat.Length())).Atoi();
+      size_t nToys = TString(sWhat(sWhat.Index("toys=")+5,sWhat.Length())).Atoi();
       if (nullToys.size() < nToys) { addNullToys(nToys - nullToys.size());}
       if (altToys.size() < nToys) { addAltToys(nToys - altToys.size()); }
    }
