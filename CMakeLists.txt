@@ -76,12 +76,12 @@ install( FILES ${CMAKE_CURRENT_BINARY_DIR}/libxRooFit.rootmap
         COMPONENT libraries)
 
 install(TARGETS xRooFit
-        EXPORT xRooFit-targets
+        EXPORT xroofit-targets
         LIBRARY DESTINATION lib
         COMPONENT libraries
         )
-install(EXPORT xRooFit-targets
-        DESTINATION lib)
+install(EXPORT xroofit-targets
+        DESTINATION lib/xroofit)
 
 # Create and install package configuration and version files.
 configure_file(
