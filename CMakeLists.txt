@@ -20,11 +20,18 @@ add_custom_target(xRooFit_version
 list(APPEND CMAKE_PREFIX_PATH $ENV{ROOTSYS})
 # if 6.26 ROOT available, add RooFitHS3
 find_package( ROOT 6.26 QUIET COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit RooFitCore Matrix Gpad Graf RooStats HistPainter HistFactory Gui Ged RooFitHS3)
+set(_root_libraries ROOT::MathCore ROOT::RIO ROOT::Core ROOT::Tree ROOT::Hist ROOT::TreePlayer ROOT::RooFit
+        ROOT::RooFitCore ROOT::Matrix ROOT::Gpad ROOT::Graf ROOT::RooStats ROOT::HistPainter ROOT::HistFactory
+        ROOT::Gui ROOT::Ged ROOT::RooFitHS3)
 if (NOT ROOT_FOUND)
     find_package( ROOT 6.22 COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit RooFitCore Matrix Gpad Graf RooStats HistPainter HistFactory Gui Ged )
+    set(_root_libraries ROOT::MathCore ROOT::RIO ROOT::Core ROOT::Tree ROOT::Hist ROOT::TreePlayer ROOT::RooFit
+            ROOT::RooFitCore ROOT::Matrix ROOT::Gpad ROOT::Graf ROOT::RooStats ROOT::HistPainter ROOT::HistFactory
+            ROOT::Gui ROOT::Ged)
 endif()
 message(STATUS "Using ROOT From: ${ROOT_DIR}")
 include(${ROOT_USE_FILE})
+
 
 include_directories(${ROOT_INCLUDE_DIRS})
 include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -39,7 +46,7 @@ ROOT_GENERATE_DICTIONARY(G__xRooFit ${HEADERS} LINKDEF src/LinkDef.h)
 
 
 add_library(xRooFit SHARED ${SOURCES} G__xRooFit )
-target_link_libraries(xRooFit ${ROOT_LIBRARIES})
+target_link_libraries(xRooFit ${_root_libraries})
 
 target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)

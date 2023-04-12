@@ -5,5 +5,9 @@ get_filename_component(_prefix "${_dir}/../.." ABSOLUTE)
 # Import the targets.
 include("${_prefix}/lib/xroofit/xroofit-targets.cmake")
 
+# add ROOT dependency
+include( CMakeFindDependencyMacro )
+find_dependency( ROOT COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit RooFitCore Matrix Gpad Graf RooStats HistPainter HistFactory Gui Ged RooFitHS3)
+
 # Report other information.
 set(XROOFIT_INCLUDE_DIRS "${_prefix}/include")
