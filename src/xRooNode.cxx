@@ -3787,10 +3787,20 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject *) {});
       } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class()) {
-         if (_ws->import(*arg.get(), true /*replace existing*/)) {
+         // ensure will have a unique name for import
+         TNamed* a = dynamic_cast<TNamed*>(arg.get());
+         TString aName = arg->GetName();
+         TObject* out_arg = _ws->genobj(arg->GetName());
+         int ii = 1;
+         while (a && out_arg) {
+            a->SetName(TString::Format("%s;%d", aName.Data(), ii++));
+            out_arg = _ws->genobj(aName);
+         }
+         if (_ws->import(*arg.get(), false /*replace existing*/)) {
             RooMsgService::instance().setGlobalKillBelow(msglevel);
             return nullptr;
          }
+         if(a) a->SetName(aName);// restore arg name
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          /* this doesnt work because caller has its own version of fParent, not the one in the browser
          for(auto o : *gROOT->GetListOfBrowsers()) {
