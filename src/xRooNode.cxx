@@ -6695,8 +6695,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          }
          extra.push_back(rar);
          rar = oldrar;
-         for(auto a : extra) delete a;
          xRooNode(*rar).sterilize(); // need to clear the cache of the created integral - do this before deleting things!
+         for(auto a : extra) delete a;
       } else {
          sterilize(); // needed to forget about the normSet that was passed to getVal()
       }
