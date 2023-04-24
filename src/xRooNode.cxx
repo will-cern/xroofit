@@ -181,7 +181,7 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
    : TNamed(name, ""), fComp(comp), fParent(parent)
 {
 
-   if (!fComp && !fParent) {
+   if (!fComp && !fParent && name && strlen(name)>0) {
       TString pathName = TString(gSystem->ExpandPathName(name));
       if (!gSystem->AccessPathName(pathName)) {
          // if file is json can try to read
@@ -1408,7 +1408,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
 
    if (auto p = get<RooAddPdf>(); p && child.get<RooAbsPdf>()) {
       auto out = acquire(child.fComp);
-      const_cast<RooArgList&>(p->coefList()).add(*acquire<RooRealVar>("1", "1", 1));
+      const_cast<RooArgList&>(p->coefList()).add(*acquire2<RooAbsArg,RooRealVar>("1", "1", 1));
       const_cast<RooArgList&>(p->pdfList()).add(*std::dynamic_pointer_cast<RooAbsReal>(out));
       sterilize();
       return xRooNode(out, *this);
@@ -1515,7 +1515,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
                Warning("Add", "Adding unbinned function %s to binned %s - will wrap it in a RooBinSamplingPdf",
                        _f->GetName(), GetName());
                auto sumPdf = acquireNew<RooRealSumPdf>(TString::Format("%s_pdfWrapper", _f->GetName()), _f->GetTitle(),
-                                                       *_f, *acquire<RooRealVar>("1", "1", 1), true);
+                                                       *_f, *acquire2<RooAbsArg,RooRealVar>("1", "1", 1), true);
                sumPdf->setStringAttribute("alias", _f->getStringAttribute("alias"));
                if (!sumPdf->getStringAttribute("alias"))
                   sumPdf->setStringAttribute("alias", out->GetName());
@@ -1531,7 +1531,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             }
          }
 
-         const_cast<RooArgList&>(p->coefList()).add(*acquire<RooRealVar>("1", "1", 1));
+         const_cast<RooArgList&>(p->coefList()).add(*acquire2<RooAbsArg,RooRealVar>("1", "1", 1));
          const_cast<RooArgList&>(p->funcList()).add(*_f);
          // inherit binning if we dont have one yet
          if (!p->getStringAttribute("binning"))
@@ -1811,13 +1811,15 @@ xRooNode xRooNode::shallowCopy(const std::string &name, std::shared_ptr<xRooNode
    } else if (auto p = dynamic_cast<RooProdPdf *>(o); p) {
       // main pdf will be copied too
       std::shared_ptr<RooProdPdf> pdf = std::dynamic_pointer_cast<RooProdPdf>(
-         out.acquire(std::shared_ptr<TObject>(p->Clone(name.c_str())))); // use clone to copy all attributes etc too
+         out.acquire(std::shared_ptr<TObject>(p->Clone(/*name.c_str()*/)),false,true)); // use clone to copy all attributes etc too
       auto main = mainChild();
       if (main) {
          auto newMain = std::dynamic_pointer_cast<RooAbsArg>(
-            out.acquire(std::shared_ptr<TObject>(main->Clone((name + "_pdf").c_str()))));
-         pdf->replaceServer(*pdf->pdfList().find(main->GetName()), *newMain, true, true);
-         const_cast<RooArgList&>(pdf->pdfList()).replace(*pdf->pdfList().find(main->GetName()), *newMain);
+            out.acquire(std::shared_ptr<TObject>(main->Clone()),false,true));
+         std::cout << newMain << " " << newMain->GetName() << std::endl;
+         //pdf->replaceServer(*pdf->pdfList().find(main->GetName()), *newMain, true, true);
+         //const_cast<RooArgList&>(pdf->pdfList()).replace(*pdf->pdfList().find(main->GetName()), *newMain);
+         pdf->redirectServers(RooArgList(*newMain));
       }
       out.fComp = pdf;
       out.sterilize();
@@ -3600,9 +3602,9 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode &acquirer, con
       } else if (sOpt2.Contains("shape")) {
          RooArgList list;
          for (int i = 0; i < x->getBinning(binningName.c_str()).numBins(); i++) {
-            std::shared_ptr<RooRealVar> arg;
+            std::shared_ptr<RooAbsArg> arg;
             if (sOpt2.Contains("blankshape")) {
-               arg = acquirer.acquire<RooRealVar>("1", "1", 1);
+               arg = acquirer.acquire2<RooAbsArg,RooRealVar>("1", "1", 1);
             } else {
                if (!h) {
                   arg = acquirer.acquireNew<RooRealVar>(TString::Format("%s_bin%d", newObjName.Data(), i + 1), "", 1);
@@ -3823,7 +3825,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
       // Warning("acquire","Not implemented acquisition of object %s",arg->GetName());
       // return nullptr;
    }
-   if (fProvider) {
+   if (!mustBeNew && fProvider) {
       auto out = fProvider->getObject(arg->GetName(), arg->ClassName());
       if (out)
          return out;
@@ -3834,9 +3836,11 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
    }
    // look for exact name, dont use 'find' because doesnt work if trying to find "1" and it doesn't exist, will get back
    // idx 1 instead
-   for (auto &r : *_owned) {
-      if (strcmp(r->GetName(), arg->GetName()) == 0 && strcmp(r->get()->ClassName(), arg->ClassName()) == 0) {
-         return r->fComp;
+   if(!mustBeNew) {
+      for (auto &r : *_owned) {
+         if (strcmp(r->GetName(), arg->GetName()) == 0 && strcmp(r->get()->ClassName(), arg->ClassName()) == 0) {
+            return r->fComp;
+         }
       }
    }
    if (!fProvider)
@@ -6453,6 +6457,10 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       h->GetXaxis()->SetTitle(vv->GetTitle());
    auto p = dynamic_cast<RooAbsPdf *>(rar);
 
+   // possible speed improvement:
+//   if(auto spdf = dynamic_cast<RooRealSumPdf*>(p); spdf && spdf->canBeExtended()) {
+//      p = nullptr; // faster to evaluate sumpdf as a function not a pdf
+//   }
 
 
 
@@ -6685,10 +6693,10 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             // need to delete all the subpdfs we created too
             for(auto _pdf : s->servers()) if(dynamic_cast<RooAbsPdf*>(_pdf)) extra.push_back(_pdf);
          }
-         delete rar;
-         for(auto a : extra) delete a;
+         extra.push_back(rar);
          rar = oldrar;
-         xRooNode(*rar).sterilize(); // need to clear the cache of the created integral
+         for(auto a : extra) delete a;
+         xRooNode(*rar).sterilize(); // need to clear the cache of the created integral - do this before deleting things!
       } else {
          sterilize(); // needed to forget about the normSet that was passed to getVal()
       }

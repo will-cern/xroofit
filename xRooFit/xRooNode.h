@@ -221,6 +221,13 @@ public:
    {
       return std::dynamic_pointer_cast<T>(acquire(std::make_shared<T>(std::forward<Args>(args)...)));
    }
+   template <typename T, typename T2, typename... Args>
+   // looser version of above ... first template type says what type to return
+   // allows returning different type to the one requested in T2 (e.g. ok to get RooConstVar when acquire a RooRealVar)
+   std::shared_ptr<T> acquire2(Args &&...args)
+   {
+      return std::dynamic_pointer_cast<T>(acquire(std::make_shared<T2>(std::forward<Args>(args)...)));
+   }
    template <typename T, typename... Args>
    std::shared_ptr<T> acquireNew(Args &&...args)
    {
