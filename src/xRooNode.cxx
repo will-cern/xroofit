@@ -6101,17 +6101,14 @@ void xRooNode::sterilize() const
    // recursive through all clients and sterlize their normalization caches
    std::function<void(RooAbsArg *)> func;
    func = [&](RooAbsArg *a) {
-      if (!a)
-         return;
+      if (!a){ return; }
+      _doSterilize(a);
       for(auto obj : a->clients()) {
-         if (RooAbsArg *arg = dynamic_cast<RooAbsArg *>(obj); arg) {
-            func(arg);
-         }
-         _doSterilize(dynamic_cast<RooAbsArg *>(obj));
+         func(dynamic_cast<RooAbsArg *>(obj));
       }
    };
-   func(dynamic_cast<RooAbsArg *>(get()));
-   _doSterilize(dynamic_cast<RooAbsArg *>(get())); // sterilize self
+   func(get<RooAbsArg>());
+   //_doSterilize(dynamic_cast<RooAbsArg *>(get())); // sterilize self first so that cache elements aren't part of client list
 }
 
 // observables not in the axisVars are automatically projected over
