@@ -182,7 +182,9 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
 {
 
    if (!fComp && !fParent && name && strlen(name)>0) {
-      TString pathName = TString(gSystem->ExpandPathName(name));
+      char* _path = gSystem->ExpandPathName(name);
+      TString pathName = TString(_path);
+      delete [] _path;
       if (!gSystem->AccessPathName(pathName)) {
          // if file is json can try to read
          if (pathName.EndsWith(".json")) {
@@ -3790,19 +3792,19 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
          return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject *) {});
       } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class()) {
          // ensure will have a unique name for import
-         TNamed* a = dynamic_cast<TNamed*>(arg.get());
+         TNamed* aNamed = dynamic_cast<TNamed*>(arg.get());
          TString aName = arg->GetName();
          TObject* out_arg = _ws->genobj(arg->GetName());
          int ii = 1;
-         while (a && out_arg) {
-            a->SetName(TString::Format("%s;%d", aName.Data(), ii++));
+         while (aNamed && out_arg) {
+            aNamed->SetName(TString::Format("%s;%d", aName.Data(), ii++));
             out_arg = _ws->genobj(aName);
          }
          if (_ws->import(*arg.get(), false /*replace existing*/)) {
             RooMsgService::instance().setGlobalKillBelow(msglevel);
             return nullptr;
          }
-         if(a) a->SetName(aName);// restore arg name
+         if(aNamed) aNamed->SetName(aName);// restore arg name
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          /* this doesnt work because caller has its own version of fParent, not the one in the browser
          for(auto o : *gROOT->GetListOfBrowsers()) {
@@ -6064,32 +6066,7 @@ void xRooNode::sterilize() const
          p->_lastNSet = nullptr;
       }
 #endif
-
-
-
-//      if (RooAbsPdf *arg = dynamic_cast<RooAbsPdf *>(obj); arg) {
-//         arg->_normMgr.reset();
-//         arg->_normSet = nullptr;
-//         if (RooProdPdf *p = dynamic_cast<RooProdPdf *>(arg); p) {
-//            p->_cacheMgr.reset();
-//            p->setNormRange(0);
-//         } else if (auto p2 = dynamic_cast<RooRealSumPdf *>(arg); p2) {
-//            p2->_normIntMgr.reset();
-//         } else if (auto p3 = dynamic_cast<RooSimultaneous *>(arg); p3) {
-//            p3->_partIntMgr.reset();
-//         }
-//         // std::cout << "cleaned " << arg->GetName() << std::endl;
-//
-//      } else if (auto p = dynamic_cast<RooProduct *>(obj); p) {
-//         p->_cacheMgr.reset();
-//      } else if (auto p2 = dynamic_cast<PiecewiseInterpolation *>(obj); p2) {
-//         p2->_normIntMgr.reset();
-//      } else if (auto p3 = dynamic_cast<ParamHistFunc *>(obj); p3) {
-//         p3->_normIntMgr.reset();
-//      }
-      if (obj) {
-         obj->setValueDirty();
-      }
+      obj->setValueDirty();
    };
    if (auto w = get<RooWorkspace>(); w) {
       // sterilizing all nodes
@@ -6102,13 +6079,12 @@ void xRooNode::sterilize() const
    std::function<void(RooAbsArg *)> func;
    func = [&](RooAbsArg *a) {
       if (!a){ return; }
-      _doSterilize(a);
+      _doSterilize(a); // sterilize first so that cache elements don't appear in the client list
       for(auto obj : a->clients()) {
          func(dynamic_cast<RooAbsArg *>(obj));
       }
    };
    func(get<RooAbsArg>());
-   //_doSterilize(dynamic_cast<RooAbsArg *>(get())); // sterilize self first so that cache elements aren't part of client list
 }
 
 // observables not in the axisVars are automatically projected over
