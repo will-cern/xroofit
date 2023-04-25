@@ -6104,10 +6104,10 @@ void xRooNode::sterilize() const
       if (!a)
          return;
       for(auto obj : a->clients()) {
-         _doSterilize(dynamic_cast<RooAbsArg *>(obj));
          if (RooAbsArg *arg = dynamic_cast<RooAbsArg *>(obj); arg) {
             func(arg);
          }
+         _doSterilize(dynamic_cast<RooAbsArg *>(obj));
       }
    };
    func(dynamic_cast<RooAbsArg *>(get()));
