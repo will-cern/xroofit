@@ -6080,9 +6080,21 @@ void xRooNode::sterilize() const
    func = [&](RooAbsArg *a) {
       if (!a){ return; }
       _doSterilize(a); // sterilize first so that cache elements don't appear in the client list
-      for(auto obj : a->clients()) {
-         func(dynamic_cast<RooAbsArg *>(obj));
-      }
+      // safety net in case sterilizing one client deletes another one of our clients
+      // monitor for change in clients list size
+      // found this was only case in 6.26 (valgrind shows invalid read), in 6.28 these went away
+      // might be in 6.28 the client list iterator became able to handle in-loop edits but didn't see
+      // in test case that client count changed so just resterilizing if that's the case.
+      size_t nClients;
+      do {
+         nClients = a->clients().size();
+         for (auto obj : a->clients()) {
+            func(dynamic_cast<RooAbsArg *>(obj));
+            if (a->clients().size() != nClients) {
+               break; // means sterilizing a client changed our clients, so don't trust the client iterator at this point
+            }
+         }
+      } while(a->clients().size() != nClients);
    };
    func(get<RooAbsArg>());
 }
