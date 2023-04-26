@@ -325,7 +325,7 @@ public:
    bool SetXaxis(int nbins, double low, double high) { return SetXaxis("xaxis", "", nbins, low, high); }
    bool SetXaxis(int nbins, double *bins) { return SetXaxis("xaxis", "", nbins, bins); }
 
-   std::shared_ptr<TStyle> style(TObject *initObject = nullptr) const;
+   std::shared_ptr<TStyle> style(TObject *initObject = nullptr, bool autoCreate=true) const;
 
    TAxis *GetXaxis() const;
 
