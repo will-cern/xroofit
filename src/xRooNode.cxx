@@ -3412,18 +3412,20 @@ xRooNode xRooNode::constraints() const
 
    std::function<RooAbsPdf *(const xRooNode &n, RooAbsArg &par, RooAbsPdf *ignore)> getConstraint;
    getConstraint = [&](const xRooNode &n, RooAbsArg &par, RooAbsPdf *ignore) {
-      // std::cout << "Getting constraint of "<< n.GetName() << std::endl;
       auto o = n.get<RooProdPdf>();
       if (!o) {
-         if (n.get<RooSimultaneous>() || (n.get<RooAbsPdf>() && n.fParent && n.fParent->get<RooWorkspace>())) {
-            // if at top-level or is a simultaneous, check all channels for a constraint
+         if (n.get<RooSimultaneous>()) {
+            // check all channels for a constraint if is simultaneous
             for (auto &c : n.bins()) {
                if (auto oo = getConstraint(*c.get(), par, nullptr); oo) {
                   return oo;
                }
             }
             return (RooAbsPdf *)nullptr;
-         } else if (auto _ws = n.get<RooWorkspace>(); _ws) {
+         } else if(n.get<RooAbsPdf>() && n.fParent && n.fParent->get<RooWorkspace>()) {
+            // reached top-level pdf, which wasn't a simultaneous, so stop here
+            return (RooAbsPdf *)nullptr;
+         }else if (auto _ws = n.get<RooWorkspace>(); _ws) {
             // reached a workspace, check for any pdf depending on parameter that isnt the ignore
             for (auto p : _ws->allPdfs()) {
                if (p == ignore)
@@ -5908,8 +5910,8 @@ public:
         fExpPdf("expPdf","expPdf",this)
    {
       if (coef) { fCoef.setArg(*coef); }
-      if (expPdf) { fExpPdf.setArg(*expPdf); }
-      else if(dynamic_cast<RooAbsPdf*>(&f)) {
+      if (expPdf && expPdf->canBeExtended()) { fExpPdf.setArg(*expPdf); }
+      else if(auto _p = dynamic_cast<RooAbsPdf*>(&f); _p && _p->canBeExtended()) {
          fExpPdf.setArg(f); // using self for expectation
       }
       fExpectedEventsMode = expEvMode;
@@ -6575,7 +6577,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       bool needBinWidth = false;
       // may have MULTIPLE coefficients for the same pdf!
 
-      if ((p || !_coefs.empty() || rar->getAttribute("density")) && x) {
+      if ((p || !_coefs.empty() || rar->getAttribute("density") || (oldrar && oldrar->getAttribute("density"))) && x) {
          // pdfs of samples embedded in a sumpdf (aka have a coef) will convert their density value to a content
          needBinWidth = true;
       }

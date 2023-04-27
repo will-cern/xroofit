@@ -350,8 +350,8 @@ TEST(test1, testSimpleModel) {
 TEST(test1,speedTest) {
 
     xRooNode w("~/Downloads/hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
-    // no longer need to specify physical range as will default to 0->inf on POI
-    //w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange("physical",0,std::numeric_limits<double>::infinity());
+    // no longer need to specify physical range as will default to 0->inf on POI - update:April2023:brought back in need to do this, as trying to avoid tinkering with ranges on load of ws
+    w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange("physical",0,std::numeric_limits<double>::infinity());
     w.pars()["sqrt_mu"]->get<RooRealVar>()->setRange(-1,10);
 
     w.pars()["sqrt_mu"]->get<RooRealVar>()->setVal(0);
@@ -448,9 +448,9 @@ TEST(test1,tomasYields) {
    s.str("");
    for(auto chan : *(w["simPdf"])) {
       for(auto samp : *(chan->at("samples"))) {
-         auto hSamp = samp->histo(xRooNode());
+         auto hSamp = samp->histo("");
          s << samp->GetName() << " : " << hSamp.get<TH1>()->GetBinContent(1) << " +/- " << hSamp.get<TH1>()->GetBinError(1) << " [";
-         hSamp = samp->histo(samp->obs());
+         hSamp = samp->histo("x");
          for(int i=1;i<=hSamp.get<TH1>()->GetNbinsX(); i++) {
             s << hSamp.get<TH1>()->GetBinContent(i) << ":" << hSamp.get<TH1>()->GetBinError(i) << ",";
          }
@@ -462,5 +462,26 @@ TEST(test1,tomasYields) {
 
 
 }
+
+TEST(test1,unextendedPdfError) {
+
+   // checks error calculation on an unextended pdf
+   // two-bin case, one floating parameter
+   RooWorkspace _ws;
+   _ws.factory("obs[0,2]"); _ws.var("obs")->setBins(2);
+   _ws.factory("RooWrapperPdf::model(ParamHistFunc::model_func(obs,{p1[0.5,0,1],p2[0.5,0,1]}))");
+   _ws.function("model_func")->forceNumInt(); // workaround for bogus assert in analytical integral method
+   _ws.var("p1")->setConstant();
+   _ws.var("p2")->setError(0.1);
+   xRooNode w(_ws);
+
+   // calculated error should be:
+   // |(up - down)/2|
+
+   ASSERT_NEAR(w["model"]->GetBinError(1), (0.5/0.9 - 0.5/1.1)/2,1e-5);
+   ASSERT_NEAR(w["model"]->GetBinError(2), (0.5/0.9 - 0.5/1.1)/2,1e-5);
+
+}
+
 
 #endif
