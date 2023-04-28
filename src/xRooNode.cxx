@@ -124,6 +124,7 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "RooPoisson.h"
 #include "RooGaussian.h"
 #include "RooFormulaVar.h"
+#include "RooGenericPdf.h"
 #include "TVectorD.h"
 #include "TStopwatch.h"
 #include "TTimeStamp.h"
@@ -574,6 +575,19 @@ void xRooNode::Browse(TBrowser *b)
          /*if (TString(_type)=="Const") _name += TString::Format(" [%s=%g]",_type,v->get<RooConstVar>()->getVal());
          else*/
          _name += TString::Format(" [%s]", _type);
+      }
+      if(auto fv = v->get<RooFormulaVar>()) {
+         TString formu = TString::Format(" [%s]",fv->expression());
+         for(size_t i=0;i<fv->dependents().size();i++) {
+            formu.ReplaceAll(TString::Format("x[%zu]",i),fv->dependents()[i].GetName());
+         }
+         _name += formu;
+      } else if(auto gv = v->get<RooGenericPdf>()) {
+         TString formu = TString::Format(" [%s]",gv->expression());
+         for(size_t i=0;i<gv->dependents().size();i++) {
+            formu.ReplaceAll(TString::Format("x[%zu]",i),gv->dependents()[i].GetName());
+         }
+         _name += formu;
       }
       // tool tip defaults to displaying name and title, so temporarily set name to obj name if has one
       // and set title to the object type
@@ -1867,8 +1881,30 @@ void xRooNode::Print(Option_t *opt) const
             }
             _deps.assignValueOnly(*_snap);
             // std::cout << std::endl;
-         } else
-            std::cout << get()->ClassName() << "::" << get()->GetName() << std::endl;
+         } else {
+            TString _suffix = "";
+            if (auto _type = GetNodeType(); strlen(_type)) {
+               // decided not to show const values until figure out how to update if value changes
+               /*if (TString(_type)=="Const") _name += TString::Format(" [%s=%g]",_type,v->get<RooConstVar>()->getVal());
+               else*/
+               _suffix += TString::Format(" [%s]", _type);
+            }
+            if(auto fv = get<RooFormulaVar>()) {
+               TString formu = TString::Format(" [%s]",fv->expression());
+               for(size_t i=0;i<fv->dependents().size();i++) {
+                  formu.ReplaceAll(TString::Format("x[%zu]",i),fv->dependents()[i].GetName());
+               }
+               _suffix += formu;
+            } else if(auto gv = get<RooGenericPdf>()) {
+               TString formu = TString::Format(" [%s]",gv->expression());
+               for(size_t i=0;i<gv->dependents().size();i++) {
+                  formu.ReplaceAll(TString::Format("x[%zu]",i),gv->dependents()[i].GetName());
+               }
+               _suffix += formu;
+            }
+            std::cout << get()->ClassName() << "::" << get()->GetName() << _suffix.Data() << std::endl;
+         }
+
       } else if (!get()) {
          std::cout << std::endl;
       }
@@ -1905,8 +1941,29 @@ void xRooNode::Print(Option_t *opt) const
                k->coords();           // move to coords before printing (in case this matters)
                k->get()->Print(sOpt); // assumes finishes with an endl
                _deps.assignValueOnly(*_snap);
-            } else
-               std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << std::endl;
+            } else {
+               TString _suffix = "";
+               if (auto _type = k->GetNodeType(); strlen(_type)) {
+                  // decided not to show const values until figure out how to update if value changes
+                  /*if (TString(_type)=="Const") _name += TString::Format(" [%s=%g]",_type,v->get<RooConstVar>()->getVal());
+                  else*/
+                  _suffix += TString::Format(" [%s]", _type);
+               }
+               if(auto fv = k->get<RooFormulaVar>()) {
+                  TString formu = TString::Format(" [%s]",fv->expression());
+                  for(size_t i=0;i<fv->dependents().size();i++) {
+                     formu.ReplaceAll(TString::Format("x[%zu]",i),fv->dependents()[i].GetName());
+                  }
+                  _suffix += formu;
+               } else if(auto gv = k->get<RooGenericPdf>()) {
+                  TString formu = TString::Format(" [%s]",gv->expression());
+                  for(size_t i=0;i<gv->dependents().size();i++) {
+                     formu.ReplaceAll(TString::Format("x[%zu]",i),gv->dependents()[i].GetName());
+                  }
+                  _suffix += formu;
+               }
+               std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << _suffix.Data() << std::endl;
+            }
             if (depth != 0) {
                k->Print(sOpt + TString::Format("depth=%dindent=%d", depth - 1, iindent + 1));
             }
@@ -2917,13 +2974,17 @@ void xRooNode::_fitTo_(const char *datasetName, const char *constParValues)
       if (!fr.get())
          throw std::runtime_error("Fit Failed");
       SetFitResult(fr.get());
+      TString statusCodes;
+      for(unsigned int i=0;i<fr->numStatusHistory();i++) {
+         statusCodes += TString::Format("\n%s = %d",fr->statusLabelHistory(i),fr->statusCodeHistory(i));
+      }
       const TGWindow* w = (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot();
       if (fr->status() != 0) {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished with Bad Status Code",
-                      TString::Format("%s\nFit Status Code = %d", fr->GetName(), fr->status()), kMBIconExclamation, kMBOk);
+                      TString::Format("%s\nFit Status Code = %d\n-------------%s", fr->GetName(), fr->status(),statusCodes.Data()), kMBIconExclamation, kMBOk);
       } else {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished Successfully",
-                      TString::Format("%s\nFit Status Code = %d", fr->GetName(), fr->status()));
+                      TString::Format("%s\nFit Status Code = %d\n-------------%s", fr->GetName(), fr->status(),statusCodes.Data()));
       }
    } catch (const std::exception &e) {
       new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),
@@ -4158,7 +4219,7 @@ xRooNode &xRooNode::browse()
       // include coefs if any
       auto _coefs = coefs();
       if (!_coefs.empty()) {
-         if (_coefs.size() == 1) {
+         if (_coefs.size() == 1 && _coefs.get<RooAddition>()) {
             if (strcmp(_coefs.at(0)->GetName(), "1") != 0 &&
                 strcmp(_coefs.at(0)->GetName(), "ONE") != 0) { // don't add the "1"
                auto coef = std::make_shared<xRooNode>(".coef", *_coefs.at(0)->get(), *this);
@@ -4813,14 +4874,27 @@ xRooNode xRooNode::coefs() const
          }
       }
    }
-   auto coefSum = coefs.empty() ? nullptr : std::make_shared<RooAddition>(".coefs", "Coefficients of", coefs);
-   xRooNode out(".coefs", (isResidual && coefSum) ? std::dynamic_pointer_cast<RooAbsArg>(std::make_shared<RooFormulaVar>(".coefs","1-sum(coefs)","1. - @0",*coefSum)) : coefSum ,
-                *this);
-   if (isResidual && coefSum) out.push_back(std::make_shared<xRooNode>(".otherCoefs",coefSum,out));
-   if (!coefs.empty())
-      out.browse();
+   if(isResidual) {
+      // return a node representing 1.-sumOfCoefs
+      // involves creating sumOfCoefs unless there is only 1 coef, then just use that
+      auto coefSum = coefs.empty() ? nullptr : ( coefs.size()==1 ? std::shared_ptr<RooAbsArg>( coefs.at(0), [](RooAbsArg*){} ) : std::make_shared<RooAddition>((isResidual) ? ".sumOfCoefs" : ".coefs", "Coefficients of", coefs) );
+      xRooNode out(".coef",coefSum ? std::dynamic_pointer_cast<RooAbsArg>(std::make_shared<RooFormulaVar>(".coef","1-sum(otherCoefs)","1. - @0",*coefSum)) : nullptr /* should we return a "1." instead? */ );
+      if(coefSum && coefs.size()!=1) {
+         out.emplace_back(std::make_shared<xRooNode>(".memory", nullptr, *this))
+            ->emplace_back(
+               std::make_shared<xRooNode>(".sumOfCoefs", coefSum, out)); // added to keep the sum alive! with the node
+      }
+      if(!coefs.empty()) {out.browse();}
+      return out;
+   } else {
+      auto coefSum = coefs.empty() ? nullptr : std::make_shared<RooAddition>(".coefs", TString::Format("Coefficients of %s",GetName()), coefs);
+      xRooNode out(".coefs",coefSum,*this);
+      if (!coefs.empty())
+         out.browse();
 
-   return out;
+      return out;
+   }
+
 }
 
 xRooNode xRooNode::factors() const
@@ -7945,10 +8019,10 @@ void xRooNode::Draw(Option_t *opt)
       if (allHist)
          dOpt = "";
    }
-   if (rar == vv)
-      dOpt += "TEXT";
+
 
    if (rar == vv && rar->IsA() == RooRealVar::Class()) {
+      dOpt += "TEXT";
       // add a TExec to the histogram so that when edited it will propagate to var
       gROOT->SetEditHistograms(true);
    } else {
@@ -8438,7 +8512,7 @@ void xRooNode::Draw(Option_t *opt)
    }*/
 
    // now draw selected datasets on top if this was a pdf
-   if (!hasSame && get<RooAbsPdf>()) {
+   if (auto _pdf = get<RooAbsPdf>(); !hasSame && _pdf && _pdf->canBeExtended()) {
       auto _dsets = datasets();
       // bool _drawn=false;
       for (auto &d : _dsets) {
