@@ -58,6 +58,8 @@
 
 BEGIN_XROOFIT_NAMESPACE
 
+std::shared_ptr<RooLinkedList> xRooFit::sDefaultNLLOptions = nullptr;
+
 RooCmdArg xRooFit::ReuseNLL(bool flag)
 {
    return RooCmdArg("ReuseNLL", flag, 0, 0, 0, 0, 0, 0, 0);
@@ -386,17 +388,29 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
    return out;
 }
 
-std::shared_ptr<RooLinkedList> xRooFit::createNLLOptions()
-{
+std::shared_ptr<RooLinkedList> xRooFit::createNLLOptions() {
    auto out = std::shared_ptr<RooLinkedList>(new RooLinkedList, [](RooLinkedList *l) {
       l->Delete();
       delete l;
    });
-   out->Add(RooFit::Offset().Clone());
-   out->Add(
-      RooFit::Optimize(0)
-         .Clone()); // disable const-optimization at the construction step ... can happen in the minimization though
+   for(auto opt : *defaultNLLOptions()) {
+      out->Add(opt->Clone(nullptr));// nullptr needed because accessing Clone via TObject base class puts
+                                   // "" instead, so doesnt copy names
+   }
    return out;
+}
+
+std::shared_ptr<RooLinkedList> xRooFit::defaultNLLOptions()
+{
+   if(sDefaultNLLOptions) return sDefaultNLLOptions;
+   sDefaultNLLOptions = std::shared_ptr<RooLinkedList>(new RooLinkedList, [](RooLinkedList *l) {
+      l->Delete();
+      delete l;
+   });
+   sDefaultNLLOptions->Add(RooFit::Offset().Clone());
+   // disable const-optimization at the construction step ... can happen in the minimization though
+   sDefaultNLLOptions->Add(RooFit::Optimize(0).Clone());
+   return sDefaultNLLOptions;
 }
 
 std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig()

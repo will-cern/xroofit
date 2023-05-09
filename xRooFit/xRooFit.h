@@ -88,6 +88,7 @@ public:
 
    static std::shared_ptr<ROOT::Fit::FitConfig> createFitConfig(); // obtain instance of default fit configuration
    static std::shared_ptr<RooLinkedList> createNLLOptions();       // obtain instance of default nll options
+   static std::shared_ptr<RooLinkedList> defaultNLLOptions();      // access default NLL options for modifications
 
    static std::shared_ptr<const RooFitResult>
    minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &fitConfig = nullptr, const std::shared_ptr<RooLinkedList> &nllOpts = nullptr);
@@ -180,6 +181,8 @@ public:
       // return is x-axis value with potentially an error on that value if input pVals had errors
       // static RooRealVar FindLimit(TGraph *pVals, double target_pVal = 0.05);
    };
+
+   static std::shared_ptr<RooLinkedList> sDefaultNLLOptions;
 
    // Run hypothesis test(s) on the given pdf
    // Uses hypoPoint binning on model parameters to determine points to scan
