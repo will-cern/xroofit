@@ -3779,6 +3779,7 @@ std::shared_ptr<TStyle> xRooNode::style(TObject *initObject, bool autoCreate) co
          // loaded style (from workspace?) so put in list and use that
          gROOT->GetListOfStyles()->Add(style.get());
       } else {
+         if(!autoCreate) return nullptr;
          // create new style - gets put in style list automatically so don't have to delete
          // acquire them so saved to workspaces for auto reload ...
          style = const_cast<xRooNode &>(*this).acquireNew<TStyle>(t.Data(),
@@ -6290,9 +6291,13 @@ xRooNode xRooNode::histo(const xRooNode& vars, const xRooNode& fr, bool content,
             if (auto it = colorByTitle.find(hh->GetTitle()); it != colorByTitle.end()) {
                hh->SetFillColor(it->second);
             } else {
-               if (hh->GetFillColor() == 0) {
+               bool used=false;
+               do {
                   hh->SetFillColor((count++) % 100);
-               }
+                  // check not already used this color
+                  used=false;
+                  for(auto hh2 : hhs) { if(hh != hh2 && hh2->GetFillColor()==hh->GetFillColor()) { used=true; break; } }
+               } while(used);
                colorByTitle[hh->GetTitle()] = hh->GetFillColor();
             }
             /*if(stack->GetHists() && stack->GetHists()->GetEntries()>0) {
@@ -6803,7 +6808,7 @@ std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const
    }
 
    bool doIntegral = false;
-   if (binStart==binEnd && binStart==-1) { binStart=0;binEnd=0; doIntegral=true; } // return integral if request bin -1
+   if (binStart==binEnd && binStart==-1) { binStart=-1;binEnd=-1; doIntegral=true; } // return integral if request bin -1
    auto h = BuildHistogram(nullptr, false, false, binStart, binEnd);
    if (!h) {
       throw std::runtime_error(TString::Format("%s has no content", GetName()));
@@ -6813,7 +6818,7 @@ std::vector<double> xRooNode::GetBinContents(int binStart, int binEnd) const
    }
    if (doIntegral) {
       double tot = 0;
-      for (int i = binStart; i <= binEnd; i++) {
+      for (int i = 1; i <= h->GetNbinsX(); i++) {
          tot += h->GetBinContent(i);
       }
       out.push_back(tot);
@@ -7320,7 +7325,7 @@ void xRooNode::Draw(Option_t *opt)
       static_cast<RooAbsRealLValue*>(v)->setVal(tmp);
       out->GetHistogram()->GetXaxis()->SetTitle(static_cast<RooAbsRealLValue*>(v)->GetTitle());
       out->SetBit(kCanDelete);
-      out->Draw(hasSame ? "L" : "AL");
+      out->Draw( TString(hasSame ? "L" : "AL") + (hasErrorOpt ? "3" : ""));
       return;
    }
 
@@ -7539,6 +7544,8 @@ void xRooNode::Draw(Option_t *opt)
          hist->SetTitle(fr->GetTitle());
          hist->SetBit(kCanDelete);
          hist->Scale(100);
+         hist->SetStats(false);
+         hist->SetDirectory(nullptr);
          TString b(gStyle->GetPaintTextFormat());
          gStyle->SetPaintTextFormat(".1f");
          hist->GetXaxis()->SetTickSize(0);
@@ -8239,14 +8246,7 @@ void xRooNode::Draw(Option_t *opt)
                newMin = hhMin * 0.99;
             adjustYRange(newMin, h->GetMaximum());
          }
-         if (auto it = colorByTitle.find(hh->GetTitle()); it != colorByTitle.end()) {
-            hh->SetFillColor(it->second);
-         } else {
-            if (hh->GetFillColor() == 0) {
-               hh->SetFillColor((count++) % 100);
-            }
-            colorByTitle[hh->GetTitle()] = hh->GetFillColor();
-         }
+
          /*if(stack->GetHists() && stack->GetHists()->GetEntries()>0) {
              // to remove rounding effects on bin boundaries, see if binnings compatible
              auto _h1 = dynamic_cast<TH1*>(stack->GetHists()->At(0));
@@ -8328,12 +8328,29 @@ void xRooNode::Draw(Option_t *opt)
 
             // style hists according to availble styles ... creating if necessary
             dynamic_cast<TNamed *>(ll->At(i))->SetTitle(_title.c_str());
-            auto _style = xRooNode(*ll->At(i),*this).style(ll->At(i));
-            *dynamic_cast<TAttLine *>(ll->At(i)) = *_style;
-            *dynamic_cast<TAttFill *>(ll->At(i)) = *_style;
-            *dynamic_cast<TAttMarker *>(ll->At(i)) = *_style;
-
             addLegendEntry(ll->At(i), _title.c_str(), "f");
+         }
+         // finally, ensure all hists are styled
+         for(auto hh : hhs) {
+            bool createdStyle = (xRooNode(*hh,*this).style(nullptr,false)==nullptr);
+
+            if(createdStyle) {
+               // give hist a color, that isn't the same as any other hists color
+               bool used=false;
+               do {
+                  hh->SetFillColor((count++) % 100);
+                  // check not already used this color
+                  used=false;
+                  for(auto hh2 : hhs) {
+                     auto _style = xRooNode(*hh2,*this).style(hh2,false);
+                     if(hh != hh2 && _style && _style->GetFillColor()==hh->GetFillColor()) { used=true; break; } }
+               } while(used);
+            }
+
+            auto _style = xRooNode(*hh,*this).style(hh);
+            *dynamic_cast<TAttLine *>(hh) = *_style;
+            *dynamic_cast<TAttFill *>(hh) = *_style;
+            *dynamic_cast<TAttMarker *>(hh) = *_style;
          }
       }
    } else if (!overlayExisted) {
