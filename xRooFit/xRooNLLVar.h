@@ -164,7 +164,7 @@ public:
          auto null = pNull_toys(nSigma);
          auto alt = pAlt_toys(nSigma);
          double nom = (null.first == 0) ? 0 : null.first / alt.first;
-         double up = (null.first + null.second == 0) ? 0 : (null.first + null.second)/(alt.first - alt.second);
+         double up = (null.first + null.second == 0) ? 0 : ((alt.first-alt.second<=0) ? std::numeric_limits<double>::infinity() : (null.first + null.second)/(alt.first - alt.second));
          double down = (null.first - null.second == 0) ? 0 : (null.first - null.second)/(alt.first + alt.second);
          // old way ... now doing like in pCLs_asymp by calculating the two variations
          //return std::make_pair(pval, pval * sqrt(pow(null.second / null.first, 2) + pow(alt.second / alt.first, 2)));
@@ -181,6 +181,8 @@ public:
 
       void addNullToys(int nToys = 1, int seed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN()); // if seed=0 will use a random seed
       void addAltToys(int nToys = 1, int seed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN());  // if seed=0 will use a random seed
+      void addCLsToys(int nToys = 1, int seed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN());  // if seed=0 will use a random seed
+
 
       RooArgList poi();
       RooArgList alt_poi(); // values of the poi in the alt hypothesis (will be nans if not defined)
@@ -215,7 +217,7 @@ public:
 
    private:
       std::pair<double, double> pX_toys(bool alt, double nSigma = std::numeric_limits<double>::quiet_NaN());
-      void addToys(bool alt, int nToys, int initialSeed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN());
+      size_t addToys(bool alt, int nToys, int initialSeed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN(),bool targetCLs=false,double relErrThreshold=2., size_t maxToys=10000);
 
       TString tsTitle();
    };

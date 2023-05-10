@@ -998,6 +998,7 @@ void xRooNLLVar::xRooHypoPoint::Print()
          std::cout << "Not calculated" << std::endl;
       }
       std::cout << " sigma_mu: ";
+      asimov(true); // will trigger construction of fAsimov hypoPoint if possible
       if (!fAsimov || !fAsimov->fUfit || !fAsimov->fNull_cfit) {
          std::cout << "Not calculated";
       } else {
@@ -1489,7 +1490,7 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed)
    return out;
 }
 
-void xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, double target, double target_nSigma)
+size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, double target, double target_nSigma, bool targetCLs,double relErrThreshold, size_t maxToys)
 {
    if ((alt && !cfit_alt()) || (!alt && !cfit_null())) {
       throw std::runtime_error("Cannot add toys, invalid conditional fit");
@@ -1506,89 +1507,112 @@ void xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, do
          throw std::runtime_error("Unable to determine expected ts value");
       }
    }
-   auto &toys = (alt) ? altToys : nullToys;
-   int nans = 0;
-   std::vector<float> times(nToys);
+
+   size_t nans = 0;
    float lastTime = 0;
-   int lasti = -1;
-   TStopwatch s2;
-   s2.Start();
-   TStopwatch s;
-   s.Start();
-   auto condition = [&]() {
-      if(std::isnan(target)) return true;
-      double diff = std::numeric_limits<double>::infinity();
-      double err = std::numeric_limits<double>::infinity();
-      auto obs = pNull_toys(target_nSigma);
-      if (!std::isnan(obs.first)) {
-         diff = std::abs(obs.first-target);
-         err = obs.second;
-         if (err > 1e-4 && diff < 1.5*obs.second) return true; // more toys needed
-      }
-      return false;
-   };
-   while(condition()) {
-      for (auto i = 0; i < nToys; i++) {
-         if (i == 0 && initialSeed != 0)
-            RooRandom::randomGenerator()->SetSeed(initialSeed);
-         int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
-         toys.push_back(std::make_tuple(seed, ((alt) ? generateAlt(seed) : generateNull(seed)).pll().first, 1.));
-         if (std::isnan(std::get<1>(toys.back())))
-            nans++;
-         times[i] = s.RealTime() - lastTime; // stops the clock
-         lastTime = s.RealTime();
-         if (s.RealTime() > 10) {
-            std::cout << "\r"
-                      << TString::Format("Generated %d/%d %s hypothesis toys [%.2f toys/s]...", i + 1, nToys,
-                                         alt ? "alt" : "null", double(i - lasti) / s.RealTime())
-                      << std::flush;
-            lasti = i;
-            s.Reset();
-            s.Start();
-            // std::cout << "Generated " << i << "/" << nToys << (alt ? " alt " : " null ") << " hypothesis toys " ..." << std::endl;
-         }
-         s.Continue();
-      }
-      if (lasti)
-         std::cout << "\r"
-                   << TString::Format("Generated %d/%d %s hypothesis toys [%.2f toys/s overall]...Done!", nToys, nToys,
-                                      alt ? "alt" : "null", double(nToys) / s2.RealTime())
-                   << std::endl;
-      if (std::isnan(target)) {
-         break; // no more toys if not doing a target
-      }
-      if(condition()) {
-         Info("addToys","Generating more toys to determine p-value ... currently: %f +/- %f",pNull_toys(target_nSigma).first,pNull_toys(target_nSigma).second);
-      }
-   }
+   int lasti = 0;
    auto g = gDirectory->Get<TGraph>("toyTime");
    if (!g) {
       g = new TGraph;
       g->SetNameTitle("toyTime", "Time per toy;Toy;time [s]");
       gDirectory->Add(g);
    }
-   g->Set(times.size());
-   for (size_t i = 0; i < times.size(); i++)
-      g->SetPoint(i, i, times[i]);
-   // sort the toys ... put nans first - do by setting all as negative inf
-   for (auto &t : toys) {
-      if (std::isnan(std::get<1>(t)))
-         std::get<1>(t) = -std::numeric_limits<double>::infinity();
+   g->Set(0);
+   TStopwatch s2;
+   s2.Start();
+   TStopwatch s;
+   s.Start();
+   auto condition = [&]() { // returns true if need more toys
+      if(std::isnan(target)) return false;
+      auto obs = targetCLs ? pCLs_toys(target_nSigma) : (alt ? pAlt_toys(target_nSigma) : pNull_toys(target_nSigma));
+      if (!std::isnan(obs.first)) {
+         double diff = (target<0) ? obs.first : std::abs(obs.first-target);
+         double err = obs.second;
+         if (err > 1e-4 && diff <= relErrThreshold*obs.second) {
+            //return true; // more toys needed
+            if(targetCLs) {
+               // decide which type we'd want to generate and update alt flag
+               auto pNull = pNull_toys(target_nSigma);
+               auto pAlt = pAlt_toys(target_nSigma);
+               alt = (pAlt.second * pNull.first > pNull.second * pAlt.first);
+               if ((alt ? pAlt.second : pNull.second) < 1e-4) return false; // stop if error gets too small
+            }
+            return true;
+         }
+      }
+      return false;
+   };
+   size_t toysAdded(0); size_t altToysAdded(0);
+   if(initialSeed) {
+      RooRandom::randomGenerator()->SetSeed(initialSeed);
    }
-   std::sort(toys.begin(), toys.end(),
-             [](const decltype(nullToys)::value_type &a, const decltype(nullToys)::value_type &b) -> bool {
-                if (std::isnan(std::get<1>(a)))
-                   return true;
-                if (std::isnan(std::get<1>(b)))
-                   return false;
-                return std::get<1>(a) < std::get<1>(b);
-             });
-   for (auto &t : toys) {
-      if (std::isinf(std::get<1>(t)))
-         std::get<1>(t) = std::numeric_limits<double>::quiet_NaN();
+   do {
+      auto &toys = (alt) ? altToys : nullToys;
+      if (toys.size() >= maxToys) {
+         // cannot generate more toys, reached limit already
+         break;
+      }
+      for (size_t i = 0; i < std::min(size_t(nToys), (maxToys-toys.size())); i++) {
+         int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
+         toys.push_back(std::make_tuple(seed, ((alt) ? generateAlt(seed) : generateNull(seed)).pll().first, 1.));
+         (alt ? altToysAdded:toysAdded)++;
+         if (std::isnan(std::get<1>(toys.back())))
+            nans++;
+         g->SetPoint(g->GetN(), g->GetN(), s.RealTime() - lastTime); // stops the clock
+         lastTime = s.RealTime();
+         if (s.RealTime() > 10) {
+            std::cout << "\r"
+                      << TString::Format("Generated %lu/%d %s hypothesis toys [%.2f toys/s]...", (alt ? altToysAdded:toysAdded), nToys,
+                                         alt ? "alt" : "null", double(altToysAdded+toysAdded - lasti) / s.RealTime())
+                      << std::flush;
+            lasti = altToysAdded+toysAdded;
+            s.Reset();
+            Draw();if(gPad) {gPad->Update(); gSystem->ProcessEvents();}
+            s.Start();
+            // std::cout << "Generated " << i << "/" << nToys << (alt ? " alt " : " null ") << " hypothesis toys " ..." << std::endl;
+         }
+         s.Continue();
+      }
+      // sort the toys ... put nans first - do by setting all as negative inf (is that still necessary with the custom sort below??)
+      for (auto &t : toys) {
+         if (std::isnan(std::get<1>(t)))
+            std::get<1>(t) = -std::numeric_limits<double>::infinity();
+      }
+      std::sort(toys.begin(), toys.end(),
+                [](const decltype(nullToys)::value_type &a, const decltype(nullToys)::value_type &b) -> bool {
+                   if (std::isnan(std::get<1>(a)))
+                      return true;
+                   if (std::isnan(std::get<1>(b)))
+                      return false;
+                   return std::get<1>(a) < std::get<1>(b);
+                });
+      for (auto &t : toys) {
+         if (std::isinf(std::get<1>(t)))
+            std::get<1>(t) = std::numeric_limits<double>::quiet_NaN();
+      }
+      if (std::isnan(target)) {
+         break; // no more toys if not doing a target
+      }
+      //if(condition()) {
+      //   Info("addToys","Generating more toys to determine p-value ... currently: %f +/- %f",pNull_toys(target_nSigma).first,pNull_toys(target_nSigma).second);
+      //}
+   } while(condition());
+   if (lasti) {
+      std::cout << "\r" << "Finished Generating ";
+      if(toysAdded) {
+         std::cout << toysAdded << " null ";
+      }
+      if(altToysAdded) {
+         std::cout << altToysAdded << " alt ";
+      }
+      std::cout << "toys " << TString::Format("[%.2f toys/s overall]", double(toysAdded+altToysAdded) / s2.RealTime()) << std::endl;
+      Draw();if(gPad) {gPad->Update(); gSystem->ProcessEvents();}
    }
-   if (nans > 0)
+
+   if (nans > 0) {
       std::cout << "Warning: " << nans << " toys were bad" << std::endl;
+   }
+   return toysAdded;
 }
 
 void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys, int seed, double target, double target_nSigma)
@@ -1598,6 +1622,58 @@ void xRooNLLVar::xRooHypoPoint::addNullToys(int nToys, int seed, double target, 
 void xRooNLLVar::xRooHypoPoint::addAltToys(int nToys, int seed, double target, double target_nSigma)
 {
    addToys(true, nToys, seed, target, target_nSigma);
+}
+
+void xRooNLLVar::xRooHypoPoint::addCLsToys(int nToys, int seed, double target, double target_nSigma)
+{
+   addToys(false, nToys,seed,target,target_nSigma,true);
+   return;
+
+   auto condition = [&](bool doingAlt=false) { // returns true if need more toys
+      if(std::isnan(target)) return false;
+      auto pval = pCLs_toys(target_nSigma);
+      if (!std::isnan(pval.first)) {
+         double diff = std::abs(pval.first - target);
+         double err = pval.second;
+         if (err > 1e-4 && diff <= 2 * pval.second) {
+            return true; // more toys needed
+            // decide which type we'd want to generate
+            // if it matches the type we are generating, then return true
+            auto pNull = pNull_toys(target_nSigma);
+            auto pAlt = pAlt_toys(target_nSigma);
+            if ((doingAlt ? pAlt.second : pNull.second) < 1e-4) return false; // stop if error gets too small
+            bool doAlt = (pAlt.second * pNull.first > pNull.second * pAlt.first);
+            return doAlt == doingAlt;
+         }
+      }
+      return false;
+   };
+   while(condition()) {
+      bool doAlt = false;
+      double relErrThreshold = 2;
+      if(nullToys.size()<size_t(nToys)) {
+         addToys(false,nToys);continue;
+      } else if(altToys.size()<size_t(nToys)) {
+         addToys(true,nToys);continue;
+      } else {
+         // see which have bigger errors ... generate more of that ...
+         auto pNull = pNull_toys(target_nSigma);
+         auto pAlt = pAlt_toys(target_nSigma);
+         doAlt = (pAlt.second*pNull.first > pNull.second*pAlt.first);
+         if( (doAlt ? pAlt.second : pNull.second) < 1e-4 ) break; // stop if error gets too small
+         auto pCLs = pCLs_toys(target_nSigma);
+         relErrThreshold = (doAlt) ? (pNull.second/pNull.first) : (pAlt.second/pAlt.first);
+         relErrThreshold = std::min(2.,std::abs(relErrThreshold));
+         std::cout << "Current pCLs = " << pCLs.first << " +/- " << pCLs.second
+                   << " (pNull = " << pNull.first << " +/- " << pNull.second
+                  << " , pAlt = " << pAlt.first << " +/- " << pAlt.second << ") ... generating more " << (doAlt ? "alt" : "null") << " toys " << relErrThreshold  << std::endl;
+
+      }
+      if( addToys(doAlt, nToys/*, seed, -1, target_nSigma,relErrThreshold*/) == 0) {
+         break; // no toys got added, so stop looping
+      }
+   }
+
 }
 
 xRooNLLVar::xRooHypoPoint
@@ -1633,14 +1709,25 @@ xRooNLLVar::hypoPoint(const char *poiValues, double alt_value, const xRooFit::As
    if (poiNames=="") {
       throw std::runtime_error("No poi");
    }
+   if (!std::isnan(alt_value)) {
+      std::unique_ptr<RooAbsCollection> thePoi(fFuncVars->selectByName(poiNames));
+      for(auto b : *thePoi) {
+         if(static_cast<RooRealVar*>(b)->hasRange("physical")) {
+            static_cast<RooRealVar*>(b)->setRange("physical",0,std::numeric_limits<double>::infinity());
+         }
+      }
+   }
    auto _snap = std::unique_ptr<RooAbsCollection>(fFuncVars->selectByAttrib("Constant", true))->snapshot();
    _snap->setAttribAll("poi", false);
    std::unique_ptr<RooAbsCollection> _poi(_snap->selectByName(poiNames));
    _poi->setAttribAll("poi", true);
-   if (std::isnan(alt_value))
-      for(auto a : *_poi) a->setStringAttribute("altVal", nullptr);
-   else
-      for(auto a : *_poi) a->setStringAttribute("altVal", TString::Format("%g", alt_value));
+   if (std::isnan(alt_value)) {
+      for (auto a : *_poi)
+         a->setStringAttribute("altVal", nullptr);
+   } else {
+      for (auto a : *_poi)
+         a->setStringAttribute("altVal", TString::Format("%g", alt_value));
+   }
    if (fGlobs)
       _snap->remove(*fGlobs, true, true);
    out.coords.reset(_snap);
@@ -1750,6 +1837,11 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       _min = std::min(obs.first - std::abs(obs.first) * 0.1, _min);
       _max = std::max(obs.first + std::abs(obs.first) * 0.1, _max);
    }
+   // these are used down below to add obs p-values to legend, but up here because can trigger fits that create asimov
+   auto pNull = pNull_toys();
+   auto pAlt = pAlt_toys();
+   auto pNullA = pNull_asymp();
+   auto pAltA = pAlt_asymp();
 
    auto asi = (fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit) ? fAsimov->pll().first
                                                                  : std::numeric_limits<double>::quiet_NaN();
@@ -1811,9 +1903,11 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    auto h = nullHist;
    if (!hasSame) {
       gPad->SetLogy();
-      auto axis = (TH1 *)h->Clone(".axis");
+      auto axis = static_cast<TH1*>(h->Clone(".axis"));
+      axis->SetBit(kCanDelete);
+      axis->SetStats(false);
       axis->Reset("ICES");
-      axis->SetMinimum(1e-7);
+      axis->SetMinimum(1e-7);axis->GetYaxis()->SetRangeUser(1e-7,10);
       axis->SetMaximum(h->GetMaximum());
       axis->SetTitle(TString::Format("%s HypoPoint",collectionContents(poi()).c_str()));
       axis->SetLineWidth(0);
@@ -1834,12 +1928,12 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    }
 
    if (h->GetEntries() > 0)
-      h->Draw("histesame");
+      h->Draw("esame");
    else
       h->Draw("axissame"); // for unknown reason if second histogram empty it still draws with two weird bars???
    h = altHist;
    if (h->GetEntries() > 0)
-      h->Draw("histesame");
+      h->Draw("esame");
    else
       h->Draw("axissame"); // for unknown reason if second histogram empty it still draws with two weird bars???
 
@@ -1849,7 +1943,8 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    }
 
    if (fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit && !std::isnan(sigma_mu().first) && !std::isnan(fAltVal())) {
-      auto hh = (TH1 *)nullHist->Clone("null_asymp");
+      auto hh = static_cast<TH1*>(nullHist->Clone("null_asymp"));
+      hh->SetBit(kCanDelete);hh->SetStats(false);
       hh->SetLineStyle(2);
       hh->Reset();
       for (int i = 1; i <= hh->GetNbinsX(); i++) {
@@ -1860,7 +1955,8 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
                                                sigma_mu().first, _poi->getMin("physical"), _poi->getMax("physical")));
       }
       hh->Draw("lsame");
-      hh = (TH1 *)altHist->Clone("alt_asymp");
+      hh = static_cast<TH1*>(altHist->Clone("alt_asymp"));
+      hh->SetBit(kCanDelete);hh->SetStats(false);
       hh->SetLineStyle(2);
       hh->Reset();
       for (int i = 1; i <= hh->GetNbinsX(); i++) {
@@ -1877,15 +1973,11 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    TLine ll;
    ll.SetLineStyle(1);ll.SetLineWidth(3);
    // for(auto p : fObs) {
-   auto tl = ll.DrawLine(pll().first, hAxis->GetMinimum(), pll().first, 0.1);
-   auto label = TString::Format("obs ts = %.4f", pll().first);
-   if (pll().second)
-      label += TString::Format(" #pm %.4f", pll().second);
-   auto pNull = pNull_toys();
-   auto pAlt = pAlt_toys();
+   auto tl = ll.DrawLine(obs.first, hAxis->GetMinimum(), obs.first, 0.1);
+   auto label = TString::Format("obs ts = %.4f", obs.first);
+   if (obs.second)
+      label += TString::Format(" #pm %.4f", obs.second);
 
-   auto pNullA = pNull_asymp();
-   auto pAltA = pAlt_asymp();
 
    l->AddEntry(tl, label, "l");
    label = "";
