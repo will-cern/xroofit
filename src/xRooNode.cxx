@@ -1951,14 +1951,14 @@ void xRooNode::Print(Option_t *opt) const
                }
                if(auto fv = k->get<RooFormulaVar>()) {
                   TString formu = TString::Format(" [%s]",fv->expression());
-                  for(size_t i=0;i<fv->dependents().size();i++) {
-                     formu.ReplaceAll(TString::Format("x[%zu]",i),fv->dependents()[i].GetName());
+                  for(size_t j=0;j<fv->dependents().size();j++) {
+                     formu.ReplaceAll(TString::Format("x[%zu]",j),fv->dependents()[j].GetName());
                   }
                   _suffix += formu;
                } else if(auto gv = k->get<RooGenericPdf>()) {
                   TString formu = TString::Format(" [%s]",gv->expression());
-                  for(size_t i=0;i<gv->dependents().size();i++) {
-                     formu.ReplaceAll(TString::Format("x[%zu]",i),gv->dependents()[i].GetName());
+                  for(size_t j=0;j<gv->dependents().size();j++) {
+                     formu.ReplaceAll(TString::Format("x[%zu]",j),gv->dependents()[j].GetName());
                   }
                   _suffix += formu;
                }
