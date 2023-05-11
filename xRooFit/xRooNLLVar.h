@@ -129,6 +129,7 @@ public:
 
    class xRooHypoPoint {
    public:
+      xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr = nullptr);
       static std::set<int> allowedStatusCodes;
       void Print();
       void Draw(Option_t *opt = "");
@@ -164,11 +165,13 @@ public:
          auto null = pNull_toys(nSigma);
          auto alt = pAlt_toys(nSigma);
          double nom = (null.first == 0) ? 0 : null.first / alt.first;
-         double up = (null.first + null.second == 0) ? 0 : ((alt.first-alt.second<=0) ? std::numeric_limits<double>::infinity() : (null.first + null.second)/(alt.first - alt.second));
-         double down = (null.first - null.second == 0) ? 0 : (null.first - null.second)/(alt.first + alt.second);
-         // old way ... now doing like in pCLs_asymp by calculating the two variations
-         //return std::make_pair(pval, pval * sqrt(pow(null.second / null.first, 2) + pow(alt.second / alt.first, 2)));
-         return std::pair(nom,std::max(std::abs(up - nom), std::abs(down - nom)));
+         //double up = (null.first + null.second == 0) ? 0 : ((alt.first-alt.second<=0) ? std::numeric_limits<double>::infinity() : (null.first + null.second)/(alt.first - alt.second));
+         //double down = (null.first - null.second == 0) ? 0 : (null.first - null.second)/(alt.first + alt.second);
+         // old way ... now doing like in pCLs_asymp by calculating the two variations ... but this is pessimistic
+         // assumes p-values are anticorrelated!
+         // so reverting to old
+         return std::make_pair(nom, (alt.first-alt.second<=0) ? std::numeric_limits<double>::infinity() : (sqrt(pow(null.second, 2) + pow(alt.second*nom, 2))/alt.first));
+         //return std::pair(nom,std::max(std::abs(up - nom), std::abs(down - nom)));
       }
       std::pair<double, double>
       ts_toys(double nSigma = std::numeric_limits<double>::quiet_NaN()); // test statistic value
@@ -214,6 +217,8 @@ public:
       std::vector<std::tuple<int, double, double>> altToys;
 
       std::shared_ptr<xRooNLLVar> nllVar = nullptr; // hypopoints get a copy
+      std::shared_ptr<RooStats::HypoTestResult> hypoTestResult = nullptr;
+      std::shared_ptr<const RooFitResult> retrieveFit(int type);
 
    private:
       std::pair<double, double> pX_toys(bool alt, double nSigma = std::numeric_limits<double>::quiet_NaN());

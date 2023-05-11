@@ -75,6 +75,8 @@
 #include "TStyle.h"
 #include "TH1D.h"
 #include "TLegend.h"
+#include "RooCategory.h"
+#include "TTree.h"
 
 
 BEGIN_XROOFIT_NAMESPACE
@@ -1064,17 +1066,42 @@ std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> 
    return fData;
 }
 
+xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr) : hypoTestResult(htr) {
+   if(hypoTestResult) {
+      // load coords from the nullDist globs list
+      coords = std::shared_ptr<RooAbsCollection>(hypoTestResult->GetNullDetailedOutput()->getGlobalObservables()->snapshot());
+      // load the pllType
+      fPllType = xRooFit::Asymptotics::PLLType(hypoTestResult->GetFitInfo()->getGlobalObservables()->getCatIndex("pllType"));
+      // load the toys
+      auto toys = hypoTestResult->GetNullDetailedOutput();
+      for(int i=0;i<toys->numEntries();i++) {
+         auto toy = toys->get(i);
+         nullToys.emplace_back(std::make_tuple(int(toy->getRealValue("seed")),toy->getRealValue("ts"),toys->weight()));
+      }
+      toys = hypoTestResult->GetAltDetailedOutput();
+      if(toys) {
+         for (int i = 0; i < toys->numEntries(); i++) {
+            auto toy = toys->get(i);
+            altToys.emplace_back(
+               std::make_tuple(int(toy->getRealValue("seed")), toy->getRealValue("ts"), toys->weight()));
+         }
+      }
+
+   }
+}
+
 std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(bool readOnly)
 {
 
-   if (!fAsimov && nllVar) {
+   if (!fAsimov && (nllVar||hypoTestResult)) {
       auto theFit = (!fData.first && fGenFit && !isExpected) ? fGenFit : cfit_alt(readOnly);
       if (!theFit || allowedStatusCodes.find(theFit->status()) == allowedStatusCodes.end())
          return fAsimov;
       fAsimov = std::make_shared<xRooHypoPoint>(*this);
+      fAsimov->hypoTestResult.reset();
       fAsimov->fPllType = xRooFit::Asymptotics::TwoSided;
-      fAsimov->fUfit.reset();
-      fAsimov->fNull_cfit.reset();
+      fAsimov->fUfit = retrieveFit(3);
+      fAsimov->fNull_cfit = retrieveFit(4);
       fAsimov->fAlt_cfit.reset();
       fAsimov->fData = std::make_pair(nullptr,nullptr); // postpone generating expected data until we definitely need it
       fAsimov->fGenFit = theFit;
@@ -1202,7 +1229,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
 {
    if (!ufit(readOnly) || allowedStatusCodes.find(ufit(readOnly)->status()) == allowedStatusCodes.end())
       return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
-   auto cFactor = xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
+   auto cFactor = (fPllType==xRooFit::Asymptotics::TwoSided) ? 1. : xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
    if (cFactor == 0)
       return std::make_pair(0, 0);
    if (!cfit_null(readOnly) || allowedStatusCodes.find(cfit_null(readOnly)->status()) == allowedStatusCodes.end())
@@ -1213,10 +1240,37 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
    // return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
 }
 
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int type) {
+   if(!hypoTestResult) return nullptr;
+   // see if can retrieve from that ....
+   if(auto fits = hypoTestResult->GetFitInfo()) {
+      for(int i=0;i<fits->numEntries();i++) {
+         auto fit = fits->get(i);
+         if (fit->getCatIndex("type")!=type) continue;
+         // found ufit ... construct
+         std::string _name = fits->getGlobalObservables()->getStringValue(TString::Format("%s.name",fit->getCatLabel("type")));
+         auto rfit = std::make_shared<RooFitResult>(_name.c_str(),TUUID(_name.c_str()).GetTime().AsString());
+         rfit->setStatus(fit->getRealValue("status"));
+         rfit->setMinNLL(fit->getRealValue("minNll"));
+         rfit->setEDM(fit->getRealValue("edm"));
+         if(type==0) {
+            std::unique_ptr<RooAbsCollection> par_hats(hypoTestResult->GetFitInfo()->getGlobalObservables()->selectByName(coords->contentsString().c_str()));
+            par_hats->setName("floatParsFinal");
+            rfit->setFinalParList( *par_hats );
+         }
+         return rfit;
+      }
+   }
+   return nullptr;
+}
+
 std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit(bool readOnly)
 {
    if (fUfit)
       return fUfit;
+   if(auto rfit = retrieveFit(0)) {
+      return fUfit = rfit;
+   }
    if (!nllVar || (readOnly && nllVar->get() && !nllVar->get()->getAttribute("readOnly")))
       return nullptr;
    if (!nllVar->fFuncVars)
@@ -1282,6 +1336,9 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null(bool re
 {
    if (fNull_cfit)
       return fNull_cfit;
+   if(auto rfit = retrieveFit(1)) {
+      return fNull_cfit = rfit;
+   }
    if (!nllVar || (readOnly && nllVar->get() && !nllVar->get()->getAttribute("readOnly")))
       return nullptr;
    if (!nllVar->fFuncVars)
@@ -1329,6 +1386,9 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt(bool rea
       return nullptr;
    if (fAlt_cfit)
       return fAlt_cfit;
+   if(auto rfit = retrieveFit(2)) {
+      return fAlt_cfit = rfit;
+   }
    if (!nllVar || (readOnly && nllVar->get() && !nllVar->get()->getAttribute("readOnly")))
       return nullptr;
    if (!nllVar->fFuncVars)
@@ -1712,7 +1772,7 @@ xRooNLLVar::hypoPoint(const char *poiValues, double alt_value, const xRooFit::As
    if (!std::isnan(alt_value)) {
       std::unique_ptr<RooAbsCollection> thePoi(fFuncVars->selectByName(poiNames));
       for(auto b : *thePoi) {
-         if(static_cast<RooRealVar*>(b)->hasRange("physical")) {
+         if(!static_cast<RooRealVar*>(b)->hasRange("physical")) {
             static_cast<RooRealVar*>(b)->setRange("physical",0,std::numeric_limits<double>::infinity());
          }
       }
@@ -1772,7 +1832,7 @@ xRooNLLVar::hypoPoint(const char *parName, double value, double alt_value, const
 void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
 {
 
-   if (!nllVar)
+   if (!nllVar && !hypoTestResult)
       return;
 
    TString sOpt(opt);
@@ -2094,8 +2154,13 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, const xRooF
 
 RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
 {
+   if(hypoTestResult) {
+      return *hypoTestResult;
+   }
    RooStats::HypoTestResult out;
    out.SetBackgroundAsAlt(true);
+   out.SetName(TUUID().AsString());
+   out.SetTitle(TString::Format("%s HypoPoint",collectionContents(poi()).c_str()));
 
    bool setReadonly = false;
    if (nllVar && !nllVar->get()->getAttribute("readOnly")) {
@@ -2106,27 +2171,72 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    auto ts_obs = ts_asymp();
 
    out.SetTestStatisticData(ts_obs.first);
+
+   // build a ds to hold all fits ... store coords in the globs list
+   // also need to store at least mu_hat value(s)
+   RooArgList fitDetails;
+   RooArgList fitMeta;
+   fitMeta.addClone(RooCategory("pllType","test statistic type",{{"TwoSided",0},{"OneSidedPositive",1},{"OneSidedNegative",2},{"Uncapped",3},{"Unknown",4}}));
+   if(ufit()) {
+      fitMeta.addClone(ufit()->floatParsFinal());
+   }
+   fitMeta.setCatIndex("pllType",int(fPllType));
+   fitDetails.addClone(RooCategory("type","fit type",{{"ufit",0},{"cfit_null",1},{"cfit_alt",2},{"asimov_ufit",3},{"asimov_cfit_null",4}}));
+   //fitDetails.addClone(RooStringVar("name", "Fit Name", "")); -- not supported properly in ROOT yet
+   fitDetails.addClone(RooRealVar("status", "status", 0));
+   fitDetails.addClone(RooRealVar("minNll", "minNll", 0));
+   fitDetails.addClone(RooRealVar("edm", "edm", 0));
+   auto fitDS = new RooDataSet("fits","fit summary data",fitDetails);
+   fitDS->convertToTreeStore(); // strings not stored properly in vector store, so do convert!
+
+   for(int i=0;i<5;i++) {
+      std::shared_ptr<const RooFitResult> fit;
+      switch(i) {
+      case 0: fit = ufit(); break;
+      case 1: fit = cfit_null(); break;
+      case 2: fit = cfit_alt(); break;
+      case 3: fit = asimov() ? asimov()->ufit(true) : nullptr; break;
+      case 4: fit = asimov() ? asimov()->cfit_null(true) : nullptr; break;
+      }
+      if(fit) {
+         fitDetails.setCatIndex("type",i);
+         fitMeta.addClone(RooStringVar(TString::Format("%s.name",fitDetails.getCatLabel("type")),fitDetails.getCatLabel("type"),fit->GetName()));
+         //fitDetails.setStringValue("name",fit->GetName());
+         fitDetails.setRealValue("status",fit->status());
+         fitDetails.setRealValue("minNll",fit->minNll());
+         fitDetails.setRealValue("edm",fit->edm());
+         fitDS->add(fitDetails);
+      }
+   }
+   fitDS->setGlobalObservables(fitMeta);
+
+   out.SetFitInfo(fitDS);
+
    RooArgList nullDetails;
+   RooArgList nullMeta;
+   nullMeta.addClone(*coords);
+   nullDetails.addClone(RooRealVar("seed", "Toy Seed", 0));
+   nullDetails.addClone(RooRealVar("ts", "test statistic value", 0));
+   nullDetails.addClone(RooRealVar("weight", "weight", 1));
+   auto nullToyDS = new RooDataSet("nullToys","nullToys",nullDetails,"weight");
+   nullToyDS->setGlobalObservables(nullMeta);
    if (!nullToys.empty()) {
 
       std::vector<double> values;
       std::vector<double> weights;
       values.reserve(nullToys.size());
       weights.reserve(nullToys.size());
-      size_t badToys = 0;
-      for (auto &t : nullToys) {
-         if (std::isnan(std::get<1>(t))) {
-            badToys++;
-         } else {
-            values.push_back(std::get<1>(t));
-            weights.push_back(std::get<2>(t));
-         }
-      }
-      nullDetails.addClone(RooRealVar("badToys", "Number of bad Toys", badToys));
 
+      for (auto &t : nullToys) {
+         values.push_back(std::get<1>(t));
+         weights.push_back(std::get<2>(t));
+         nullDetails.setRealValue("seed",std::get<0>(t));
+         nullDetails.setRealValue("ts",std::get<1>(t));
+         nullToyDS->add(nullDetails,std::get<2>(t));
+      }
       out.SetNullDistribution(new RooStats::SamplingDistribution("null", "Null dist", values, weights, tsTitle()));
-      out.SetNullDetailedOutput(new RooDataSet("nullDetails", "nullDetails", nullDetails));
-      out.GetNullDetailedOutput()->add(nullDetails);
+      out.SetNullPValue(pNull_toys().first); // technically set above
+      out.SetNullPValueError(pNull_toys().second); // overrides binomial error used in SamplingDistribution::IntegralAndError
    } else {
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       out.fNullPValue = pNull_asymp().first;
@@ -2136,27 +2246,31 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       out.SetNullPValueError(pNull_asymp().second);
 #endif
    }
+   out.SetNullDetailedOutput(nullToyDS);
 
-   RooArgList altDetails;
    if (!altToys.empty()) {
       std::vector<double> values;
       std::vector<double> weights;
-      values.reserve(nullToys.size());
-      weights.reserve(nullToys.size());
-      size_t badToys = 0;
-      for (auto &t : nullToys) {
-         if (std::isnan(std::get<1>(t))) {
-            badToys++;
-         } else {
-            values.push_back(std::get<1>(t));
-            weights.push_back(std::get<2>(t));
-         }
+      values.reserve(altToys.size());
+      weights.reserve(altToys.size());
+      RooArgList altDetails;
+      RooArgList altMeta;
+      altDetails.addClone(RooRealVar("seed", "Toy Seed", 0));
+      altDetails.addClone(RooRealVar("ts", "test statistic value", 0));
+      altDetails.addClone(RooRealVar("weight", "weight", 1));
+      auto altToyDS = new RooDataSet("altToys","altToys",altDetails,"weight");
+      altToyDS->setGlobalObservables(altMeta);
+      for (auto &t : altToys) {
+         values.push_back(std::get<1>(t));
+         weights.push_back(std::get<2>(t));
+         altDetails.setRealValue("seed",std::get<0>(t));
+         altDetails.setRealValue("ts",std::get<1>(t));
+         altToyDS->add(altDetails,std::get<2>(t));
       }
-      altDetails.addClone(RooRealVar("badToys", "Number of bad Toys", badToys));
-
       out.SetAltDistribution(new RooStats::SamplingDistribution("alt", "Alt dist", values, weights, tsTitle()));
-      out.SetAltDetailedOutput(new RooDataSet("altDetails", "altDetails", altDetails));
-      out.GetAltDetailedOutput()->add(altDetails);
+      out.SetAltDetailedOutput(altToyDS);
+      out.SetAltPValue(pAlt_toys().first); // technically set above
+      out.SetAltPValueError(pAlt_toys().second); // overrides binomial error used in SamplingDistribution::IntegralAndError
    } else {
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       out.fAlternatePValue = pAlt_asymp().first;
