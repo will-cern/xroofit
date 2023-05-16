@@ -7998,6 +7998,35 @@ void xRooNode::Draw(Option_t *opt)
       // do this to get bin labels
       h->GetXaxis()->SetName("xaxis"); // WARNING -- this messes up anywhere we GetXaxis()->GetName()
    }
+
+    if (rar->InheritsFrom("RooAbsPdf") && !(rar->InheritsFrom("RooRealSumPdf") || rar->InheritsFrom("RooAddPdf"))) {
+        // append parameter values to title if has such
+        RooArgSet s;
+        rar->leafNodeServerList(&s);
+        if (v)
+            s.remove(*dynamic_cast<RooAbsArg *>(v));
+        if (!s.empty()) {
+            TString ss = h->GetTitle();
+            ss += " [";
+            bool first = true;
+            for (auto _p : s) {
+                auto _v = dynamic_cast<RooRealVar *>(_p);
+                if (!_v)
+                    continue;
+                if (!first)
+                    ss += ",";
+                first = false;
+                ss += TString::Format("%s=%g", strlen(_p->GetTitle()) ? _p->GetTitle() : _p->GetName(), _v->getVal());
+                if (_v->hasError()) {
+                    ss += TString::Format("#pm %g",_v->getError());
+                }
+            }
+            ss += "]";
+            h->SetTitle(ss);
+        }
+    }
+
+
    if (!hasSame) {
       if (obs().find(vv->GetName())) {
          gPad->SetGrid(0, 0);
@@ -8358,31 +8387,6 @@ void xRooNode::Draw(Option_t *opt)
       if (errHist) {
          addLegendEntry(errHist, strlen(errHist->GetTitle()) ? errHist->GetTitle() : GetName(), "fl");
       } else {
-         if (rar->InheritsFrom("RooAbsPdf") &&
-             !(rar->InheritsFrom("RooRealSumPdf") || rar->InheritsFrom("RooAddPdf"))) {
-            // append parameter values to title if has such
-            RooArgSet s;
-            rar->leafNodeServerList(&s);
-            if (v)
-               s.remove(*dynamic_cast<RooAbsArg *>(v));
-            if (!s.empty()) {
-               TString ss = h->GetTitle();
-               ss += " [";
-               bool first = true;
-               for (auto _p : s) {
-                  auto _v = dynamic_cast<RooAbsReal *>(_p);
-                  if (!_v)
-                     continue;
-                  if (!first)
-                     ss += ",";
-                  first = false;
-                  ss += TString::Format("%s=%g", strlen(_p->GetTitle()) ? _p->GetTitle() : _p->GetName(), _v->getVal());
-               }
-               ss += "]";
-               h->SetTitle(ss);
-            }
-         }
-
          addLegendEntry(h, strlen(h->GetTitle()) ? h->GetTitle() : GetName(), "l");
       }
    }
