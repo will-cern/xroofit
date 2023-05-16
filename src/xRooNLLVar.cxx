@@ -711,17 +711,19 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::sha
 
    auto _globs = fGlobs; // done to keep globs alive while NLL might still be alive.
 
-   if (fGlobs && !(fGlobs->empty() && !_data.second) &&
-       _data.first && fGlobs != _data.second) { // second condition allows for no globs being a nullptr, third allow globs to remain if nullifying
+   auto _dglobs = (_data.second) ? _data.second : std::shared_ptr<const RooAbsCollection>(_data.first->getGlobalObservables(),[](const RooAbsCollection*){});
+
+   if (fGlobs && !(fGlobs->empty() && !_dglobs) &&
+       _data.first && fGlobs != _dglobs) { // second condition allows for no globs being a nullptr, third allow globs to remain if nullifying
                       // data
-      if (!_data.second)
+      if (!_dglobs)
          throw std::runtime_error("Missing globs");
       // ignore 'extra' globs
       RooArgSet s;
       s.add(*fGlobs);
       std::unique_ptr<RooAbsCollection> _actualGlobs(fPdf->getObservables(s));
       RooArgSet s2;
-      s2.add(*_data.second);
+      s2.add(*_dglobs);
       std::unique_ptr<RooAbsCollection> _actualGlobs2(fPdf->getObservables(s2));
       if (!_actualGlobs->equals(*_actualGlobs2)) {
          RooArgSet rC;
@@ -734,7 +736,7 @@ Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::sha
          TString l = (!lC.empty()) ? lC.contentsString() : "";
          throw std::runtime_error(TString::Format("globs mismatch: adding %s removing %s", r.Data(), l.Data()));
       }
-      fGlobs = _data.second;
+      fGlobs = _dglobs;
    }
 
    if (!std::shared_ptr<RooAbsReal>::get()) {

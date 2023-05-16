@@ -4386,14 +4386,8 @@ xRooNode xRooNode::consts() const
 {
    xRooNode out(".consts", std::make_shared<RooArgList>(), *this);
    out.get<RooArgList>()->setName((GetPath() + ".consts").c_str());
-   for (auto o : poi()) {
-      if (o->get<RooAbsArg>()->getAttribute("Constant")) {
-         out.get<RooArgList>()->add(*o->get<RooAbsArg>());
-         out.emplace_back(o);
-      }
-   }
-   for (auto o : np()) {
-      if (o->get<RooAbsArg>()->getAttribute("Constant")) {
+   for (auto o : pars()) {
+      if (o->get<RooAbsArg>()->getAttribute("Constant") || o->get<RooConstVar>()) {
          out.get<RooArgList>()->add(*o->get<RooAbsArg>());
          out.emplace_back(o);
       }
@@ -4405,14 +4399,8 @@ xRooNode xRooNode::floats() const
 {
    xRooNode out(".floats", std::make_shared<RooArgList>(), *this);
    out.get<RooArgList>()->setName((GetPath() + ".floats").c_str());
-   for (auto o : poi()) {
-      if (!o->get<RooAbsArg>()->getAttribute("Constant")) {
-         out.get<RooArgList>()->add(*o->get<RooAbsArg>());
-         out.emplace_back(o);
-      }
-   }
-   for (auto o : np()) {
-      if (!o->get<RooAbsArg>()->getAttribute("Constant")) {
+   for (auto o : pars()) {
+      if (!o->get<RooAbsArg>()->getAttribute("Constant") && !o->get<RooConstVar>()) {
          out.get<RooArgList>()->add(*o->get<RooAbsArg>());
          out.emplace_back(o);
       }
@@ -4504,7 +4492,14 @@ xRooNode xRooNode::vars() const
          out.emplace_back(std::make_shared<xRooNode>(*a, *this));
          out.get<RooArgList>()->add(*a);
       }
-      if (auto _globs = find(".globs"); _globs && _globs->get<RooAbsCollection>()) {
+      if (auto _dglobs = p2->getGlobalObservables()) {
+         for (auto &a : *_dglobs) {
+            a->setAttribute("obs");
+            a->setAttribute("global");
+            out.emplace_back(std::make_shared<xRooNode>(*a, *this));
+            out.get<RooArgList>()->add(*a);
+         }
+      } else if (auto _globs = find(".globs"); _globs && _globs->get<RooAbsCollection>()) {
          for (auto &a : *_globs->get<RooAbsCollection>()) {
             a->setAttribute("obs");
             a->setAttribute("global");
@@ -4529,7 +4524,7 @@ xRooNode xRooNode::vars() const
             }
          } else if (fParent) {
             // note: this is slow in large workspaces ... too many obs to look through?
-            std::unique_ptr<RooAbsCollection> _globs3(fParent->obs().argList().selectByAttrib("global", true));
+            std::unique_ptr<RooAbsCollection> _globs3(fParent->obs().get<RooArgList>()->selectByAttrib("global", true));
             // std::unique_ptr<RooAbsCollection> _globs(_ws->allVars().selectByAttrib("global",true)); - tried this to
             // be quicker but it wasn't
             for (auto &_g : *_globs3) {
@@ -5647,8 +5642,10 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
          auto asi = xRooFit::generateFrom(*get<RooAbsPdf>(),
                                           *(fitResult().get<RooFitResult>()), true);
          _d = std::make_shared<xRooNode>(asi.first, *this);
-         _d->emplace_back(
-            std::make_shared<xRooNode>(".globs", std::const_pointer_cast<RooAbsCollection>(asi.second), *_d));
+         if (asi.second) {
+            _d->emplace_back(
+                    std::make_shared<xRooNode>(".globs", std::const_pointer_cast<RooAbsCollection>(asi.second), *_d));
+         }
       } else if (!_d) {
          throw std::runtime_error(TString::Format("Cannot find dataset %s", _data.GetName()));
       }
