@@ -62,6 +62,8 @@
 #include "TRootBrowser.h"
 #include "TGFileBrowser.h"
 
+#include "RooStats/HypoTestInverterResult.h"
+
 RooWorkspace* GETWS(RooAbsArg * a) { return a->workspace(); }
 const auto& GETWSSETS(RooWorkspace * w){ return  w->sets(); }
 auto GETWSSNAPSHOTS(RooWorkspace * w){ return  w->getSnapshots(); }
@@ -1004,8 +1006,29 @@ const char *xRooNode::GetIconName() const
          return "xRooFitRooConstVar";*/
          return "TMethodBrowsable-leaf";
       }
+      if (o->InheritsFrom("RooStats::HypoTestInverterResult")) {
+         if (!gClient->GetMimeTypeList()->GetIcon("xRooFitScanStyle", true)) {
+            gClient->GetMimeTypeList()->AddType("xRooFitScanStyle", "xRooFitScanStyle", "f2_s.xpm",
+                                                "f2_s.xpm", "->Browse()");
+         }
+         return "xRooFitScanStyle";
+      }
+      if (o->InheritsFrom("RooStats::HypoTestResult")) {
+         if (!gClient->GetMimeTypeList()->GetIcon("xRooFitTestStyle", true)) {
+            gClient->GetMimeTypeList()->AddType("xRooFitTestStyle", "xRooFitTestStyle", "diamond.xpm",
+                                                "diamond.xpm", "->Browse()");
+         }
+         return "xRooFitTestStyle";
+      }
       if (o->InheritsFrom("RooStats::HistFactory::FlexibleInterpVar"))
          return "TBranchElement-folder";
+      if (o->InheritsFrom("RooAbsPdf")) {
+         if (!gClient->GetMimeTypeList()->GetIcon("xRooFitPDFStyle", true)) {
+            gClient->GetMimeTypeList()->AddType("xRooFitPDFStyle", "xRooFitPDFStyle", "pdf.xpm",
+                                                "pdf.xpm", "->Browse()");
+         }
+         return "xRooFitPDFStyle";
+      }
       if (auto a = dynamic_cast<RooAbsReal *>(o); a) {
          if (auto _ax = GetXaxis();
              _ax && (a->isBinnedDistribution(*dynamic_cast<RooAbsArg *>(_ax->GetParent())) ||
@@ -3849,8 +3872,10 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
             }
             for (auto &aa : setNames)
                ws()->removeSet(aa.c_str());
-
             out_arg = _ws->arg(a->GetName());
+            if (GETWS(out_arg) != _ws) { // seems that when objects imported their ws isn't set
+               out_arg->setWorkspace(*_ws);
+            }
          }
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          return std::shared_ptr<TObject>(out_arg, [](TObject *) {});
@@ -4280,6 +4305,14 @@ xRooNode &xRooNode::browse()
               emplace_back(c);
           }
       }*/
+   } else if( auto ir = get<RooStats::HypoTestInverterResult>() ) {
+      xRooNode tests;
+      for(int i=0;i<ir->ArraySize();i++) {
+         tests.push_back(std::make_shared<xRooNode>(TString::Format("%g",ir->GetXValue(i)),*ir->GetResult(i),*this));
+      }
+//      std::sort(tests.begin(),tests.end(),[](auto &left, auto &right) {
+//          return (TString((*left)->GetName()).Atof() < TString((*right)->GetName()).Atof()); });
+      appendChildren(tests);
    }
 
    // clear anything that has fTimes = 0 still
@@ -4697,37 +4730,15 @@ xRooNode xRooNode::components() const
                out.emplace_back(std::make_shared<xRooNode>(fr->GetName(), *fr, *this));
             }
             out.back()->fFolder = "!fits";
-         } /*else if(auto t = dynamic_cast<TTree*>(o); t) {
-             if (!t->GetUserInfo()) continue;
-             if (t->GetUserInfo()->FindObject("fitConfig")) {
-                 auto frt = getObject<RooFitResultTree>(t->GetName());
-                 if (!frt) {
-                     frt = const_cast<xRooNode *>(this)->acquire<RooFitResultTree>(t);
-                 }
-                 if (frt) {
-                     if (auto _pdf = frt->GetPdf()) {
-                         out.emplace_back(std::make_shared<xRooNode>(frt, xRooNode(*_pdf, *this)));
-                         out.back()->fFolder = "!fits";
-                     }
-                 }
-             } else if(t->GetUserInfo()->FindObject("rootVersion")) {
-                 // assume its a RooDataTree until we have better way to identify
-                 auto rdt = getObject<RooDataTree>(t->GetName());
-                 if (!rdt) {
-                     rdt = const_cast<xRooNode *>(this)->acquire<RooDataTree>(t);
-                 }
-                 if (rdt) {
-                     if (auto _pdf = rdt->GetPdf()) {
-                         out.emplace_back(std::make_shared<xRooNode>(rdt, xRooNode(*_pdf, *this)));
-                         out.back()->fFolder = "!datasets";
-                     }
-                 }
-             }
-             // TODO: Handle other tree type?
-         }*/
-         else {
+         } else {
             out.emplace_back(std::make_shared<xRooNode>(*o, *this));
-            out.back()->fFolder = "!objects";
+            if(strcmp(out.back()->get()->ClassName(),"TStyle")==0) {
+               out.back()->fFolder = "!styles";
+            }else if(strcmp(out.back()->get()->ClassName(),"RooStats::HypoTestInverterResult")==0) {
+               out.back()->fFolder = "!scans";
+            } else {
+               out.back()->fFolder = "!objects";
+            }
          }
       }
       for (auto &[k, v] : GETWSSETS(p5)) {
@@ -4857,16 +4868,22 @@ xRooNode xRooNode::coefs() const
          }
       } else if (auto p2 = parent->get<RooAddPdf>(); p2) {
          std::size_t i = 0;
-         for (auto &o : p2->pdfList()) {
-            if (o == get()) {
-               if (i>=p2->coefList().size()) {
-                  isResidual = true;
-                  coefs.add(p2->coefList());
-               } else {
-                  coefs.add(*p2->coefList().at(i));
+         if(p2->coefList().empty()) {
+            // this can happen if all pdfs are extended then the coef is effectively the
+            // expected number of events
+            // TODO: test behaviour of xRooNode under this scenario (are histograms correct?)
+         } else {
+            for (auto &o: p2->pdfList()) {
+               if (o == get()) {
+                  if (i >= p2->coefList().size()) {
+                     isResidual = true;
+                     coefs.add(p2->coefList());
+                  } else {
+                     coefs.add(*p2->coefList().at(i));
+                  }
                }
+               i++;
             }
-            i++;
          }
       }
    }
@@ -5981,8 +5998,9 @@ public:
       : RooAbsPdf(Form("exp_%s", f.GetName())), fFunc("func", "func", this, f), fCoef("coef", "coef", this),
         fExpPdf("expPdf","expPdf",this)
    {
+      // don't treat pdf as extended if it has a coefficient! RooAddPdf doesn't extend them unless no coefs for any (and all are extendable)
       if (coef) { fCoef.setArg(*coef); }
-      if (expPdf && expPdf->canBeExtended()) { fExpPdf.setArg(*expPdf); }
+      else if (expPdf && expPdf->canBeExtended()) { fExpPdf.setArg(*expPdf); }
       else if(auto _p = dynamic_cast<RooAbsPdf*>(&f); _p && _p->canBeExtended()) {
          fExpPdf.setArg(f); // using self for expectation
       }
@@ -6015,7 +6033,101 @@ public:
    Double_t getSimplePropagatedError(const RooFitResult &fr, const RooArgSet &nset_in) const
    {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 28, 00)
-      return getPropagatedError(fr,nset_in); // method was improved in 6.28 so use this instead
+      double oo = getPropagatedError(fr,nset_in); // method was improved in 6.28 so use this instead
+      if(std::isnan(oo)) {
+         // may be consequence of zero uncerts
+         // Calling getParameters() might be costly, but necessary to get the right
+         // parameters in the RooAbsReal. The RooFitResult only stores snapshots.
+         RooArgSet allParamsInAbsReal;
+         getParameters(&nset_in, allParamsInAbsReal);
+
+         RooArgList paramList;
+         for(auto * rrvFitRes : static_range_cast<RooRealVar*>(fr.floatParsFinal())) {
+
+            auto rrvInAbsReal = static_cast<RooRealVar const*>(allParamsInAbsReal.find(*rrvFitRes));
+
+            // If this RooAbsReal is a RooRealVar in the fit result, we don't need to
+            // propagate anything and can just return the error in the fit result
+            if(rrvFitRes->namePtr() == namePtr()) return rrvFitRes->getError();
+
+            // Strip out parameters with zero error
+            if (rrvFitRes->getError() <= std::abs(rrvFitRes->getVal()) * std::numeric_limits<double>::epsilon()) continue;
+
+            // Ignore parameters in the fit result that this RooAbsReal doesn't depend on
+            if(!rrvInAbsReal) continue;
+
+            // Checking for float equality is a bad. We check if the values are
+            // negligibly far away from each other, relative to the uncertainty.
+            if(std::abs(rrvInAbsReal->getVal() - rrvFitRes->getVal()) > 0.01 * rrvFitRes->getError()) {
+               std::stringstream errMsg;
+               errMsg << "RooAbsReal::getPropagatedError(): the parameters of the RooAbsReal don't have"
+                      << " the same values as in the fit result! The logic of getPropagatedError is broken in this case.";
+
+               throw std::runtime_error(errMsg.str());
+            }
+
+            paramList.add(*rrvInAbsReal);
+         }
+
+         std::vector<double> plusVar;
+         std::vector<double> minusVar;
+         plusVar.reserve(paramList.size());
+         minusVar.reserve(paramList.size());
+
+         // Create std::vector of plus,minus variations for each parameter
+         TMatrixDSym V(paramList.size() == fr.floatParsFinal().size() ?
+                       fr.covarianceMatrix() :
+                       fr.reducedCovarianceMatrix(paramList)) ;
+
+         for (Int_t ivar=0 ; ivar<paramList.getSize() ; ivar++) {
+
+            auto& rrv = static_cast<RooRealVar&>(paramList[ivar]);
+
+            double cenVal = rrv.getVal() ;
+            double errVal = sqrt(V(ivar,ivar)) ;
+
+            // Make Plus variation
+            rrv.setVal(cenVal+errVal) ;
+            plusVar.push_back(getVal(nset_in)) ;
+
+            // Make Minus variation
+            rrv.setVal(cenVal-errVal) ;
+            minusVar.push_back(getVal(nset_in)) ;
+
+            rrv.setVal(cenVal) ;
+         }
+
+         // Re-evaluate this RooAbsReal with the central parameters just to be
+         // extra-safe that a call to `getPropagatedError()` doesn't change any state.
+         // It should not be necessarry because thanks to the dirty flag propagation
+         // the RooAbsReal is re-evaluated anyway the next time getVal() is called.
+         // Still there are imaginable corner cases where it would not be triggered,
+         // for example if the user changes the RooFit operation more after the error
+         // propagation.
+         getVal(nset_in);
+
+         TMatrixDSym C(paramList.getSize()) ;
+         std::vector<double> errVec(paramList.size()) ;
+         for (int i=0 ; i<paramList.getSize() ; i++) {
+            errVec[i] = std::sqrt(V(i,i)) ;
+            for (int j=i ; j<paramList.getSize() ; j++) {
+               C(i,j) = V(i,j) / std::sqrt(V(i,i)*V(j,j));
+               C(j,i) = C(i,j) ;
+            }
+         }
+
+         // Make std::vector of variations
+         TVectorD F(plusVar.size()) ;
+         for (unsigned int j=0 ; j<plusVar.size() ; j++) {
+            F[j] = (plusVar[j]-minusVar[j])/2 ;
+         }
+
+         // Calculate error in linear approximation from variations and correlation coefficient
+         double sum = F*(C*F) ;
+
+         return sqrt(sum) ;
+      }
+      return oo;
 #endif
 
       // Strip out parameters with zero error
@@ -6657,6 +6769,11 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          // pdfs of samples embedded in a sumpdf (aka have a coef) will convert their density value to a content
          needBinWidth = true;
       }
+
+      bool scaleExpected = (p && p->canBeExtended() && _coefs.empty());
+      // Note about above: if pdf has coeficients then its embedded in a RooAddPdf that has coefs defined ...
+      // in this case we should *not* scale by expected, since the coefs become the scaling instead
+
       std::unique_ptr<RooArgSet> snap(normSet.snapshot());
       TStopwatch timeIt;
       std::vector<double> lapTimes;
@@ -6679,7 +6796,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          if (needBinWidth) {
             r *= h->GetBinWidth(i);
          }
-         if (p && p->canBeExtended()) {
+         if (scaleExpected) {
             // std::cout << r << " exp = " << p->expectedEvents(normSet) << " for normRange " << (p->normRange() ? p->normRange() : "null") << std::endl;
             // p->Print();rar->Print();
             r *= (p->expectedEvents(normSet));
@@ -7028,6 +7145,14 @@ void xRooNode::Draw(Option_t *opt)
    if (!get() && !IsFolder() && !sOpt2.Contains("x="))
       return;
 
+   if( auto ir = get<RooStats::HypoTestInverterResult>() ) {
+      xRooHypoSpace(ir).Draw(opt);
+      return;
+   } else if(auto tr = get<RooStats::HypoTestResult>()) {
+      xRooNLLVar::xRooHypoPoint(std::dynamic_pointer_cast<RooStats::HypoTestResult>(fComp)).Draw(opt);
+      return;
+   }
+
    if (sOpt2=="pcls" && get<RooRealVar>() && fParent && fParent->get<RooAbsPdf>()) {
       // use the first selected dataset
       auto _dsets = fParent->datasets();
@@ -7041,6 +7166,10 @@ void xRooNode::Draw(Option_t *opt)
       }
       auto hs = fParent->nll(dsetName.Data()).hypoSpace(get<RooRealVar>()->GetName());
       hs.limits("cls visualize");
+      hs.SetName(TUUID().AsString());
+      if(ws()) {
+         ws()->import( *hs.result() );
+      }
       return;
    }
 
@@ -8039,6 +8168,9 @@ void xRooNode::Draw(Option_t *opt)
                                                                           std::numeric_limits<double>::infinity()))))
                      ? ""
                      : "LF2";
+   if (auto d = dynamic_cast<RooHistFunc*>(rar); d && !d->isBinnedDistribution(*vv)) {
+      dOpt = "LF2"; // hist func is interpolated, so draw it as such
+   }
    if (dOpt == "LF2" && !components().empty()) {
       // check if all components of dOpt are "Hist" type (CMS model support)
       // if so then dOpt="";
