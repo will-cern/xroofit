@@ -1068,17 +1068,22 @@ std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> 
    return fData;
 }
 
-xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr) : hypoTestResult(htr) {
+xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr, const RooAbsCollection* _coords) : hypoTestResult(htr) {
    if(hypoTestResult) {
-      // load coords from the nullDist globs list
-      coords = std::shared_ptr<RooAbsCollection>(hypoTestResult->GetNullDetailedOutput()->getGlobalObservables()->snapshot());
       // load the pllType
       fPllType = xRooFit::Asymptotics::PLLType(hypoTestResult->GetFitInfo()->getGlobalObservables()->getCatIndex("pllType"));
       // load the toys
       auto toys = hypoTestResult->GetNullDetailedOutput();
-      for(int i=0;i<toys->numEntries();i++) {
-         auto toy = toys->get(i);
-         nullToys.emplace_back(std::make_tuple(int(toy->getRealValue("seed")),toy->getRealValue("ts"),toys->weight()));
+      if(toys) {
+         // load coords from the nullDist globs list
+         if(toys->getGlobalObservables()) {
+            coords = std::shared_ptr<RooAbsCollection>(toys->getGlobalObservables()->snapshot());
+         }
+         for (int i = 0; i < toys->numEntries(); i++) {
+            auto toy = toys->get(i);
+            nullToys.emplace_back(
+                    std::make_tuple(int(toy->getRealValue("seed")), toy->getRealValue("ts"), toys->weight()));
+         }
       }
       toys = hypoTestResult->GetAltDetailedOutput();
       if(toys) {
@@ -1090,6 +1095,7 @@ xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResul
       }
 
    }
+   if(!coords && _coords) coords.reset(_coords->snapshot());
 }
 
 std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(bool readOnly)
@@ -1229,16 +1235,22 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
 
 std::pair<double, double> xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
 {
-   if (!ufit(readOnly) || allowedStatusCodes.find(ufit(readOnly)->status()) == allowedStatusCodes.end())
+   auto _ufit = ufit(readOnly);
+   if (!_ufit) {
+      if(hypoTestResult) return std::make_pair( hypoTestResult->GetTestStatisticData(), 0 );
       return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+   }
+   if (allowedStatusCodes.find(_ufit->status()) == allowedStatusCodes.end()) {
+      return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+   }
    auto cFactor = (fPllType==xRooFit::Asymptotics::TwoSided) ? 1. : xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
    if (cFactor == 0)
       return std::make_pair(0, 0);
    if (!cfit_null(readOnly) || allowedStatusCodes.find(cfit_null(readOnly)->status()) == allowedStatusCodes.end())
       return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
    // std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
-   return std::make_pair(2. * cFactor * (cfit_null(readOnly)->minNll() - ufit(readOnly)->minNll()),
-                         2. * cFactor * sqrt(pow(cfit_null(readOnly)->edm(), 2) + pow(ufit(readOnly)->edm(), 2)));
+   return std::make_pair(2. * cFactor * (cfit_null(readOnly)->minNll() - _ufit->minNll()),
+                         2. * cFactor * sqrt(pow(cfit_null(readOnly)->edm(), 2) + pow(_ufit->edm(), 2)));
    // return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
 }
 

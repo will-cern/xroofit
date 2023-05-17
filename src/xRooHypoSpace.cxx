@@ -37,29 +37,46 @@
 
 BEGIN_XROOFIT_NAMESPACE
 
-// bool xRooNLLVar::xRooHypoSpace::AddWorkspace(const char* wsFilename, const char* extraPars){
-//
-//     auto ws = std::make_shared<xRooNode>(wsFilename);
-//
-//     ws->browse();
-//     std::set<std::shared_ptr<xRooNode>> models;
-//     for(auto n : *ws) {
-//         if (n->fFolder == "!models") models.insert(n);
-//     }
-//     if (models.size()!=1) {
-//         throw std::runtime_error("More than one model in workspace, use AddModel instead");
-//     }
-//
-//     auto out =  AddModel(*models.begin(),extraPars);
-//     if (out) {
-//         fWorkspaces.insert(ws); // keep ws open
-//     }
-//
-// }
 
 xRooNLLVar::xRooHypoSpace::xRooHypoSpace(const char *name, const char *title)
    : TNamed(name, title), fPars(std::make_shared<RooArgSet>())
 {
+}
+
+xRooNLLVar::xRooHypoSpace::xRooHypoSpace(const RooStats::HypoTestInverterResult* result) :
+    TNamed(), fPars(std::make_shared<RooArgSet>()) {
+    if(!result) return;
+
+    SetNameTitle(result->GetName(),result->GetTitle());
+
+    fPars->addClone(*std::unique_ptr<RooAbsCollection>(result->GetParameters()));
+    double spaceSize = 1;
+    for(auto p : *fPars) {
+        auto v = dynamic_cast<RooRealVar*>(p);
+        if(!v) continue;
+        spaceSize *= (v->getMax()-v->getMin());
+    }
+    for(int i = 0; i < result->ArraySize(); i++) {
+        auto point = result->GetResult(i);
+        double xVal = result->GetXValue(i);
+        double ssize = spaceSize;
+        for(auto p : *fPars) {
+            auto v = dynamic_cast<RooRealVar*>(p);
+            if(!v) continue;
+            ssize /= (v->getMax()-v->getMin());
+            double remain = std::fmod(xVal,ssize);
+            v->setVal( (xVal-remain) / ssize);
+            xVal = remain;
+        }
+        emplace_back( xRooHypoPoint(std::make_shared<RooStats::HypoTestResult>(*point),fPars.get()) );
+    }
+    // add any pars we might have missed
+   for(auto& p : *this) {
+      for(auto a : *p.coords) {
+         if(!fPars->find(a->GetName())) fPars->addClone(*a);
+      }
+   }
+
 }
 
 std::shared_ptr<xRooNode> xRooNLLVar::xRooHypoSpace::pdf(const char *parValues) const
@@ -251,13 +268,13 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
       out[TString::Format("%d", nSigma).Data()] = matchPrecision(lim);
    }
 
-   // don't do the observed limit if all the NLL datas are generated
+   // don't do the observed limit if all the NLL datas are *EXPECTED* generated
    bool doObs = true;
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
    bool allGen = true;
    for (auto &[pdf, nll] : fNlls) {
       auto _d = dynamic_cast<RooDataSet *>(nll->data());
-      if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult")) {
+      if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult") || !_d->weightVar()->getAttribute("expected")) {
          allGen = false;
          break;
       }
@@ -1300,10 +1317,15 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
       if (!sOpt.Contains("same") && gPad) {
          gPad->Clear();
       }
-      if(gra) gra->DrawClone("A")->SetBit(kCanDelete);
+      if(gra) {
+         gra->DrawClone("A")->SetBit(kCanDelete);
+      }
       if (!sOpt.Contains("same") && gPad) {
-         gPad->SetGrid(0, 0);
-         gPad->SetLogy(1);
+//         auto mg = static_cast<TMultiGraph*>(gPad->GetPrimitive(gra->GetName()));
+//         mg->GetHistogram()->SetMinimum(1e-9);
+//         mg->GetHistogram()->GetYaxis()->SetRangeUser(1e-9,1);
+//         gPad->SetGrid(0, 0);
+//         gPad->SetLogy(1);
       }
 
       gSystem->ProcessEvents();

@@ -129,7 +129,7 @@ public:
 
    class xRooHypoPoint {
    public:
-      xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr = nullptr);
+      xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr = nullptr, const RooAbsCollection* _coords = nullptr);
       static std::set<int> allowedStatusCodes;
       void Print();
       void Draw(Option_t *opt = "");
@@ -247,8 +247,8 @@ public:
    public:
       friend class xRooNLLVar;
       xRooHypoSpace(const char *name = "", const char *title = "");
+      xRooHypoSpace(const RooStats::HypoTestInverterResult* result);
 
-      bool AddWorkspace(const char *wsFilename, const char *extraPars = "");
 
       bool AddModel(const xRooNode &pdf, const char *validity = "");
 
@@ -306,8 +306,6 @@ public:
       std::shared_ptr<RooArgSet> fPars;
 
       std::map<std::shared_ptr<xRooNode>, std::shared_ptr<xRooNLLVar>> fNlls; // existing NLL functions of added pdfs;
-
-      std::set<std::shared_ptr<xRooNode>> fWorkspaces; // added workspaces (kept open)
 
       std::set<std::pair<std::shared_ptr<RooArgList>, std::shared_ptr<xRooNode>>> fPdfs;
    };
