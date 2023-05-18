@@ -267,6 +267,8 @@ public:
    xRooNode datasets()
       const; // datasets corresponding to this pdf (parent nodes that do observable selections automatically applied)
 
+
+   xRooNode Replace(const xRooNode& node); // use to replace a node in the tree at the location of this node
    xRooNode Remove(const xRooNode &child);
    xRooNode
    Add(const xRooNode &child,

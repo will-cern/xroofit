@@ -61,6 +61,8 @@
 #include "RooProdPdf.h"
 #include "TRootBrowser.h"
 #include "TGFileBrowser.h"
+#include "RooExtendPdf.h"
+#include "RooExtendedBinding.h"
 
 #include "RooStats/HypoTestInverterResult.h"
 
@@ -605,6 +607,12 @@ void xRooNode::Browse(TBrowser *b)
             ->Connect("Checked(TObject *, Bool_t)", ClassName(), v.get(), "Checked(TObject *, Bool_t)");
          if (auto _fr = v->get<RooFitResult>(); _fr && _fr->status())
             v->GetTreeItem(b)->SetColor(_fr->numStatusHistory() ? kRed : kBlue);
+      }
+      if ((v->fFolder=="!np"||v->fFolder=="!poi")) {
+         if(v->get<RooAbsArg>()->getAttribute("Constant")) {
+            v->GetTreeItem(b)->SetColor(kGray);
+         }
+         else v->GetTreeItem(b)->ClearColor();
       }
       // v.fBrowsers.insert(b);
    }
@@ -1445,12 +1453,75 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
       return *this;
    }
 
-   if (auto p = get<RooAddPdf>(); p && child.get<RooAbsPdf>()) {
-      auto out = acquire(child.fComp);
-      const_cast<RooArgList&>(p->coefList()).add(*acquire2<RooAbsArg,RooRealVar>("1", "1", 1));
-      const_cast<RooArgList&>(p->pdfList()).add(*std::dynamic_pointer_cast<RooAbsReal>(out));
-      sterilize();
-      return xRooNode(out, *this);
+   if (auto p = get<RooAddPdf>(); p) {
+      if ((child.get<RooAbsPdf>() || (!child.fComp && getObject<RooAbsPdf>(child.GetName())))) {
+         auto out = (child.fComp) ? acquire(child.fComp) : getObject<RooAbsArg>(child.GetName());
+         // don't add a coef if in 'all-extended' mode and this pdf is extendable
+         auto _pdf = std::dynamic_pointer_cast<RooAbsPdf>(out);
+         if (!_pdf) {
+            throw std::runtime_error("Something went wrong with pdf acquisition");
+         }
+
+         if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue *>(_ax->GetParent())) {
+            auto _p = _pdf;
+            if (auto _boundaries = std::unique_ptr<std::list<double>>(_p->binBoundaries(
+                       *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), -std::numeric_limits<double>::infinity(),
+                       std::numeric_limits<double>::infinity()));
+                    !_boundaries && _ax->GetNbins() > 0 && _p->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 24, 00)
+               Warning("Add", "Adding unbinned pdf %s to binned %s - will wrap with RooBinSamplingPdf(...)",
+                       _p->GetName(), GetName());
+               _p = acquireNew<RooBinSamplingPdf>(TString::Format("%s_binned", _p->GetName()), _p->GetTitle(),
+                                                  *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), *_p);
+               _p->setStringAttribute("alias", std::dynamic_pointer_cast<RooAbsArg>(out)->getStringAttribute("alias"));
+               if (!_p->getStringAttribute("alias"))
+                  _p->setStringAttribute("alias", out->GetName());
+#else
+               throw std::runtime_error(
+                  "unsupported addition of unbinned pdf to binned model - please upgrade to at least ROOT 6.24");
+#endif
+               _pdf = _p;
+            }
+         }
+
+         if(!(_pdf->canBeExtended() && p->coefList().empty())) {
+            // if extended, use an extended binding as the coef
+            // otherwise e.g. if adding a RooRealSumPdf the stacked histograms will be above the
+            // actual pdf histogram because the pdf histogram is just normalized down
+            if(_pdf->canBeExtended()) {
+               // FIXME: ExtendedBinding needs the obs list passing to it ... should be fixed in RooFit
+               // until then, this will return "1" and so the pdf's histograms wont be normalized properly in relation to stacks of its comps
+               const_cast<RooArgList &>(p->coefList()).add(*acquireNew<RooExtendedBinding>(TString::Format("%s_extBind",_pdf->GetName()), TString::Format("Expected Events of %s",_pdf->GetTitle()), *_pdf));
+            } else {
+               const_cast<RooArgList &>(p->coefList()).add(*acquire2<RooAbsArg, RooRealVar>("1", "1", 1));
+            }
+         }
+         const_cast<RooArgList &>(p->pdfList()).add(*_pdf);
+         sterilize();
+         return xRooNode(*_pdf, *this);
+      } else if ((child.get<TH1>() || child.get<RooAbsReal>() || (!child.get() && getObject<RooAbsReal>(child.GetName()))) &&
+                 !child.get<RooAbsPdf>()) {
+         RooRealSumPdf *_pdf = nullptr;
+         bool tooMany(false);
+         for (auto &pp: factors()) {
+            if (auto _p = pp->get<RooRealSumPdf>(); _p) {
+               if (_pdf) {
+                  _pdf = nullptr;
+                  tooMany = true;
+                  break;
+               } // more than one!
+               _pdf = _p;
+            }
+         }
+         if (_pdf) {
+            return xRooNode(*_pdf, *this).Add(child);
+         } else if (!tooMany) {
+            // create a RooRealSumPdf to hold the child
+            auto _sumpdf = Add(*acquireNew<RooRealSumPdf>(TString::Format("%s_samples",p->GetName()),TString::Format("%s samples",GetTitle()),RooArgList(),RooArgList(),true));
+            _sumpdf.get<RooAbsArg>()->setStringAttribute("alias","samples");
+            return _sumpdf.Add(child);
+         }
+      }
    }
 
    if (auto p = get<RooRealSumPdf>(); p) {
@@ -1538,6 +1609,47 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
                  _f->getAttribute("density") ? "densityhisto" : "histo", _f->GetName(), p->GetName());
       }
 
+      if (auto _p = std::dynamic_pointer_cast<RooAbsPdf>(out); _p) {
+         // adding a pdf to a RooRealSumPdf will replace it with a RooAddPdf and put the RooRealSumPdf inside that
+         // if pdf is extended will use in the "no coefficients" state, where the expectedEvents are taking from
+         // the pdf integrals
+         TString newName(_p->GetName());
+         newName.ReplaceAll("_samples","");
+         newName += "_components";
+         Warning("Add","converting samples to components");
+
+         if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue *>(_ax->GetParent())) {
+
+            if (auto _boundaries = std::unique_ptr<std::list<double>>(_p->binBoundaries(
+                       *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), -std::numeric_limits<double>::infinity(),
+                       std::numeric_limits<double>::infinity()));
+                    !_boundaries && _ax->GetNbins() > 0 && _p->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 24, 00)
+               Warning("Add", "Adding unbinned pdf %s to binned %s - will wrap with RooBinSamplingPdf(...)",
+                       _p->GetName(), GetName());
+               _p = acquireNew<RooBinSamplingPdf>(TString::Format("%s_binned", _p->GetName()), _p->GetTitle(),
+                                                  *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), *_p);
+               _p->setStringAttribute("alias", std::dynamic_pointer_cast<RooAbsArg>(out)->getStringAttribute("alias"));
+               if (!_p->getStringAttribute("alias"))
+                  _p->setStringAttribute("alias", out->GetName());
+#else
+               throw std::runtime_error(
+                  "unsupported addition of unbinned pdf to binned model - please upgrade to at least ROOT 6.24");
+#endif
+            }
+         }
+
+         // require to be extended to be in coefficient-free mode ...
+         // otherwise would lose the integral of the sumPdf (can't think of way to have a coef be the integral)
+         if (!_p->canBeExtended()) {
+            _p = acquireNew<RooExtendPdf>(TString::Format("%s_extended", _p->GetName()),_p->GetTitle(),*_p,*acquire2<RooAbsReal,RooRealVar>("1", "1", 1));
+         }
+
+         return *(Replace(*acquireNew<RooAddPdf>(newName, _p->GetTitle(),
+                                                 RooArgList(*p, *_p))).browse()[1]); // returns second node.
+
+      }
+
       if (auto _f = std::dynamic_pointer_cast<RooAbsReal>(out); _f) {
 
          // todo: if adding a pdf, should actually replace RooRealSumPdf with a RooAddPdf and put
@@ -1549,9 +1661,9 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             if (auto _boundaries = std::unique_ptr<std::list<double>>(_f->binBoundaries(
                    *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), -std::numeric_limits<double>::infinity(),
                    std::numeric_limits<double>::infinity()));
-                !_boundaries && _ax->GetNbins() > 0) {
+                !_boundaries && _ax->GetNbins() > 0 && _f->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 24, 00)
-               Warning("Add", "Adding unbinned function %s to binned %s - will wrap it in a RooBinSamplingPdf",
+               Warning("Add", "Adding unbinned function %s to binned %s - will wrap with RooRealSumPdf(RooBinSamplingPdf(...))",
                        _f->GetName(), GetName());
                auto sumPdf = acquireNew<RooRealSumPdf>(TString::Format("%s_pdfWrapper", _f->GetName()), _f->GetTitle(),
                                                        *_f, *acquire2<RooAbsArg,RooRealVar>("1", "1", 1), true);
@@ -1594,27 +1706,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
       // can "add" to a RooProdPdf provided trying to add a RooAbsReal not a RooAbsPdf and have a zero or 1
       // RooRealSumPdf child.convertForAcquisition(*this); - don't convert here because want generated objects named
       // after roorealsumpdf
-      if ((child.get<TH1>() || child.get<RooAbsReal>() || (!child.get() && getObject<RooAbsReal>(child.GetName()))) &&
-          !child.get<RooAbsPdf>()) {
-         RooRealSumPdf *_pdf = nullptr;
-         bool tooMany(false);
-         for (auto &pp : factors()) {
-            if (auto _p = pp->get<RooRealSumPdf>(); _p) {
-               if (_pdf) {
-                  _pdf = nullptr;
-                  tooMany = true;
-                  break;
-               } // more than one!
-               _pdf = _p;
-            }
-         }
-         if (_pdf) {
-            return xRooNode(*_pdf, *this).Add(child);
-         } else if (!tooMany) {
-            auto out = this->operator[]("samples")->Add(child);
-            return out;
-         }
-      } else if (child.get<RooAbsPdf>()) {
+      if (child.get<RooAbsPdf>() || (!child.get() && getObject<RooAbsPdf>(child.GetName()))) {
          // can add if 0 or 1 RooAddPdf ....
          RooAddPdf *_pdf = nullptr;
          bool tooMany(false);
@@ -1632,6 +1724,42 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             return xRooNode(*_pdf, *this).Add(child);
          } else if (!tooMany) {
             auto out = this->operator[]("components")->Add(child);
+            return out;
+         }
+      } else if ((child.get<TH1>() || child.get<RooAbsReal>() || (!child.get() && getObject<RooAbsReal>(child.GetName()))) &&
+          !child.get<RooAbsPdf>()) {
+         RooRealSumPdf *_pdf = nullptr;
+         RooAddPdf* _backup = nullptr;
+         bool tooMany(false);
+         for (auto &pp : factors()) {
+            if (auto _p = pp->get<RooRealSumPdf>(); _p) {
+               if (_pdf) {
+                  _pdf = nullptr;
+                  tooMany = true;
+                  break;
+               } // more than one!
+               _pdf = _p;
+            } else if(auto _p2 = pp->get<RooAddPdf>(); _p2) {
+               _backup = _p2;
+               for(auto& _pdfa : pp->components()) {
+                  if (auto _p3 = _pdfa->get<RooRealSumPdf>(); _p3) {
+                     if (_pdf) {
+                        _pdf = nullptr;
+                        tooMany = true;
+                        break;
+                     } // more than one!
+                     _pdf = _p3;
+                  }
+               }
+            }
+         }
+         if (_pdf) {
+            return xRooNode(*_pdf, *this).Add(child);
+         } else if(_backup) {
+            // added *INSIDE* the addPdf -- will create a RooRealSumPdf to hold it
+            return xRooNode(*_backup, *this).Add(child);
+         } else if (!tooMany) {
+            auto out = this->operator[]("samples")->Add(child);
             return out;
          }
       }
@@ -2249,6 +2377,18 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
                  mainChild().get() ? mainChild().get()->GetName() : get()->GetName(), o->ClassName(), o->GetName());
          return out;
       } else if (sOpt == "norm") {
+         if(TString(child.GetName()).Contains("[") && ws()) {
+            // assume factory method wanted
+            auto arg = ws()->factory(child.GetName());
+            if (arg) {
+               auto out = Multiply(*arg);
+               if (get())
+                  Info("Multiply", "Scaled %s by new norm factor %s",
+                       mainChild().get() ? mainChild().get()->GetName() : get()->GetName(), out->GetName());
+               return out;
+            }
+            throw std::runtime_error(TString::Format("Failed to create new normFactor %s",child.GetName()));
+         }
          auto out = Multiply(RooRealVar(child.GetName(), child.GetTitle(), 1, -1e-5, 100));
          if (get())
             Info("Multiply", "Scaled %s by new norm factor %s",
@@ -2540,6 +2680,44 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
    throw std::runtime_error(
       TString::Format("Cannot multiply %s by %s%s", GetPath().c_str(), child.GetName(),
                       (!child.get() && strlen(opt) == 0) ? " (forgot to specify factor type?)" : ""));
+}
+
+xRooNode xRooNode::Replace(const xRooNode& node) {
+
+   auto p5 = get<RooAbsArg>();
+   if (!p5) {
+      throw std::runtime_error("Only replacement of RooAbsArg is supported");
+   }
+   node.convertForAcquisition(*this,"func");
+   auto new_p = node.get<RooAbsArg>();
+   if (!new_p) {
+      throw std::runtime_error(TString::Format("Cannot replace with %s",node.GetName()));
+   }
+
+   std::set<RooAbsArg *> cl;
+   for (auto &arg : p5->clients()) {
+      cl.insert(arg);
+   }
+
+   // if multiple clients, see if only one client is in parentage route
+   // if so, then assume thats the only client we should replace in
+   if (cl.size() > 1) {
+      if (cl.count(fParent->get<RooAbsArg>()) > 0) {
+         cl.clear();
+         cl.insert(fParent->get<RooAbsArg>());
+      } else {
+         Warning("Replace", "Replacing %s in all clients", p5->GetName());
+      }
+   }
+
+   new_p->setAttribute(Form("ORIGNAME:%s", p5->GetName())); // used in redirectServers to say what this replaces
+   for (auto arg : cl) {
+      arg->redirectServers(RooArgSet(*new_p), false, true);
+   }
+
+
+   return node;
+
 }
 
 xRooNode xRooNode::Vary(const xRooNode &child)
@@ -5826,7 +6004,7 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
             }
          }
          return xRooNode(newPdf, fParent);
-      } else if (!components().empty()) {
+      } else if (get() && !components().empty()) {
          // create a new obj and remove non-matching components
          xRooNode out(std::shared_ptr<TObject>(get()->Clone(TString::Format("%s_reduced", get()->GetName()))), fParent);
          // go through components and remove any that don't match pattern
@@ -5875,8 +6053,9 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
 
       } else if (!get() || get<RooArgList>()) {
          // filter the children .... handle special case of filtering ".vars" with "x" option too
-         xRooNode out(get<RooArgList>() ? std::make_shared<RooArgList>() : std::shared_ptr<TObject>(nullptr), fParent);
+         xRooNode out(std::make_shared<RooArgList>(), fParent);
          size_t nobs = 0;
+         bool notAllArgs = false;
          bool isVars = (strcmp(GetName(),".vars")==0);
          for (auto c : *this) {
             nobs += (c->fFolder=="!robs" || c->fFolder=="!globs");
@@ -5889,10 +6068,15 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
             }
             if ((matchAny && !invert) || (!matchAny && invert)) {
                out.push_back(c);
-               if (auto l = out.get<RooArgList>()) {
-                  l->add(*c->get<RooAbsArg>());
+               if (auto a = c->get<RooAbsArg>()) {
+                  out.get<RooArgList>()->add(*a);
+               } else {
+                  notAllArgs = true;
                }
             }
+         }
+         if(notAllArgs) {
+            out.fComp.reset();
          }
          return out;
       }
@@ -6248,7 +6432,7 @@ void xRooNode::sterilize() const
          }
       }
       if (RooAbsPdf *p = dynamic_cast<RooAbsPdf *>(obj); p) {
-         p->setNormRange(nullptr);
+         p->setNormRange(p->normRange());
       }
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       if(RooAbsReal* p = dynamic_cast<RooAbsReal*>(obj); p) {
@@ -6330,22 +6514,25 @@ xRooNode xRooNode::histo(const xRooNode& vars, const xRooNode& fr, bool content,
          bool titleMatchName = true;
          std::map<std::string, TH1 *> histGroups;
          std::vector<TH1 *> hhs;
-         if (components().size() == 1) {
-            // support for CMS model case where has single component containing many coeffs
-            // will build stack by setting each coeff equal to 0 in turn, rebuilding the histogram
-            // the difference from the "full" histogram will be the component
+
+         // support for CMS model case where has single component containing many coeffs
+         // will build stack by setting each coeff equal to 0 in turn, rebuilding the histogram
+         // the difference from the "full" histogram will be the component
+         RooArgList cms_coefs;
+         if (!components().empty()) {
             auto comps = components()[0];
-            RooArgList coefs;
             for (auto &c : *comps) {
                if (c->fFolder == "!.coeffs")
-                  coefs.add(*c->get<RooAbsArg>());
+                  cms_coefs.add(*c->get<RooAbsArg>());
             }
-            if (!coefs.empty()) {
+         }
+
+         if (!cms_coefs.empty()) {
                RooRealVar zero("zero", "", 0);
                std::shared_ptr<TH1> prevHist((TH1 *)h->Clone());
-               for (auto c : coefs) {
+               for (auto c : cms_coefs) {
                   // seems I have to remake the function each time, as haven't figured out what cache needs clearing?
-                  std::unique_ptr<RooAbsReal> f(dynamic_cast<RooAbsReal *>(comps->get()->Clone("tmpCopy")));
+                  std::unique_ptr<RooAbsReal> f(dynamic_cast<RooAbsReal *>(components()[0]->get()->Clone("tmpCopy")));
                   zero.setAttribute(
                      Form("ORIGNAME:%s", c->GetName()));            // used in redirectServers to say what this replaces
                   f->redirectServers(RooArgSet(zero), false, true); // each time will replace one additional coef
@@ -6363,7 +6550,6 @@ xRooNode xRooNode::histo(const xRooNode& vars, const xRooNode& fr, bool content,
                   hhs.push_back(hh);
                   prevHist = nextHist;
                }
-            }
          } else {
             for (auto &samp : components()) {
                auto hh = samp->BuildHistogram(v,false,false,!v ? -1 : 1, !v ? -1 : 0,fr);
@@ -7413,6 +7599,7 @@ void xRooNode::Draw(Option_t *opt)
             if (hh == hAxis && pad && ymin == 0 && pad->GetLogy()) {
                ymin = 1e-2;
             }
+            if(ymin==0 && ymax > 10) ymin = 0.1; // adjust min so if user activates log scale it isn't bad
             hh->SetMinimum(ymin);
             hh->SetMaximum(ymax);
             hh->GetYaxis()->Set(1, ymin, ymax);
@@ -8342,22 +8529,24 @@ void xRooNode::Draw(Option_t *opt)
       bool titleMatchName = true;
       std::map<std::string, TH1 *> histGroups;
       std::vector<TH1 *> hhs;
-      if (rarNode->components().size() == 1) {
-         // support for CMS model case where has single component containing many coeffs
-         // will build stack by setting each coeff equal to 0 in turn, rebuilding the histogram
-         // the difference from the "full" histogram will be the component
+
+      // support for CMS model case where has single component containing many coeffs
+      // will build stack by setting each coeff equal to 0 in turn, rebuilding the histogram
+      // the difference from the "full" histogram will be the component
+      RooArgList cms_coefs;
+      if(!rarNode->components().empty()) {
          auto comps = rarNode->components()[0];
-         RooArgList coefs;
-         for (auto &c : *comps) {
+         for (auto &c: *comps) {
             if (c->fFolder == "!.coeffs")
-               coefs.add(*c->get<RooAbsArg>());
+               cms_coefs.add(*c->get<RooAbsArg>());
          }
-         if (!coefs.empty()) {
+      }
+      if (!cms_coefs.empty()) {
             RooRealVar zero("zero", "", 0);
             std::shared_ptr<TH1> prevHist((TH1 *)h->Clone());
-            for (auto c : coefs) {
+            for (auto c : cms_coefs) {
                // seems I have to remake the function each time, as haven't figured out what cache needs clearing?
-               std::unique_ptr<RooAbsReal> f(dynamic_cast<RooAbsReal *>(comps->get()->Clone("tmpCopy")));
+               std::unique_ptr<RooAbsReal> f(dynamic_cast<RooAbsReal *>(rarNode->components()[0]->get()->Clone("tmpCopy")));
                zero.setAttribute(
                   Form("ORIGNAME:%s", c->GetName()));            // used in redirectServers to say what this replaces
                f->redirectServers(RooArgSet(zero), false, true); // each time will replace one additional coef
@@ -8375,7 +8564,6 @@ void xRooNode::Draw(Option_t *opt)
                hhs.push_back(hh);
                prevHist = nextHist;
             }
-         }
       } else {
          for (auto &samp : rarNode->components()) {
             auto hh = samp->BuildHistogram(v);
@@ -8662,7 +8850,7 @@ void xRooNode::Draw(Option_t *opt)
    }*/
 
    // now draw selected datasets on top if this was a pdf
-   if (auto _pdf = get<RooAbsPdf>(); !hasSame && _pdf && _pdf->canBeExtended()) {
+   if (auto _pdf = get<RooAbsPdf>(); !hasSame && _pdf && _pdf->canBeExtended() && coefs().empty()) {
       auto _dsets = datasets();
       // bool _drawn=false;
       for (auto &d : _dsets) {
