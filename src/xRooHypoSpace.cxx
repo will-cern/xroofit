@@ -41,6 +41,9 @@ BEGIN_XROOFIT_NAMESPACE
 xRooNLLVar::xRooHypoSpace::xRooHypoSpace(const char *name, const char *title)
    : TNamed(name, title), fPars(std::make_shared<RooArgSet>())
 {
+   if(name==nullptr || strlen(name)==0) {
+      SetName(TUUID().AsString());
+   }
 }
 
 xRooNLLVar::xRooHypoSpace::xRooHypoSpace(const RooStats::HypoTestInverterResult* result) :
