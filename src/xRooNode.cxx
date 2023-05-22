@@ -68,7 +68,7 @@
 
 RooWorkspace* GETWS(RooAbsArg * a) { return a->workspace(); }
 const auto& GETWSSETS(RooWorkspace * w){ return  w->sets(); }
-auto GETWSSNAPSHOTS(RooWorkspace * w){ return  w->getSnapshots(); }
+auto& GETWSSNAPSHOTS(RooWorkspace * w){ return  w->getSnapshots(); }
 auto GETACTBROWSER(TRootBrowser * b){ return  b->GetActBrowser(); }
 auto GETROOTDIR(TGFileBrowser * b){ return  b->GetRootDir(); }
 auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
@@ -1330,7 +1330,11 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             if (asi.first) {
                _ws->import(*asi.first);
             }
-            if (!_ws->obj(_fr->GetName())) {
+            if(_fr->numStatusHistory()==0) {
+               if (!GETWSSNAPSHOTS(_ws).find(_fr->GetName())) {
+                  const_cast<RooLinkedList&>(GETWSSNAPSHOTS(_ws)).Add(_fr->Clone());
+               }
+            } else if (!_ws->obj(_fr->GetName())) {
                _ws->import(const_cast<RooFitResult &>(*_fr));
             } // save fr to workspace, for later retrieval
             if (asi.second) {
@@ -4797,6 +4801,10 @@ xRooNode xRooNode::components() const
       for (auto &o : p3->list()) {
          out.emplace_back(std::make_shared<xRooNode>(*o, *this));
       }
+   } else if(auto p4 = get<RooAbsCollection>(); p4) {
+      for (auto& a : *p4) {
+         out.emplace_back(std::make_shared<xRooNode>(*a,*this));
+      }
    } /*else if(auto p = get<RooFitResultTree>(); p) {
        long _nentries = p->GetEntries();
 
@@ -4930,8 +4938,8 @@ xRooNode xRooNode::components() const
 
       RooLinkedList snaps = GETWSSNAPSHOTS(p5);
       std::unique_ptr<TIterator> iter(snaps.MakeIterator());
-      RooArgSet *snap;
-      while ((snap = (RooArgSet *)iter->Next())) {
+      TObject *snap;
+      while ((snap = iter->Next())) {
          out.emplace_back(std::make_shared<xRooNode>(*snap, *this));
          out.back()->fFolder = "!snapshots";
       }
@@ -5623,58 +5631,67 @@ xRooNode xRooNode::fitResult(const char *opt) const
 
    // return first checked fit result present in the workspace
    if (auto _w = ws(); _w) {
-      for (auto o : _w->allGenericObjects()) {
-         if (auto _fr = dynamic_cast<RooFitResult *>(o); _fr && _fr->TestBit(1 << 20)) {
-            // check all pars match final/const values ... if mismatch need to create a new RooFitResult
-            bool match = true;
-            for (auto p : pars()) {
-               if (!p->get<RooAbsReal>())
-                  continue;
-               if (p->get<RooAbsArg>()->getAttribute("Constant")) {
-                  if (_fr->floatParsFinal().find(p->GetName()) ||
-                      std::abs(_fr->constPars().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
+      auto checkFr = [&](TObject* o) {
+          if (auto _fr = dynamic_cast<RooFitResult *>(o); _fr && _fr->TestBit(1 << 20)) {
+             // check all pars match final/const values ... if mismatch need to create a new RooFitResult
+             bool match = true;
+             for (auto p : pars()) {
+                if (!p->get<RooAbsReal>())
+                   continue;
+                if (p->get<RooAbsArg>()->getAttribute("Constant")) {
+                   if (_fr->floatParsFinal().find(p->GetName()) ||
+                       std::abs(_fr->constPars().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
+                                p->get<RooAbsReal>()->getVal()) > 1e-15) {
+                      match = false;
+                      break;
+                   }
+                } else {
+                   if (_fr->constPars().find(p->GetName()) ||
+                       std::abs(
+                               _fr->floatParsFinal().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
                                p->get<RooAbsReal>()->getVal()) > 1e-15) {
-                     match = false;
-                     break;
-                  }
-               } else {
-                  if (_fr->constPars().find(p->GetName()) ||
-                      std::abs(
-                         _fr->floatParsFinal().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
-                         p->get<RooAbsReal>()->getVal()) > 1e-15) {
-                     match = false;
-                     break;
-                  }
-               }
-            }
-            if (!match) {
-               // create new fit result using covariances from this fit result
-               std::unique_ptr<RooArgList> _pars(
-                  dynamic_cast<RooArgList *>(pars().argList().selectByAttrib("Constant", false)));
-               auto fr = std::make_shared<RooFitResult>("");
-               fr->SetTitle(TString::Format("%s parameter snapshot", GetName()));
-               fr->setFinalParList(*_pars);
-               TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(fr.get(),_VM));
-               if (prevCov) {
-                  auto cov = _fr->reducedCovarianceMatrix(*_pars);
-                  fr->setCovarianceMatrix(cov);
-               }
+                      match = false;
+                      break;
+                   }
+                }
+             }
+             if (!match) {
+                // create new fit result using covariances from this fit result
+                std::unique_ptr<RooArgList> _pars(
+                        dynamic_cast<RooArgList *>(pars().argList().selectByAttrib("Constant", false)));
+                auto fr = std::make_shared<RooFitResult>("");
+                fr->SetTitle(TString::Format("%s parameter snapshot", GetName()));
+                fr->setFinalParList(*_pars);
+                TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(fr.get(),_VM));
+                if (prevCov) {
+                   auto cov = _fr->reducedCovarianceMatrix(*_pars);
+                   fr->setCovarianceMatrix(cov);
+                }
 
-               auto _args = consts().argList(); _args.add(pp().argList());
-               // global obs are added to constPars list too
-               auto _globs = globs(); // keep alive as may own glob
-               _args.add(_globs.argList());
-               fr->setConstParList(_args);
-               std::unique_ptr<RooArgList> _snap(dynamic_cast<RooArgList *>(_pars->snapshot()));
-               for (auto &p : *_snap) {
-                  if (auto atr = p->getStringAttribute("initVal"); atr && dynamic_cast<RooRealVar *>(p))
-                     dynamic_cast<RooRealVar *>(p)->setVal(TString(atr).Atof());
-               }
-               fr->setInitParList(*_snap);
-               return xRooNode(fr, *this);
-            }
-            return xRooNode(*_fr, std::make_shared<xRooNode>(*_w, std::make_shared<xRooNode>()));
-         }
+                auto _args = consts().argList(); _args.add(pp().argList());
+                // global obs are added to constPars list too
+                auto _globs = globs(); // keep alive as may own glob
+                _args.add(_globs.argList());
+                fr->setConstParList(_args);
+                std::unique_ptr<RooArgList> _snap(dynamic_cast<RooArgList *>(_pars->snapshot()));
+                for (auto &p : *_snap) {
+                   if (auto atr = p->getStringAttribute("initVal"); atr && dynamic_cast<RooRealVar *>(p))
+                      dynamic_cast<RooRealVar *>(p)->setVal(TString(atr).Atof());
+                }
+                fr->setInitParList(*_snap);
+                return xRooNode(fr, *this);
+             }
+             return xRooNode(*_fr, std::make_shared<xRooNode>(*_w, std::make_shared<xRooNode>()));
+          }
+          return xRooNode();
+      };
+      for (auto o : _w->allGenericObjects()) {
+         auto out = checkFr(o);
+         if(out) return out;
+      }
+      for (auto o : GETWSSNAPSHOTS(_w)) {
+         auto out = checkFr(o);
+         if(out) return out;
       }
    } else {
       // objects not in workspaces are allowed to have a fitResult set in their memory
@@ -6004,7 +6021,7 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
             }
          }
          return xRooNode(newPdf, fParent);
-      } else if (get() && !components().empty()) {
+      } else if (get() && !get<RooAbsCollection>() && !components().empty()) {
          // create a new obj and remove non-matching components
          xRooNode out(std::shared_ptr<TObject>(get()->Clone(TString::Format("%s_reduced", get()->GetName()))), fParent);
          // go through components and remove any that don't match pattern
@@ -6051,7 +6068,7 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
          const_cast<RooArgList&>(fr->floatParsFinal()).remove(_remPars, true);
          return out;
 
-      } else if (!get() || get<RooArgList>()) {
+      } else if (!get() || get<RooAbsCollection>()) {
          // filter the children .... handle special case of filtering ".vars" with "x" option too
          xRooNode out(std::make_shared<RooArgList>(), fParent);
          size_t nobs = 0;
