@@ -166,6 +166,11 @@ public:
          std::vector<std::shared_ptr<xRooNode>>::const_iterator::operator++();
          return *this;
       }
+       bool operator== (xRooNodeIterator const& b) const {
+          const std::vector<std::shared_ptr<xRooNode>>::const_iterator& aa = (*this);
+          const std::vector<std::shared_ptr<xRooNode>>::const_iterator& bb = b;
+          return aa == bb;
+       };
 
    };
    auto begin() const -> xRooNodeIterator
