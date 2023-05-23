@@ -614,6 +614,20 @@ void xRooNode::Browse(TBrowser *b)
          }
          else v->GetTreeItem(b)->ClearColor();
       }
+      if (auto _htr = v->get<RooStats::HypoTestResult>(); _htr) {
+         // check for fit statuses
+         if(auto fits = _htr->GetFitInfo()) {
+            for(int i=0;i<fits->numEntries();i++) {
+               // if any fit (other than a genFit) is bad, flag point as bad
+               if( fits->get(i)->getCatIndex("type") != 5 && fits->get(i)->getRealValue("status") != 0 ) {
+                  v->GetTreeItem(b)->SetColor(kRed); break;
+               }
+            }
+         } else {
+            v->GetTreeItem(b)->SetColor(kBlue); // unknown fit status
+         }
+      }
+
       // v.fBrowsers.insert(b);
    }
 
