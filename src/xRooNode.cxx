@@ -4275,6 +4275,7 @@ std::shared_ptr<xRooNode> xRooNode::operator[](const std::string &name)
    auto _s = (!get() && fParent) ? fParent->get<RooSimultaneous>()
                                  : get<RooSimultaneous>(); // makes work if doing simPdf.bins()["blah"]
    std::string extra = (_s) ? _s->indexCat().GetName() : "";
+   std::shared_ptr<xRooNode> folderNode;
    for (auto &child : *this) {
       if (name == child->GetName() || partname == child->GetName() ||
           (!extra.empty() &&
@@ -4297,7 +4298,12 @@ std::shared_ptr<xRooNode> xRooNode::operator[](const std::string &name)
             }
          }
       }
+      if(child->fFolder == (std::string("!")+partname)) {
+         if(!folderNode) folderNode = std::make_shared<xRooNode>(child->fFolder.c_str(),nullptr,*this);
+         folderNode->push_back(child);
+      }
    }
+   if(folderNode) return folderNode;
    // before giving up see if partName is numeric and indexes within the range
    if (TString s(partname); s.IsDec() && size_t(s.Atoi()) < size()) {
       auto child2 = at(s.Atoi());
