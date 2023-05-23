@@ -117,12 +117,7 @@ public:
    virtual ~xRooNode();
 
    void SetName(const char *name) override; // *MENU*
-   void SetTitle(const char *title) override
-   {
-      if (auto o = (get<TNamed>()); o)
-         o->SetTitle(title);
-      TNamed::SetTitle(title);
-   } // *MENU*
+   void SetTitle(const char *title) override; // *MENU*
 
    const char *GetNodeType() const;
 

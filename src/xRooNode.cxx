@@ -4382,6 +4382,16 @@ void xRooNode::SetName(const char *name)
    }
 }
 
+void xRooNode::SetTitle(const char *title) {
+   if (auto o = (get<TNamed>()); o) {
+      if(auto c = mainChild(); c.get()) {
+         c.SetTitle(title);
+      }
+      o->SetTitle(title);
+   }
+   TNamed::SetTitle(title);
+}
+
 xRooNode &xRooNode::browse()
 {
    if (get<RooArgList>() || (!get() && !(strlen(GetName()) > 0 && (GetName()[0] == '!')) && !fBrowseOperation))
@@ -6778,6 +6788,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    }
 
    auto x = dynamic_cast<RooRealVar *>(v);
+   bool setTitle = false;
    if (x) {
       if (x == rar) {
          // self histogram ...
@@ -6806,6 +6817,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             h = new TH1D(rar->GetName(), rar->GetTitle(), x->numBins(binningName), x->getBinning(binningName).array());
          }
          h->GetXaxis()->SetTitle(x->getBinning(binningName).GetTitle());
+         setTitle=true;
       } else if (auto _boundaries =
                     _or_func(/*rar->plotSamplingHint(*x,x->getMin(),x->getMax())*/ (std::list<double> *)(nullptr),
                              rar->binBoundaries(*x, -std::numeric_limits<double>::infinity(),
@@ -6834,7 +6846,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          }
       }
    }
-   if(auto o = dynamic_cast<TObject*>(v)) {
+   if(auto o = dynamic_cast<TObject*>(v); o && !setTitle) {
       h->GetXaxis()->SetTitle(o->GetTitle());
    }
    TH1::AddDirectory(t);
@@ -8198,8 +8210,9 @@ void xRooNode::Draw(Option_t *opt)
                ratioGraph->SetBit(kCanDelete);
                for (int i = 0; i < ratioGraph->GetN(); i++) {
                   double val = ratioGraph->GetPointY(i);
-                  double nom = mainHist->GetBinContent(i + 1);
-                  double nomerr = mainHist->GetBinError(i + 1);
+                  int binNum = mainHist->FindFixBin(ratioGraph->GetPointX(i));
+                  double nom = mainHist->GetBinContent(binNum);
+                  double nomerr = mainHist->GetBinError(binNum);
                   ratioGraph->SetPointY(
                      i, std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(ratioGraph->GetPointY(i), nom, nomerr));
                   ratioGraph->SetPointEYhigh(i, std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(
@@ -8458,6 +8471,7 @@ void xRooNode::Draw(Option_t *opt)
       h->SetFillColor(h->GetLineColor());
       h->SetMarkerStyle(0);
       errHist = dynamic_cast<TH1 *>(h->Clone(Form("%s_err", h->GetName())));
+      errHist->SetBit(kCanDelete);
       h->SetFillStyle(0);
       for (int i = 1; i <= h->GetNbinsX(); i++) {
          h->SetBinError(i, 0);
@@ -8816,12 +8830,16 @@ void xRooNode::Draw(Option_t *opt)
       ratioHist->SetStats(false);
       ratioHist->SetBit(TH1::kNoTitle);
       ratioHist->SetBit(kCanDelete);
-      ratioHist->Draw((errHist ? "e2" : ""));
       if (errHist) {
          auto _h = dynamic_cast<TH1 *>(ratioHist->Clone("auxHist_clone"));
          _h->SetFillColor(0);
-         _h->Draw("histsame");
+         ratioHist->GetListOfFunctions()->Add(_h,"histsame");
+         //_h->Draw("histsame");
       }
+      ratioHist->GetListOfFunctions()->Add(new TExec(
+              ".updateAxis",TString::Format("auto h1 = (TH1*)%p; auto h2 = (TH1*)%p; if(h2->GetXaxis()->GetFirst() != h1->GetXaxis()->GetFirst() || h1->GetXaxis()->GetLast()!=h2->GetXaxis()->GetLast()) {h2->GetXaxis()->SetRange(h1->GetXaxis()->GetFirst(),h1->GetXaxis()->GetLast());if(gPad) {gPad->GetCanvas()->Paint();gPad->GetCanvas()->Update();}}",(void*)ratioHist,(void*)(h))));
+      ratioHist->Draw((errHist ? "e2" : ""));
+
       _tmpPad->cd();
       ratioPad->Draw();
    } else if (auto ratioPad = dynamic_cast<TPad *>(gPad->GetPrimitive("auxPad")); hasSame && ratioPad) {
