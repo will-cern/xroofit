@@ -824,6 +824,13 @@ std::shared_ptr<TObject> xRooNode::getObject(const std::string &name, const std:
          if (!out)
             out = _tmp;
       }
+      if (auto arg = GETWSSNAPSHOTS(ws()).find(name.c_str()); arg) {
+         auto _tmp = std::shared_ptr<TObject>(arg, [](TObject *) {});
+         if (!type.empty() && arg->InheritsFrom(type.c_str()))
+            return _tmp;
+         if (!out)
+            out = _tmp;
+      }
       return out;
    }
    return nullptr;
