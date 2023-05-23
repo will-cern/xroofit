@@ -274,16 +274,19 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
    // don't do the observed limit if all the NLL datas are *EXPECTED* generated
    bool doObs = true;
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
-   bool allGen = true;
-   for (auto &[pdf, nll] : fNlls) {
-      auto _d = dynamic_cast<RooDataSet *>(nll->data());
-      if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult") || !_d->weightVar()->getAttribute("expected")) {
-         allGen = false;
-         break;
+   if (!fNlls.empty()) { // handles case where loaded space from a HypoTestInverterResult
+      bool allGen = true;
+      for (auto &[pdf, nll]: fNlls) {
+         auto _d = dynamic_cast<RooDataSet *>(nll->data());
+         if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult") ||
+             !_d->weightVar()->getAttribute("expected")) {
+            allGen = false;
+            break;
+         }
       }
+      if (allGen)
+         doObs = false;
    }
-   if (allGen)
-      doObs = false;
 #endif
    if (doObs) {
       auto lim = FindLimit(TString::Format("p%s obs", opt), relUncert);
@@ -363,7 +366,9 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
       }
       if (!match) continue;
       // if reached here we can copy over the asimov dataset to save re-generating it
-      if(p.asimov(true) && p.asimov(true)->fData.first && !out.asimov(true)) {
+      // first copy over cfit_alt (if its there) because that is also the same since coords and alt_poi values same
+      if(auto cfit = p.cfit_alt(true)) { out.fAlt_cfit = cfit; }
+      if(p.asimov(true) && p.asimov(true)->fData.first && (!out.asimov(true) || !out.asimov(true)->fData.first)) {
          out.asimov()->fData = p.asimov(true)->fData;
       }
       if(!p.poi().equals(out.poi())) continue;
@@ -1092,6 +1097,14 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       // or mu_hat + sigma_mu*ROOT::Math::gaussian_quantile((1.-alpha),1) for cls+b
       // get a very first estimate of sigma_mu from ufit to expected data, take error on mu as sigma_mu
       double nextPoint =  muMin + (muMax - muMin) / 50;
+
+      // if done an expected limit, assume data is like expected and choose expected limit point as first test point
+      if (sOpt.Contains("obs")) {
+         TString sOpt2 = sOpt; sOpt2.ReplaceAll("obs","exp");
+         auto expLim = FindLimit(sOpt2,std::numeric_limits<double>::infinity(),0);
+         if(!std::isnan(expLim.first) && expLim.first < nextPoint) nextPoint = expLim.first;
+      }
+
       auto point = (sOpt.Contains("exp")) ? back().asimov() : std::shared_ptr<xRooHypoPoint>(&back(),[](xRooHypoPoint*){});
       point = nullptr;
       if( point && point->ufit() ) {
@@ -1181,6 +1194,10 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
 
    TString sOpt(opt);
    sOpt.ToLower();
+
+   if(sOpt=="" && !empty() && front().fPllType==xRooFit::Asymptotics::OneSidedPositive) {
+      sOpt = "pcls"; // default to showing cls p-value scan if drawing a limit
+   }
 
    // split up by ; and call Draw for each (with 'same' appended)
    auto _axes = axes();
@@ -1321,7 +1338,9 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          gPad->Clear();
       }
       if(gra) {
-         gra->DrawClone("A")->SetBit(kCanDelete);
+         auto gra2 = static_cast<TMultiGraph*>(gra->DrawClone("A"));
+         gra2->SetBit(kCanDelete);
+         gra2->GetHistogram()->SetMinimum(1e-6);
       }
       if (!sOpt.Contains("same") && gPad) {
 //         auto mg = static_cast<TMultiGraph*>(gPad->GetPrimitive(gra->GetName()));
@@ -1343,43 +1362,12 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
 
    auto pllType = xRooFit::Asymptotics::TwoSided;
    if (!empty() && axes().size() == 1) {
-      auto v = dynamic_cast<RooRealVar *>(axes().first());
       for (auto &p : *this) {
          if (p.fPllType != xRooFit::Asymptotics::TwoSided) {
             pllType = p.fPllType;
          }
       }
-      if (pllType == xRooFit::Asymptotics::OneSidedPositive) {
-         if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
-            title += TString::Format(";Lower-Bound One-Sided Limit PLR");
-         else if (v)
-            title += TString::Format(";One-Sided Limit PLR");
-         else
-            title += ";q";
-      } else if (pllType == xRooFit::Asymptotics::TwoSided) {
-         if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
-            title += TString::Format(";Lower-Bound PLR");
-         else if (v)
-            title += TString::Format(";PLR");
-         else
-            title += ";t";
-      } else if (pllType == xRooFit::Asymptotics::OneSidedNegative) {
-         if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
-            title += TString::Format(";Lower-Bound One-Sided Discovery PLR");
-         else if (v)
-            title += TString::Format(";One-Sided Discovery PLR");
-         else
-            title += ";r";
-      } else if (pllType == xRooFit::Asymptotics::Uncapped) {
-         if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
-            title += TString::Format(";Lower-Bound Uncapped PLR");
-         else if (v)
-            title += TString::Format(";Uncapped PLR");
-         else
-            title += ";s";
-      } else {
-         title += ";Test Statistic";
-      }
+      title += ";"; title += front().tsTitle(true);
    }
 
    out->SetTitle(title);

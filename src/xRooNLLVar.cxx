@@ -2078,35 +2078,35 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    //}
 }
 
-TString xRooNLLVar::xRooHypoPoint::tsTitle()
+TString xRooNLLVar::xRooHypoPoint::tsTitle(bool inWords)
 {
    auto v = dynamic_cast<RooRealVar *>(poi().empty() ? nullptr : poi().first());
    if (fPllType == xRooFit::Asymptotics::OneSidedPositive) {
       if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
-         return TString::Format("#tilde{q}_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("Lower-Bound One-Sided Limit PLR") : TString::Format("#tilde{q}_{%s=%g}", v->GetTitle(), v->getVal());
       else if (v)
-         return TString::Format("q_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("One-Sided Limit PLR") : TString::Format("q_{%s=%g}", v->GetTitle(), v->getVal());
       else
          return "q";
    } else if (fPllType == xRooFit::Asymptotics::TwoSided) {
       if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
-         return TString::Format("#tilde{t}_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("Lower-Bound PLR") : TString::Format("#tilde{t}_{%s=%g}", v->GetTitle(), v->getVal());
       else if (v)
-         return TString::Format("t_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("PLR") : TString::Format("t_{%s=%g}", v->GetTitle(), v->getVal());
       else
          return "t";
    } else if (fPllType == xRooFit::Asymptotics::OneSidedNegative) {
       if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
-         return TString::Format("#tilde{r}_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("Lower-Bound One-Sided Discovery PLR") : TString::Format("#tilde{r}_{%s=%g}", v->GetTitle(), v->getVal());
       else if (v)
-         return TString::Format("r_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("One-Sided Discovery PLR") : TString::Format("r_{%s=%g}", v->GetTitle(), v->getVal());
       else
          return "r";
    } else if (fPllType == xRooFit::Asymptotics::Uncapped) {
       if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
-         return TString::Format("#tilde{s}_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("Lower-Bound Uncapped PLR") : TString::Format("#tilde{s}_{%s=%g}", v->GetTitle(), v->getVal());
       else if (v)
-         return TString::Format("s_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("Uncapped PLR") : TString::Format("s_{%s=%g}", v->GetTitle(), v->getVal());
       else
          return "s";
    } else {
@@ -2195,7 +2195,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       fitMeta.addClone(ufit()->floatParsFinal());
    }
    fitMeta.setCatIndex("pllType",int(fPllType));
-   fitDetails.addClone(RooCategory("type","fit type",{{"ufit",0},{"cfit_null",1},{"cfit_alt",2},{"asimov_ufit",3},{"asimov_cfit_null",4}}));
+   fitDetails.addClone(RooCategory("type","fit type",{{"ufit",0},{"cfit_null",1},{"cfit_alt",2},{"asimov_ufit",3},{"asimov_cfit_null",4},{"gen",5}}));
    //fitDetails.addClone(RooStringVar("name", "Fit Name", "")); -- not supported properly in ROOT yet
    fitDetails.addClone(RooRealVar("status", "status", 0));
    fitDetails.addClone(RooRealVar("minNll", "minNll", 0));
@@ -2203,7 +2203,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    auto fitDS = new RooDataSet("fits","fit summary data",fitDetails);
    fitDS->convertToTreeStore(); // strings not stored properly in vector store, so do convert!
 
-   for(int i=0;i<5;i++) {
+   for(int i=0;i<6;i++) {
       std::shared_ptr<const RooFitResult> fit;
       switch(i) {
       case 0: fit = ufit(); break;
@@ -2211,6 +2211,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       case 2: fit = cfit_alt(); break;
       case 3: fit = asimov() ? asimov()->ufit(true) : nullptr; break;
       case 4: fit = asimov() ? asimov()->cfit_null(true) : nullptr; break;
+      case 5: fit = fGenFit; break;
       }
       if(fit) {
          fitDetails.setCatIndex("type",i);
