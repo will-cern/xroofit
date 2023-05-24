@@ -982,7 +982,7 @@ void xRooNLLVar::xRooHypoPoint::Print()
 
    std::cout << " -        ufit: ";
    if (fUfit) {
-      std::cout << fUfit->minNll() << " (status=" << fUfit->status() << ") (" << mu_hat().GetName()
+      std::cout << fUfit->GetName() << " " << fUfit->minNll() << " (status=" << fUfit->status() << ") (" << mu_hat().GetName()
                 << "_hat: " << mu_hat().getVal() << " +/- " << mu_hat().getError() << ")" << std::endl;
    } else {
       std::cout << "Not calculated" << std::endl;

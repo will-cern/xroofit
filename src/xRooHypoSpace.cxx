@@ -1378,7 +1378,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
 
    if (!gPad)
       TCanvas::MakeDefCanvas();
-   auto basePad = gPad;
+   TVirtualPad* basePad = gPad;
    if (!sOpt.Contains("same"))
       basePad->Clear();
 
@@ -1409,12 +1409,13 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
    for (auto &p : *this) {
       if (p.fPllType != pllType)
          continue; // must all have same pll type
-      auto val = p.pll().first;
+      auto val = p.pll(true).first;
+      if(std::isnan(val)) continue;
       minMax.first = std::min(minMax.first, val);
       minMax.second = std::max(minMax.second, val);
    }
-   out->GetHistogram()->SetMinimum(minMax.first);
-   out->GetHistogram()->SetMaximum(minMax.second);
+   if(minMax.first < std::numeric_limits<double>::infinity()) out->GetHistogram()->SetMinimum(minMax.first);
+   if(minMax.second > -std::numeric_limits<double>::infinity()) out->GetHistogram()->SetMaximum(minMax.second);
 
    TGraph *badPoints = nullptr;
 
@@ -1427,6 +1428,10 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
       auto val = p.pll().first;
       if (!ufr)
          ufr = p.ufit();
+      if (out->GetN()==0 && ufr && ufr->status()==0) {
+         out->SetPoint(out->GetN(), p.mu_hat().getVal(), 0.);
+         out->SetPointError(out->GetN() - 1, 0, ufr->edm());
+      }
       if (auto fr = p.fNull_cfit;
           fr && doFits) { // access member to avoid unnecessarily creating fit result if wasnt needed
          // create a new subpad and draw fitResult on it
@@ -1440,7 +1445,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          //_pad->GetListOfPrimitives()->AddFirst(pad);
          pad->AppendPad();
       }
-      if (std::isnan(val)) {
+      if (std::isnan(val) && p.status()!=0) {
          if (!badPoints) {
             badPoints = new TGraph;
             badPoints->SetBit(kCanDelete);
@@ -1452,7 +1457,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          }
          badPoints->SetPoint(badPoints->GetN(), p.fNullVal(), out->Eval(p.fNullVal()));
          mainPad->Modified();
-      } else {
+      } else if(!std::isnan(val)) {
          out->SetPoint(out->GetN(), p.fNullVal(), p.pll().first);
          out->SetPointError(out->GetN() - 1, 0, p.pll().second);
          out->Sort();
@@ -1464,15 +1469,18 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          }
 
          mainPad->Modified();
+
       }
       if (s.RealTime() > 3) { // stops the clock
-         basePad->Update();
+         basePad->GetCanvas()->Paint(); basePad->GetCanvas()->Update();
          gSystem->ProcessEvents();
          s.Reset();
          s.Start();
       }
       s.Continue();
    }
+   basePad->GetCanvas()->Paint(); basePad->GetCanvas()->Update();
+   gSystem->ProcessEvents();
 
    // finish by overlaying ufit
    if (ufr && doFits) {

@@ -376,10 +376,14 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
    out = genSubPdf(&pdf);
    out.first->SetName(expected ? (TString(fr->GetName())+"_asimov") : uuid);
 
+   // from now on we store the globs in the dataset
+   //if(out.second) { out.first->setGlobalObservables(*out.second); out.second.reset(); }
+
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
    // store fitResult name on the weightVar
    if (auto w = dynamic_cast<RooDataSet *>(out.first.get())->weightVar()) {
       w->setStringAttribute("fitResult", fr->GetName());
+      w->setAttribute("expected",expected);
    }
 #endif
 
@@ -834,6 +838,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          auto _status = _minimizer.hesse(); // note: I have seen that you can get 'full covariance quality' without
                                             // running hesse ... is that expected?
 
+        statusHistory.push_back(std::pair("Hesse",_status));
          _minimizer.fitter()->Config().SetParamsSettings(parSettings);
 
          if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff && fff->fInterrupt) {

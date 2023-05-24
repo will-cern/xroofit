@@ -2045,8 +2045,8 @@ void xRooNode::Print(Option_t *opt) const
       if (get() && get() != this) {
          std::cout << ": ";
          if (_more ||
-             (get<RooAbsArg>() && (get<RooAbsArg>()->isFundamental() || get<RooConstVar>() || get<RooAbsData>())) ||
-             get<RooProduct>()) {
+             (get<RooAbsArg>() && get<RooAbsArg>()->isFundamental()) || get<RooConstVar>() || get<RooAbsData>() ||
+             get<RooProduct>() || get<RooFitResult>()) {
             auto _deps = coords(false).argList(); // want to revert coords after print
             auto _snap = std::unique_ptr<RooAbsCollection>(_deps.snapshot());
             coords(); // move to coords before printing (in case this matters)
@@ -2110,8 +2110,8 @@ void xRooNode::Print(Option_t *opt) const
             std::cout << " ";
          std::cout << i++ << ") " << k->GetName() << " : ";
          if (k->get()) {
-            if (_more || (k->get<RooAbsArg>() && (k->get<RooAbsArg>()->isFundamental() || k->get<RooConstVar>() ||
-                                                  k->get<RooAbsData>())) /*|| k->get<RooProduct>()*/) {
+            if (_more || (k->get<RooAbsArg>() && k->get<RooAbsArg>()->isFundamental()) || k->get<RooConstVar>() ||
+                                                  k->get<RooAbsData>() /*|| k->get<RooProduct>()*/) {
                auto _deps = k->coords(false).argList();
                auto _snap = std::unique_ptr<RooAbsCollection>(_deps.snapshot());
                k->coords();           // move to coords before printing (in case this matters)
@@ -4303,7 +4303,12 @@ std::shared_ptr<xRooNode> xRooNode::operator[](const std::string &name)
          folderNode->push_back(child);
       }
    }
-   if(folderNode) return folderNode;
+   if(folderNode) {
+       if (partname != name) {
+           return folderNode->operator[](name.substr(partname.length() + 1));
+       }
+       return folderNode;
+   }
    // before giving up see if partName is numeric and indexes within the range
    if (TString s(partname); s.IsDec() && size_t(s.Atoi()) < size()) {
       auto child2 = at(s.Atoi());
@@ -7919,9 +7924,11 @@ void xRooNode::Draw(Option_t *opt)
          gStyle->SetPaintTextFormat(".1f");
          hist->GetXaxis()->SetTickSize(0);
          hist->GetYaxis()->SetTickSize(0);
+         hist->SetMinimum(-100);
          hist->Draw(sOpt);
          gStyle->SetPaintTextFormat(b);
          gPad->SetGrid(1,1);
+         gPad->SetLogy(0);gPad->SetLogx(0);
          return;
       }
 
