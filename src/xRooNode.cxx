@@ -1325,7 +1325,15 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
    } else if (strcmp(GetName(), ".bins") == 0 && fParent->get<RooSimultaneous>()) {
       // adding a channel (should adding a 'bin' be an 'Extend' operation?)
       return fParent->Vary(child);
-   } else if ((strcmp(GetName(), ".pars") == 0 || strcmp(GetName(),".vars")==0) && fParent->get<RooWorkspace>()) {
+   } else if((strcmp(GetName(),".globs")==0)) {
+      if (child.get<RooAbsArg>() || (!child.fComp && getObject<RooAbsArg>(child.GetName()))) {
+          auto out = (child.get<RooAbsArg>()) ? child.get<RooAbsArg>() : getObject<RooAbsArg>(child.GetName()).get();
+          out->setAttribute("obs");
+          out->setAttribute("global");
+          return xRooNode(*out,*this);
+      }
+      throw std::runtime_error("Failed to add global observable");
+   }else if ((strcmp(GetName(), ".pars") == 0 || strcmp(GetName(),".vars")==0) && fParent->get<RooWorkspace>()) {
       // adding a parameter, interpret as factory string unless no "[" then create RooRealVar
       TString fac(child.GetName());
       if (!fac.Contains("["))
@@ -8499,13 +8507,13 @@ void xRooNode::Draw(Option_t *opt)
       _hist->GetListOfFunctions()->Add(new TExec(
          ".update",
          TString::Format(
-            "gROOT->SetEditHistograms(true);auto h = dynamic_cast<TH1*>(gPad->GetPrimitive(\"%s\")); if(h) { if(auto n "
+            "gROOT->SetEditHistograms(true);auto h = dynamic_cast<TH1*>(gPad->GetPrimitive(\"%s\")); if(h) { double range= h->GetMaximum()-h->GetMinimum(); if(auto n "
             "= dynamic_cast<xRooNode*>(h->GetListOfFunctions()->FindObject(\"%s\")); n && "
-            "n->TestBit(TObject::kNotDeleted) && n->get<RooRealVar>()->getVal() != h->GetBinContent(1)) {double range "
-            "= h->GetMaximum()-h->GetMinimum(); h->SetBinContent(1, "
+            "n->TestBit(TObject::kNotDeleted) && n->get<RooRealVar>()->getVal() != h->GetBinContent(1)) {"
+            "h->SetBinContent(1, "
             "TString::Format(\"%%.2g\",int(h->GetBinContent(1)/(range*0.01))*range*0.01).Atof());n->SetContents( "
             "h->GetBinContent(1) ); for(auto pp : *h->GetListOfFunctions()) if(auto hh = "
-            "dynamic_cast<TH1*>(pp))hh->SetBinContent(1,h->GetBinContent(1));} gPad->Modified();gPad->Update(); }",
+            "dynamic_cast<TH1*>(pp))hh->SetBinContent(1,h->GetBinContent(1));} if(h->GetBinContent(1)==0.) h->SetBinContent(1,range*0.005); gPad->Modified();gPad->Update(); }",
             _hist->GetName(), node->GetName())));
       if (errHist) {
          errHist->GetListOfFunctions()->Add(h, "TEXT HIST same");
@@ -8516,6 +8524,7 @@ void xRooNode::Draw(Option_t *opt)
          _hist->SetBinError(1, 0);
       }
       _hist->SetStats(false);
+      //if (_hist->GetBinContent(1)==0.) _hist->SetBinContent(1,(_hist->GetMaximum()-_hist->GetMinimum())*0.005);
       _hist->Draw(((errHist) ? "e2" : ""));
       gPad->Modified();
       return;
