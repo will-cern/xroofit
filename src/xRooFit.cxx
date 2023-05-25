@@ -59,6 +59,7 @@
 BEGIN_XROOFIT_NAMESPACE
 
 std::shared_ptr<RooLinkedList> xRooFit::sDefaultNLLOptions = nullptr;
+std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::sDefaultFitConfig = nullptr;
 
 RooCmdArg xRooFit::ReuseNLL(bool flag)
 {
@@ -377,7 +378,7 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
    out.first->SetName(expected ? (TString(fr->GetName())+"_asimov") : uuid);
 
    // from now on we store the globs in the dataset
-   //if(out.second) { out.first->setGlobalObservables(*out.second); out.second.reset(); }
+   // if(out.second) { out.first->setGlobalObservables(*out.second); out.second.reset(); }
 
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
    // store fitResult name on the weightVar
@@ -417,10 +418,15 @@ std::shared_ptr<RooLinkedList> xRooFit::defaultNLLOptions()
    return sDefaultNLLOptions;
 }
 
-std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig()
+std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig() {
+   return std::make_shared<ROOT::Fit::FitConfig>(*defaultFitConfig());
+}
+
+std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig()
 {
-   auto fFitConfig = std::make_shared<ROOT::Fit::FitConfig>();
-   auto &fitConfig = *fFitConfig;
+   if(sDefaultFitConfig) return sDefaultFitConfig;
+   sDefaultFitConfig = std::make_shared<ROOT::Fit::FitConfig>();
+   auto &fitConfig = *sDefaultFitConfig;
    fitConfig.SetParabErrors(true); // will use to run hesse after fit
    fitConfig.MinimizerOptions().SetMinimizerType("Minuit2");
    fitConfig.MinimizerOptions().SetErrorDef(0.5); // ensures errors are +/- 1 sigma ..IMPORTANT
@@ -429,7 +435,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig()
    fitConfig.MinimizerOptions().SetMaxFunctionCalls(
       -1); // calls per iteration. if left as 0 will set automatically to 500*nPars below
    fitConfig.MinimizerOptions().SetMaxIterations(-1); // if left as 0 will set automatically to 500*nPars
-   fitConfig.MinimizerOptions().SetStrategy(0);
+   fitConfig.MinimizerOptions().SetStrategy(-1); // will start at front of StrategySequence (given below)
    // fitConfig.MinimizerOptions().SetTolerance(
    //         1); // default is 0.01 (i think) but roominimizer uses 1 as default - use specify with
    //         ROOT::Math::MinimizerOptions::SetDefaultTolerance(..)
@@ -446,7 +452,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::createFitConfig()
    extraOpts->SetValue("TrackProgress", 30);               // seconds between output to log of evaluation progress
    extraOpts->SetValue("xRooFitVersion", GIT_COMMIT_HASH); // not really options but here for logging purposes
    // extraOpts->SetValue("ROOTVersion",ROOT_VERSION_CODE); - not needed as should by part of the ROOT TFile definition
-   return fFitConfig;
+   return sDefaultFitConfig;
 }
 
 class ProgressMonitor : public RooAbsReal {
@@ -733,8 +739,10 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       int sIdx = -1;
       TString minim = _minimizer.fitter()->Config().MinimizerType();
       TString algo = _minimizer.fitter()->Config().MinimizerAlgoType();
-      if (minim == "Minuit2")
-         sIdx = m_strategy.Index('0' + strategy);
+      if (minim == "Minuit2") {
+         if (strategy==-1) sIdx=0;
+         else sIdx = m_strategy.Index('0' + strategy);
+      }
       else if (minim == "Minuit")
          sIdx = m_strategy.Index('m');
 
@@ -742,6 +750,17 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       int maxtries = 4;
       bool first = true;
       while (tries < maxtries && sIdx != -1) {
+         if (m_strategy(sIdx) == 'm') {
+            minim = "Minuit";
+            algo = "migradImproved";
+         } else if (m_strategy(sIdx) == 's') {
+            algo = "Scan";
+         } else {
+            strategy = int(m_strategy(sIdx) - '0');
+            _minimizer.setStrategy(strategy);
+            minim = "Minuit2";
+            algo = "Migrad";
+         }
          status = _minimizer.minimize(minim, algo);
          if (first && actualFirstMinimizer != _minimizer.fitter()->Config().MinimizerType())
             actualFirstMinimizer = _minimizer.fitter()->Config().MinimizerType();
@@ -793,17 +812,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
             break; // done
          }
 
-         if (m_strategy(sIdx + 1) == 'm') {
-            minim = "Minuit";
-            algo = "migradImproved";
-         } else if (m_strategy(sIdx + 1) == 's') {
-            algo = "Scan";
-         } else {
-            strategy = int(m_strategy(sIdx + 1) - '0');
-            _minimizer.setStrategy(strategy);
-            minim = "Minuit2";
-            algo = "Migrad";
-         }
+
          tries--;
          sIdx++;
       }
