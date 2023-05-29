@@ -132,6 +132,11 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf,
    if (fGlobs) {
       // add global observables opt with function obs
       auto _vars = std::unique_ptr<RooArgSet>(fPdf->getVariables());
+      if (auto extCon = dynamic_cast<RooCmdArg*>(fOpts->find("ExternalConstraints"))) {
+          for(auto con : *extCon->getSet(0)) {
+              _vars->add( *std::unique_ptr<RooArgSet>(con->getVariables()) );
+          }
+      }
       auto _funcGlobs = std::unique_ptr<RooArgSet>(dynamic_cast<RooArgSet *>(_vars->selectCommon(*fGlobs)));
       fOpts->Add(RooFit::GlobalObservables(*_funcGlobs).Clone());
    }
