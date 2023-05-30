@@ -2158,11 +2158,11 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, const xRooF
 
    s.AddModel(pdf());
    if (strlen(parName)) {
-      auto poi = s.pars()->find(parName);
-      if (!poi)
+      std::unique_ptr<RooAbsCollection> poi(s.pars()->selectByName(parName));
+      if (poi->empty())
          throw std::runtime_error("parameter not found");
       s.pars()->setAttribAll("poi", false);
-      poi->setAttribute("poi", true);
+      poi->setAttribAll("poi", true);
    } else if (std::unique_ptr<RooAbsCollection>(s.pars()->selectByAttrib("poi", true))->empty()) {
       throw std::runtime_error("You must specify a POI for the hypoSpace");
    }
