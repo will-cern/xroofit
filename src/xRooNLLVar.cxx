@@ -77,7 +77,7 @@
 #include "TLegend.h"
 #include "RooCategory.h"
 #include "TTree.h"
-
+#include "TGraph2D.h"
 
 BEGIN_XROOFIT_NAMESPACE
 
@@ -570,6 +570,45 @@ std::shared_ptr<RooArgSet> xRooNLLVar::pars(bool stripGlobalObs)
    }
    return out;
 }
+
+TObject* xRooNLLVar::Scan(const char* scanPars, const std::vector<std::vector<double>>& coords, const RooArgList& profilePars) {
+   return Scan(*std::unique_ptr<RooAbsCollection>(get()->getVariables()->selectByName(scanPars)),coords,profilePars);
+}
+
+TObject* xRooNLLVar::Scan(const RooArgList& scanPars, const std::vector<std::vector<double>>& coords, const RooArgList& profilePars) {
+
+    if (scanPars.size() > 2 || scanPars.empty()) return nullptr;
+
+    TGraph2D* out2d = (scanPars.size()==2) ? new TGraph2D() : nullptr;
+    TGraph* out1d = (out2d) ? nullptr : new TGraph();
+    TNamed* out = (out2d) ? static_cast<TNamed*>(out2d) : static_cast<TNamed*>(out1d);
+    out->SetName(get()->GetName());
+    out->SetTitle(TString::Format("%s;%s%s%s",get()->GetTitle(),scanPars.first()->GetTitle(),out2d ? ";" : "",out2d ? scanPars.at(1)->GetTitle() : ""));
+
+    std::unique_ptr<RooAbsCollection> funcVars(get()->getVariables());
+    AutoRestorer snap(*funcVars);
+
+    for(auto& coord : coords) {
+        if(coord.size() != scanPars.size()) {
+            throw std::runtime_error("Invalid coordinate");
+        }
+        for(size_t i=0;i<coord.size();i++) { static_cast<RooAbsRealLValue&>(scanPars[i]).setVal(coord[i]); }
+
+        if(profilePars.empty()) {
+            // just evaluate
+            if(out2d) {
+                out2d->SetPoint(out2d->GetN(),coord[0],coord[1],get()->getVal());
+            } else {
+                out1d->SetPoint(out1d->GetN(),coord[0],get()->getVal());
+            }
+        }
+    }
+
+    return out;
+
+
+}
+
 
 void xRooNLLVar::Draw(Option_t *opt)
 {

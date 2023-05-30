@@ -324,6 +324,34 @@ public:
 
    void Draw(Option_t *opt = "");
 
+   TObject* Scan(const RooArgList& scanPars, const std::vector<std::vector<double>>& coords, const RooArgList& profilePars = RooArgList());
+   TObject* Scan(const char* scanPars, const std::vector<std::vector<double>>& coords, const RooArgList& profilePars = RooArgList());
+    TObject* Scan(const char* scanPars, size_t nPoints, double low, double high, size_t nPointsY, double ylow,double yhigh, const RooArgList& profilePars = RooArgList()) {
+       std::vector<std::vector<double>> coords;
+       if(nPoints) {
+          double step = (high - low) / (nPoints);
+          for (size_t i = 0; i < nPoints; i++) {
+             std::vector<double> coord({low + step * i});
+             if (nPointsY) {
+                double stepy = (yhigh - ylow) / (nPointsY);
+                for (size_t j = 0; j < nPointsY; j++) {
+                   coord.push_back({ylow+stepy*j});
+                   coords.push_back(coord);
+                   coord.resize(1);
+                }
+             } else {
+                coords.push_back(coord);
+             }
+          }
+       }
+       return Scan(scanPars,coords,profilePars);
+    }
+   TObject* Scan(const char* scanPars, size_t nPoints, double low, double high, const RooArgList& profilePars = RooArgList()) {
+      return Scan(scanPars,nPoints,low,high,0,0,0,profilePars);
+   }
+
+
+
    std::shared_ptr<RooAbsReal> func() const; // will assign globs when called
    std::shared_ptr<RooAbsPdf> pdf() const { return fPdf; }
    RooAbsData *data() const; // returns the data hidden inside the NLLVar if there is some
