@@ -4105,7 +4105,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
          int ii = 1;
          while (aNamed && out_arg) {
             aNamed->SetName(TString::Format("%s;%d", aName.Data(), ii++));
-            out_arg = _ws->genobj(aName);
+            out_arg = _ws->genobj(aNamed->GetName());
          }
          if (_ws->import(*arg.get(), false /*replace existing*/)) {
             RooMsgService::instance().setGlobalKillBelow(msglevel);
