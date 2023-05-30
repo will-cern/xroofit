@@ -4098,20 +4098,25 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject *) {});
       } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class()) {
-         // ensure will have a unique name for import
+         // ensure will have a unique name for import if must be new
          TNamed* aNamed = dynamic_cast<TNamed*>(arg.get());
          TString aName = arg->GetName();
          TObject* out_arg = _ws->genobj(arg->GetName());
          int ii = 1;
-         while (aNamed && out_arg) {
+         while (aNamed && out_arg && mustBeNew) {
             aNamed->SetName(TString::Format("%s;%d", aName.Data(), ii++));
             out_arg = _ws->genobj(aNamed->GetName());
          }
-         if (_ws->import(*arg.get(), false /*replace existing*/)) {
-            RooMsgService::instance().setGlobalKillBelow(msglevel);
-            return nullptr;
+         if (!out_arg) {
+            if (aName != arg->GetName()) {
+               Warning("acquire", "Renaming to %s", arg->GetName());
+            }
+            if (_ws->import(*arg.get(), false /*replace existing*/)) {
+               RooMsgService::instance().setGlobalKillBelow(msglevel);
+               return nullptr;
+            }
+            out_arg = _ws->genobj(arg->GetName());
          }
-         if(aNamed) aNamed->SetName(aName);// restore arg name
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          /* this doesnt work because caller has its own version of fParent, not the one in the browser
          for(auto o : *gROOT->GetListOfBrowsers()) {
@@ -4128,7 +4133,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
                  }
              }
          }*/
-         return std::shared_ptr<TObject>(_ws->genobj(arg->GetName()), [](TObject *) {});
+         return std::shared_ptr<TObject>(out_arg, [](TObject *) {});
       }
       RooMsgService::instance().setGlobalKillBelow(msglevel);
       // Warning("acquire","Not implemented acquisition of object %s",arg->GetName());
@@ -5771,7 +5776,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
    }
 
    std::unique_ptr<RooArgList> _pars(dynamic_cast<RooArgList *>(pars().argList().selectByAttrib("Constant", false)));
-   auto fr = std::make_shared<RooFitResult>("");
+   auto fr = std::make_shared<RooFitResult>(TUUID().AsString());
    fr->SetTitle(TString::Format("%s uncorrelated parameter snapshot", GetName()));
    fr->setFinalParList(*_pars);
    fr->setStatus(-1);
