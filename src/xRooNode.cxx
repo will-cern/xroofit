@@ -5625,8 +5625,21 @@ xRooNode xRooNode::fitResult(const char *opt) const
          std::shared_ptr<xRooNode> pConstr;
          for (auto &c : _constr) {
             if (c->get<RooPoisson>() || c->get<RooGaussian>()) {
-               pConstr = c;
-               break;
+                // require parameter to be a direct server of the constraint pdf to count
+                bool isServer=true;
+                if(c->get<RooGaussian>()) {
+                    isServer=false;
+                    for (auto s: c->get<RooAbsArg>()->servers()) {
+                        if (strcmp(s->GetName(), p->GetName()) == 0) {
+                            isServer = true;
+                            break;
+                        }
+                    }
+                }
+                if(isServer) {
+                    pConstr = c;
+                    break;
+                }
             }
          }
          if (pConstr) {
@@ -7965,8 +7978,21 @@ void xRooNode::Draw(Option_t *opt)
             auto _constr = xRooNode(fParent->getObject<RooRealVar>(p->GetName()), *this).constraints();
             for (auto &c : _constr) {
                if (c->get<RooPoisson>() || c->get<RooGaussian>()) {
-                  pConstr = c;
-                  break;
+                   // require parameter to be a direct server of the constraint pdf to count if its a gaussian
+                   bool isServer = true;
+                   if(c->get<RooGaussian>()) {
+                       isServer=false;
+                       for (auto s: c->get<RooAbsArg>()->servers()) {
+                           if (strcmp(s->GetName(), p->GetName()) == 0) {
+                               isServer = true;
+                               break;
+                           }
+                       }
+                   }
+                   if(isServer) {
+                       pConstr = c;
+                       break;
+                   }
                }
             }
          }
