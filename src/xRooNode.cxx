@@ -3063,12 +3063,12 @@ xRooNode xRooNode::Vary(const xRooNode &child)
    throw std::runtime_error(TString::Format("Cannot vary %s with %s", GetName(), child.GetName()));
 }
 
-bool xRooNode::SetContents(double value)
+bool xRooNode::SetContent(double value)
 {
    return SetContents(RooConstVar(GetName(), GetTitle(), value));
 }
 
-bool xRooNode::SetContents(double value, const char *par, double val)
+bool xRooNode::SetContent(double value, const char *par, double val)
 {
    return SetContents(RooConstVar(GetName(), GetTitle(), value), par, val);
 }
@@ -3246,10 +3246,10 @@ void xRooNode::_SetBinContent_(int bin, double value, const char *par, double pa
    }
 }
 
-void xRooNode::_SetContents_(double value)
+void xRooNode::_SetContent_(double value)
 {
    try {
-      if (!SetContents(value))
+      if (!SetContent(value))
          throw std::runtime_error("Failed to SetContent");
    } catch (const std::exception &e) {
       new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),

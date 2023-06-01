@@ -301,9 +301,8 @@ public:
       return true;
    }                               // populates the node's comp (creating if necessary)  from given object
 
-   // TODO: Rename SetContents to SetContent for consistency with GetContent
-   bool SetContents(double value); // uses a RooConst
-   bool SetContents(double value, const char *par, double parVal = 1); // shortcut to setting a variation content
+   bool SetContent(double value); // uses a RooConst
+   bool SetContent(double value, const char *par, double parVal = 1); // shortcut to setting a variation content
    bool SetContents(const TObject &obj, const char *par, double parVal)
    {
       variations()[TString::Format("%s=%g", par, parVal).Data()]->operator=(obj);
@@ -313,7 +312,7 @@ public:
    bool SetBinContent(int bin, double value, const char *par = nullptr, double parVal = 1);
    bool SetBinData(int bin, double value, const char *dataName = "obsData"); // only valid for pdf nodes
 
-   void _SetContents_(double value);                                                     // *MENU*
+   void _SetContent_(double value);                                                     // *MENU*
    void _SetBinContent_(int bin, double value, const char *par = "", double parVal = 1); // *MENU*
 
    bool SetXaxis(const RooAbsBinning &binning);
@@ -353,6 +352,7 @@ public:
 
    void _fitTo_(const char *datasetName = "", const char *constParValues = ""); // *MENU*
    void _generate_(const char *name = "", bool expected = false);               // *MENU*
+   //void _scan_(const char* varNames="", int nBinsX=0, double lowX=0, double highX=0, int nBinsY=0, double lowY=0, double highY=0); // *MENU*
    //    xRooNode fitTo(const char* datasetName) const;
    //    xRooNode fitTo(const xRooNode& _data) const;
    //    xRooNode generate(bool expected=false) const;
