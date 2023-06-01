@@ -259,6 +259,12 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
       }
    }
 
+   if(fNlls.empty()) {
+       // this happens when loaded hypoSpace from a hypoSpaceInverterResult
+       // set relUncert to infinity so that we don't test any new points
+       relUncert = std::numeric_limits<double>::infinity(); // no NLL available so just get whatever limit we can
+   }
+
    std::map<std::string, std::pair<double, double>> out;
    std::shared_ptr<TMemFile> memFile;
    if (!gDirectory->IsWritable() && !sOpt.Contains("toys")) {
@@ -273,8 +279,9 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
 
    // don't do the observed limit if all the NLL datas are *EXPECTED* generated
    bool doObs = true;
-#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
+
    if (!fNlls.empty()) { // handles case where loaded space from a HypoTestInverterResult
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
       bool allGen = true;
       for (auto &[pdf, nll]: fNlls) {
          auto _d = dynamic_cast<RooDataSet *>(nll->data());
@@ -286,8 +293,8 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
       }
       if (allGen)
          doObs = false;
-   }
 #endif
+   }
    if (doObs) {
       auto lim = FindLimit(TString::Format("p%s obs", opt), relUncert);
       if (lim.second < 0)
