@@ -8542,7 +8542,7 @@ void xRooNode::Draw(Option_t *opt)
             "= dynamic_cast<xRooNode*>(h->GetListOfFunctions()->FindObject(\"%s\")); n && "
             "n->TestBit(TObject::kNotDeleted) && n->get<RooRealVar>()->getVal() != h->GetBinContent(1)) {"
             "h->SetBinContent(1, "
-            "TString::Format(\"%%.2g\",int(h->GetBinContent(1)/(range*0.01))*range*0.01).Atof());n->SetContents( "
+            "TString::Format(\"%%.2g\",int(h->GetBinContent(1)/(range*0.01))*range*0.01).Atof());n->SetContent( "
             "h->GetBinContent(1) ); for(auto pp : *h->GetListOfFunctions()) if(auto hh = "
             "dynamic_cast<TH1*>(pp))hh->SetBinContent(1,h->GetBinContent(1));} if(h->GetBinContent(1)==0.) h->SetBinContent(1,range*0.005); gPad->Modified();gPad->Update(); }",
             _hist->GetName(), node->GetName())));
