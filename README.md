@@ -10,16 +10,18 @@ xRooFit works in both c++ and python, with the experience in python being partic
 
 You are recommended to use xRooFit through the [StatAnalysis](https://gitlab.cern.ch/atlas/StatAnalysis) releases, where it comes pre-compiled in the release.
 
-This software is available with e.g.:
+[![Latest Release](https://gitlab.cern.ch/atlas/StatAnalysis/-/badges/release.svg)](https://gitlab.cern.ch/atlas/StatAnalysis/-/releases)
+
+This software is available with e.g. (change the numbers at the end to get more recent version)
 
 ```bash
-docker run –it gitlab-registry.cern.ch/atlas/statanalysis:0-0-2
+docker run –it gitlab-registry.cern.ch/atlas/statanalysis:0-2-1
 ```
 
 or for ATLAS users:
 
 ```bash
-asetup StatAnalysis,0.1.0
+asetup StatAnalysis,0.2.1
 ```
 
 ### Compiling from source
