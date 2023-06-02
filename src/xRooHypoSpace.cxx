@@ -1369,7 +1369,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
    TGraphErrors *out = new TGraphErrors;
    out->SetName(GetName());
 
-   TString title = TString::Format(";%s", poi().first()->GetTitle());
+   TString title = (!axes().empty()) ? TString::Format(";%s", axes().first()->GetTitle()) : "";
 
    auto pllType = xRooFit::Asymptotics::TwoSided;
    if (!empty() && axes().size() == 1) {
@@ -1440,7 +1440,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
       if (!ufr)
          ufr = p.ufit();
       if (out->GetN()==0 && ufr && ufr->status()==0) {
-         out->SetPoint(out->GetN(), p.mu_hat().getVal(), 0.);
+         out->SetPoint(out->GetN(), ufr->floatParsFinal().getRealValue(axes().first()->GetName(),ufr->constPars().getRealValue(axes().first()->GetName())), 0.);
          out->SetPointError(out->GetN() - 1, 0, ufr->edm());
       }
       if (auto fr = p.fNull_cfit;
@@ -1469,7 +1469,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          badPoints->SetPoint(badPoints->GetN(), p.fNullVal(), out->Eval(p.fNullVal()));
          mainPad->Modified();
       } else if(!std::isnan(val)) {
-         out->SetPoint(out->GetN(), p.fNullVal(), p.pll().first);
+         out->SetPoint(out->GetN(), p.coords->getRealValue(axes().first()->GetName()), p.pll().first);
          out->SetPointError(out->GetN() - 1, 0, p.pll().second);
          out->Sort();
 
