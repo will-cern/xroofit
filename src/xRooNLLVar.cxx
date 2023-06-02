@@ -79,6 +79,9 @@
 #include "TTree.h"
 #include "TGraph2D.h"
 
+#include "TROOT.h"
+#include "TKey.h"
+
 BEGIN_XROOFIT_NAMESPACE
 
 std::set<int> xRooNLLVar::xRooHypoPoint::allowedStatusCodes = {0};
@@ -1307,6 +1310,20 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
          if (fit->getCatIndex("type")!=type) continue;
          // found ufit ... construct
          std::string _name = fits->getGlobalObservables()->getStringValue(TString::Format("%s.name",fit->getCatLabel("type")));
+         // see if can retrieve from any open file ....
+         for(auto file : *gROOT->GetListOfFiles()) {
+            if (auto k = static_cast<TDirectory*>(file)->FindKeyAny(_name.c_str())) {
+               // use pre-retrieved fits if available
+               xRooFit::StoredFitResult* storedFr = k->GetMotherDir()->GetList() ? dynamic_cast<xRooFit::StoredFitResult*>(k->GetMotherDir()->GetList()->FindObject(k->GetName())) : nullptr;
+               if (auto cachedFit = (storedFr) ? storedFr->fr.get() : k->ReadObject<RooFitResult>(); cachedFit) {
+                  if (!storedFr) {
+                     storedFr = new xRooFit::StoredFitResult(cachedFit);
+                     k->GetMotherDir()->Add(storedFr);
+                  }
+                  return storedFr->fr;
+               }
+            }
+         }
          auto rfit = std::make_shared<RooFitResult>(_name.c_str(),TUUID(_name.c_str()).GetTime().AsString());
          rfit->setStatus(fit->getRealValue("status"));
          rfit->setMinNLL(fit->getRealValue("minNll"));
