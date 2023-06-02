@@ -1529,7 +1529,7 @@ RooStats::HypoTestInverterResult *xRooNLLVar::xRooHypoSpace::result()
    if (_axes.empty())
       return out;
 
-   out = new RooStats::HypoTestInverterResult(GetName(), *dynamic_cast<RooRealVar *>(_axes.at(0)), 0.05);
+   out = new RooStats::HypoTestInverterResult(GetName(), *dynamic_cast<RooRealVar *>(_axes.at(0)), 0.95);
 
    for (auto &p : *this) {
       double _x = p.coords->getRealValue(_axes.at(0)->GetName(), std::numeric_limits<double>::quiet_NaN());
