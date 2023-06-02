@@ -2195,7 +2195,9 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints
                                                 double alt_value, const xRooFit::Asymptotics::PLLType &pllType)
 {
    xRooNLLVar::xRooHypoSpace hs = hypoSpace(parName, pllType);
-   hs.poi().first()->setStringAttribute("altVal", std::isnan(alt_value) ? nullptr : TString::Format("%f", alt_value));
+   for(auto poi : hs.poi()) {
+      poi->setStringAttribute("altVal", std::isnan(alt_value) ? nullptr : TString::Format("%f", alt_value));
+   }
    if (nPoints > 0)
       hs.AddPoints(parName, nPoints, low, high);
    return hs;
@@ -2217,14 +2219,13 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, const xRooF
 
    s.AddModel(pdf());
    if (strlen(parName)) {
-      std::unique_ptr<RooAbsCollection> poi(s.pars()->selectByName(parName));
-      if (poi->empty())
+      std::unique_ptr<RooAbsCollection> axes(s.pars()->selectByName(parName));
+      if (axes->empty())
          throw std::runtime_error("parameter not found");
-      s.pars()->setAttribAll("poi", false);
-      poi->setAttribAll("poi", true);
-   } else if (std::unique_ptr<RooAbsCollection>(s.pars()->selectByAttrib("poi", true))->empty()) {
+      axes->setAttribAll("axis", true);
+   } /*else if (std::unique_ptr<RooAbsCollection>(s.pars()->selectByAttrib("poi", true))->empty()) {
       throw std::runtime_error("You must specify a POI for the hypoSpace");
-   }
+   }*/
    s.fNlls[s.fPdfs.begin()->second] = std::make_shared<xRooNLLVar>(*this);
    s.fTestStatType = pllType;
    return s;
