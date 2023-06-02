@@ -430,37 +430,11 @@ RooArgList xRooNLLVar::xRooHypoSpace::axes() const
    RooArgList out;
    out.setName("axes");
 
+   out.add(*std::unique_ptr<RooAbsCollection>(fPars->selectByAttrib("axis",true))); // start with any pars explicitly designated as axes
+
    bool clash;
    do {
       clash = false;
-
-      // add next best coordinate
-      std::map<std::string, std::set<double>> values;
-      for (auto &par : *pars()) {
-         if (out.find(*par))
-            continue;
-         for (auto p : *this) {
-            values[par->GetName()].insert(
-               p.coords->getRealValue(par->GetName(), std::numeric_limits<double>::quiet_NaN()));
-         }
-      }
-
-      std::string bestVar;
-      size_t maxDiff = 0;
-      bool isPOI = false;
-      for (auto &[k, v] : values) {
-         if (v.size() > maxDiff || (v.size() == maxDiff && !isPOI && pars()->find(k.c_str())->getAttribute("poi"))) {
-            bestVar = k;
-            isPOI = pars()->find(k.c_str())->getAttribute("poi");
-            maxDiff = std::max(maxDiff, v.size());
-         }
-      }
-
-      if (bestVar.empty()) {
-         break;
-      }
-
-      out.add(*pars()->find(bestVar.c_str()));
 
       std::set<std::vector<double>> coords;
       for (auto &p : *this) {
@@ -472,8 +446,38 @@ RooArgList xRooNLLVar::xRooHypoSpace::axes() const
             clash = true;
             break;
          }
+         coords.insert(p_coords);
       }
 
+      if(clash) {
+         // add next best coordinate
+         std::map<std::string, std::set<double>> values;
+         for (auto &par: *pars()) {
+            if (out.find(*par))
+               continue;
+            for (auto p: *this) {
+               values[par->GetName()].insert(
+                       p.coords->getRealValue(par->GetName(), std::numeric_limits<double>::quiet_NaN()));
+            }
+         }
+
+         std::string bestVar;
+         size_t maxDiff = 0;
+         bool isPOI = false;
+         for (auto &[k, v]: values) {
+            if (v.size() > maxDiff || (v.size() == maxDiff && !isPOI && pars()->find(k.c_str())->getAttribute("poi"))) {
+               bestVar = k;
+               isPOI = pars()->find(k.c_str())->getAttribute("poi");
+               maxDiff = std::max(maxDiff, v.size());
+            }
+         }
+
+         if (bestVar.empty()) {
+            break;
+         }
+
+         out.add(*pars()->find(bestVar.c_str()));
+      }
    } while (clash);
 
    // ensure poi are at the end
