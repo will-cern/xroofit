@@ -267,7 +267,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
 
    std::map<std::string, std::pair<double, double>> out;
    std::shared_ptr<TMemFile> memFile;
-   if (!gDirectory->IsWritable() && !sOpt.Contains("toys")) {
+   if (!gDirectory->IsWritable()) {
       memFile = std::make_shared<TMemFile>("memory", "RECREATE");
    }
    for (int nSigma : nSigmas) {

@@ -1689,7 +1689,10 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
       }
       for (size_t i = 0; i < std::min(size_t(nToys), (maxToys-toys.size())); i++) {
          int seed = RooRandom::randomGenerator()->Integer(std::numeric_limits<uint32_t>::max());
-         toys.push_back(std::make_tuple(seed, ((alt) ? generateAlt(seed) : generateNull(seed)).pll().first, 1.));
+         auto toy = ((alt) ? generateAlt(seed) : generateNull(seed));
+         TDirectory* tmp = gDirectory; gDirectory = nullptr; // disables any saving of fit results for toys
+         toys.push_back(std::make_tuple(seed, toy.pll().first, 1.));
+         gDirectory = tmp;
          (alt ? altToysAdded:toysAdded)++;
          if (std::isnan(std::get<1>(toys.back())))
             nans++;
@@ -2247,7 +2250,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
 
    out.SetTestStatisticData(ts_obs.first);
 
-   // build a ds to hold all fits ... store coords in the globs list
+   // build a ds to hold all fits ... store coords in the globs list of the nullDist
    // also need to store at least mu_hat value(s)
    RooArgList fitDetails;
    RooArgList fitMeta;
