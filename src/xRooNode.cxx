@@ -558,7 +558,12 @@ void xRooNode::Browse(TBrowser *b)
          continue; // in the folders
       if (strcmp(v->GetName(), ".folders") == 0)
          continue; // never 'browse' the folders property
-      int _checked = (v->get<RooAbsData>() || v->get<RooFitResult>()) ? v->get()->TestBit(1 << 20) : -1;
+      auto _fr =  v->get<RooFitResult>();
+      int _checked = (v->get<RooAbsData>() || _fr) ? v->get()->TestBit(1 << 20) : -1;
+      if(_fr && ((_fr->status()==0 && _fr->numStatusHistory()==0)||(_fr->floatParsFinal().empty()))) {
+         // this is a "PARTIAL" fit result ... don't allow it to be selected
+         _checked = -1;
+      }
       if (v->get<RooAbsPdf>() && get<RooSimultaneous>())
          _checked = !v->get<RooAbsArg>()->getAttribute("hidden");
       TString _name = v->GetName();
@@ -605,8 +610,13 @@ void xRooNode::Browse(TBrowser *b)
       if (_checked != -1) {
          dynamic_cast<TQObject *>(b->GetBrowserImp())
             ->Connect("Checked(TObject *, Bool_t)", ClassName(), v.get(), "Checked(TObject *, Bool_t)");
-         if (auto _fr = v->get<RooFitResult>(); _fr && _fr->status())
-            v->GetTreeItem(b)->SetColor(_fr->numStatusHistory() ? kRed : kBlue);
+      }
+      if (_fr) {
+         if(_fr->status()) { // snapshots or bad fits
+            v->GetTreeItem(b)->SetColor((_fr->numStatusHistory() || _fr->floatParsFinal().empty()) ? kRed : kBlue);
+         } else if(_fr->numStatusHistory()==0) { // partial fit result ..
+            v->GetTreeItem(b)->SetColor(kGray);
+         }
       }
       if ((v->fFolder=="!np"||v->fFolder=="!poi")) {
          if(v->get<RooAbsArg>()->getAttribute("Constant")) {
@@ -656,6 +666,7 @@ void xRooNode::Browse(TBrowser *b)
    // browse the browsables too
    for (auto &v : fBrowsables) {
       TString _name = v->GetName();
+      if(_name==".memory") continue; // hide the memory from browsing, if put in browsables
       TString nameSave(v->TNamed::GetName());
       TString titleSave(v->TNamed::GetTitle());
       if (auto o = v->get(); o)
@@ -4441,7 +4452,8 @@ xRooNode &xRooNode::browse()
       return out;
    };
 
-   for (auto &c : *this) {
+   const std::vector<std::shared_ptr<xRooNode>>& nn2(*this);
+   for (auto &c : nn2) {
       if (strlen(c->GetName()) > 0 && (c->GetName()[0] == '.')) {
          c->fTimes = 1;
          continue;
@@ -4543,13 +4555,83 @@ xRooNode &xRooNode::browse()
           }
       }*/
    } else if( auto ir = get<RooStats::HypoTestInverterResult>() ) {
-      xRooNode tests;
-      for(int i=0;i<ir->ArraySize();i++) {
-         tests.push_back(std::make_shared<xRooNode>(TString::Format("%g",ir->GetXValue(i)),*ir->GetResult(i),*this));
+      // check if we already have a hypoSpace in our memory
+      bool hasHS = false;
+      for (auto &c : fBrowsables) {
+         if(strcmp(c->GetName(),".memory")==0 && c->get<xRooHypoSpace>()) {
+            hasHS=true;
+            break;
+         }
       }
-//      std::sort(tests.begin(),tests.end(),[](auto &left, auto &right) {
-//          return (TString((*left)->GetName()).Atof() < TString((*right)->GetName()).Atof()); });
-      appendChildren(tests);
+      if(!hasHS) {
+         // add the HS
+         auto hs = fBrowsables.emplace_back(std::make_shared<xRooNode>(".memory",std::make_shared<xRooHypoSpace>(ir),*this));
+         // add the hypoPoints first so they appear first
+         auto _axes = hs->get<xRooHypoSpace>()->axes();
+
+         int i=0;
+         for(auto& hp : *hs->get<xRooHypoSpace>()) {
+            TString coordString;
+            for (auto a : _axes) {
+               if (a != _axes.first())
+                  coordString += ",";
+               coordString += TString::Format("%s=%g", a->GetName(),
+                                              hp.coords->getRealValue(a->GetName(), ir->GetXValue(i)));
+            }
+            auto hpn = emplace_back( std::make_shared<xRooNode>(coordString,hp.hypoTestResult,hs));
+            hpn->fTimes++;
+            hpn->fBrowsables.emplace_back(std::make_shared<xRooNode>(".memory",std::shared_ptr<xRooNLLVar::xRooHypoPoint>(&hp,[](xRooNLLVar::xRooHypoPoint*){}),hpn));
+            i++;
+         }
+      } else {
+         // ensure all hypoTestResults are flagged as keep-alive
+         std::vector<std::shared_ptr<xRooNode>>& nn = *this;
+         for (auto &c : nn) {
+            if(c->get<RooStats::HypoTestResult>()) c->fTimes++;
+         }
+      }
+//      xRooNode tests;
+//      for(int i=0;i<ir->ArraySize();i++) {
+//         tests.push_back(std::make_shared<xRooNode>(TString::Format("%g",ir->GetXValue(i)),*ir->GetResult(i),*this));
+//      }
+//      appendChildren(tests);
+   } else if( get<RooStats::HypoTestResult>() ) {
+
+      // create the xRooHypoPoint if necessary
+      xRooNLLVar::xRooHypoPoint* hp = nullptr;
+      for (auto &c : fBrowsables) {
+         if(strcmp(c->GetName(),".memory")==0 && c->get<xRooNLLVar::xRooHypoPoint>()) {
+            hp = c->get<xRooNLLVar::xRooHypoPoint>();
+            c->fTimes++; // keep it alive
+            break;
+         }
+      }
+      if(!hp) {
+         auto shp = std::make_shared<xRooNLLVar::xRooHypoPoint>(std::dynamic_pointer_cast<RooStats::HypoTestResult>(fComp));
+         fBrowsables.emplace_back(std::make_shared<xRooNode>(".memory",shp,*this));
+         hp = shp.get();
+      }
+
+      xRooNode fits;
+
+      if(auto fit = hp->ufit()) {
+         fits.emplace_back(std::make_shared<xRooNode>(fit,*this))->TNamed::SetName("ufit");
+      }
+      if(auto fit = hp->cfit_null()) {
+         fits.emplace_back(std::make_shared<xRooNode>(fit,*this))->TNamed::SetName("cfit_null");
+      }
+      if(auto fit = hp->cfit_alt()) {
+         fits.emplace_back(std::make_shared<xRooNode>(fit,*this))->TNamed::SetName("cfit_alt");
+      }
+       if(auto fit = hp->gfit()) {
+           fits.emplace_back(std::make_shared<xRooNode>(fit,*this))->TNamed::SetName("gfit");
+       }
+       if(auto asi = hp->asimov()) {
+          auto asiP = fits.emplace_back(std::make_shared<xRooNode>(asi->hypoTestResult ? asi->hypoTestResult : std::make_shared<RooStats::HypoTestResult>(asi->result()),*this));
+          asiP->TNamed::SetName("asimov");
+          asiP->fBrowsables.emplace_back( std::make_shared<xRooNode>(".memory",asi,asiP) );
+       }
+      appendChildren(fits);
    }
 
    // clear anything that has fTimes = 0 still
@@ -7975,8 +8057,12 @@ void xRooNode::Draw(Option_t *opt)
             continue;
          // need to get constraint mean and error parameters ....
          // look for normal gaussian and poisson cases
-         double prefitError = dynamic_cast<RooRealVar *>(fr->floatParsInit().find(p->GetName()))->getError();
-         double prefitVal = dynamic_cast<RooRealVar *>(fr->floatParsInit().find(p->GetName()))->getVal();
+         double prefitError = 0;
+         double prefitVal = 0;
+         if (auto ip = dynamic_cast<RooRealVar *>(fr->floatParsInit().find(p->GetName()))) { // handles if no prefit available
+            prefitError=ip->getError();
+            prefitVal = ip->getVal();
+         };
 
          std::shared_ptr<xRooNode> pConstr;
          if (fParent && fParent->getObject<RooRealVar>(p->GetName())) {
