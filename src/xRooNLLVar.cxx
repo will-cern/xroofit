@@ -1021,16 +1021,16 @@ int xRooNLLVar::xRooHypoPoint::status() const
    return out;
 }
 
-void xRooNLLVar::xRooHypoPoint::Print()
+void xRooNLLVar::xRooHypoPoint::Print(Option_t*) const
 {
-   std::cout << "POI: " << poi().contentsString() << " , null: " << dynamic_cast<RooAbsReal *>(poi().first())->getVal()
-             << " , alt: " << dynamic_cast<RooAbsReal *>(alt_poi().first())->getVal();
+   std::cout << "POI: " << const_cast<xRooHypoPoint*>(this)->poi().contentsString() << " , null: " << dynamic_cast<RooAbsReal *>(const_cast<xRooHypoPoint*>(this)->poi().first())->getVal()
+             << " , alt: " << dynamic_cast<RooAbsReal *>(const_cast<xRooHypoPoint*>(this)->alt_poi().first())->getVal();
    std::cout << " , pllType: " << fPllType << std::endl;
 
    std::cout << " -        ufit: ";
    if (fUfit) {
-      std::cout << fUfit->GetName() << " " << fUfit->minNll() << " (status=" << fUfit->status() << ") (" << mu_hat().GetName()
-                << "_hat: " << mu_hat().getVal() << " +/- " << mu_hat().getError() << ")" << std::endl;
+      std::cout << fUfit->GetName() << " " << fUfit->minNll() << " (status=" << fUfit->status() << ") (" << const_cast<xRooHypoPoint*>(this)->mu_hat().GetName()
+                << "_hat: " << const_cast<xRooHypoPoint*>(this)->mu_hat().getVal() << " +/- " << const_cast<xRooHypoPoint*>(this)->mu_hat().getError() << ")" << std::endl;
    } else {
       std::cout << "Not calculated" << std::endl;
    }
@@ -1040,7 +1040,7 @@ void xRooNLLVar::xRooHypoPoint::Print()
    } else {
       std::cout << "Not calculated";
    }
-   if (!std::isnan(dynamic_cast<RooAbsReal *>(alt_poi().first())->getVal())) {
+   if (!std::isnan(dynamic_cast<RooAbsReal *>(const_cast<xRooHypoPoint*>(this)->alt_poi().first())->getVal())) {
       std::cout << std::endl << " -    alt cfit: ";
       if (fAlt_cfit) {
          std::cout << fAlt_cfit->GetName() << " " << fAlt_cfit->minNll() << " (status=" << fAlt_cfit->status() << ")"
@@ -1049,11 +1049,11 @@ void xRooNLLVar::xRooHypoPoint::Print()
          std::cout << "Not calculated" << std::endl;
       }
       std::cout << " sigma_mu: ";
-      asimov(true); // will trigger construction of fAsimov hypoPoint if possible
+      const_cast<xRooHypoPoint*>(this)->asimov(true); // will trigger construction of fAsimov hypoPoint if possible
       if (!fAsimov || !fAsimov->fUfit || !fAsimov->fNull_cfit) {
          std::cout << "Not calculated";
       } else {
-         std::cout << sigma_mu().first << " +/- " << sigma_mu().second;
+         std::cout << const_cast<xRooHypoPoint*>(this)->sigma_mu().first << " +/- " << const_cast<xRooHypoPoint*>(this)->sigma_mu().second;
       }
       if (fAsimov) {
          std::cout << std::endl;
@@ -1115,7 +1115,7 @@ std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> 
    return fData;
 }
 
-xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr, const RooAbsCollection* _coords) : hypoTestResult(htr) {
+xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr, const RooAbsCollection* _coords) : TNamed(), hypoTestResult(htr) {
    if(hypoTestResult) {
       // load the pllType
       fPllType = xRooFit::Asymptotics::PLLType(hypoTestResult->GetFitInfo()->getGlobalObservables()->getCatIndex("pllType"));
@@ -1332,7 +1332,10 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
             std::unique_ptr<RooAbsCollection> par_hats(hypoTestResult->GetFitInfo()->getGlobalObservables()->selectByName(coords->contentsString().c_str()));
             par_hats->setName("floatParsFinal");
             rfit->setFinalParList( *par_hats );
+         } else {
+            rfit->setFinalParList(RooArgList());
          }
+         rfit->setConstParList(RooArgList()); rfit->setInitParList(RooArgList());
          return rfit;
       }
    }

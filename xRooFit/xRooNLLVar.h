@@ -127,12 +127,12 @@ public:
    std::shared_ptr<ROOT::Fit::FitConfig> fitConfig(); // returns fit config, or creates a default one if not existing
    ROOT::Math::IOptions *fitConfigOptions(); // return pointer to non-const version of the options inside the fit config
 
-   class xRooHypoPoint {
+   class xRooHypoPoint : public TNamed {
    public:
       xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResult> htr = nullptr, const RooAbsCollection* _coords = nullptr);
       static std::set<int> allowedStatusCodes;
-      void Print();
-      void Draw(Option_t *opt = "");
+      void Print(Option_t* opt = "") const override;
+      void Draw(Option_t *opt = "") override;
 
       // status bitmask of the available fit results
       // 0 = all ok
@@ -143,6 +143,7 @@ public:
       std::shared_ptr<const RooFitResult> ufit(bool readOnly = false);
       std::shared_ptr<const RooFitResult> cfit_null(bool readOnly = false);
       std::shared_ptr<const RooFitResult> cfit_alt(bool readOnly = false);
+      std::shared_ptr<const RooFitResult> gfit() { return fGenFit; } // non-zero if data was generated
 
       std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> fData;
       std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> data();
