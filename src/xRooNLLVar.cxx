@@ -1311,6 +1311,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
          // found ufit ... construct
          std::string _name = fits->getGlobalObservables()->getStringValue(TString::Format("%s.name",fit->getCatLabel("type")));
          // see if can retrieve from any open file ....
+         TDirectory* tmp = gDirectory;
          for(auto file : *gROOT->GetListOfFiles()) {
             if (auto k = static_cast<TDirectory*>(file)->FindKeyAny(_name.c_str())) {
                // use pre-retrieved fits if available
@@ -1320,6 +1321,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
                      storedFr = new xRooFit::StoredFitResult(cachedFit);
                      k->GetMotherDir()->Add(storedFr);
                   }
+                  gDirectory = tmp; // one of the above calls moves to key's directory ... i didn't check which
                   return storedFr->fr;
                }
             }
