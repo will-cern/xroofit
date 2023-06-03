@@ -96,6 +96,8 @@ public:
    static int minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parName = "",
                     const std::shared_ptr<ROOT::Fit::FitConfig> &_fitConfig = nullptr);
 
+   // this class is used to store a shared_ptr in a TDirectory's List, so that retrieval of cached fits
+   // can share the fit result (and avoid re-reading from disk as well)
    class StoredFitResult : public TNamed {
    public:
       StoredFitResult(RooFitResult* _fr);

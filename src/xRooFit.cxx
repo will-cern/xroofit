@@ -378,7 +378,7 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
    out.first->SetName(expected ? (TString(fr->GetName())+"_asimov") : uuid);
 
    // from now on we store the globs in the dataset
-   // if(out.second) { out.first->setGlobalObservables(*out.second); out.second.reset(); }
+   if(out.second) { out.first->setGlobalObservables(*out.second); out.second.reset(); }
 
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
    // store fitResult name on the weightVar
@@ -585,7 +585,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
                auto cl = TClass::GetClass(((TKey *)k)->GetClassName());
                if (cl->InheritsFrom("RooFitResult")) {
                   StoredFitResult* storedFr = nllDir->GetList() ? dynamic_cast<StoredFitResult*>(nllDir->GetList()->FindObject(k->GetName())) : nullptr;
-                  if (auto cachedFit = (storedFr) ? storedFr->fr.get() : nllDir->Get<RooFitResult>(k->GetName()); cachedFit) {
+                  if (auto cachedFit = (storedFr) ? storedFr->fr.get() : dynamic_cast<TKey*>(k)->ReadObject<RooFitResult>(); cachedFit) {
                      if (!storedFr) {
                         storedFr = new StoredFitResult(cachedFit);
                         nllDir->Add(storedFr);
