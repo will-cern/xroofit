@@ -24,6 +24,7 @@
 #include "TSystem.h"
 #include "TPRegexp.h"
 #include "TMemFile.h"
+#include "TROOT.h"
 #include "RooDataSet.h"
 #include "TKey.h"
 #include "TFile.h"
@@ -266,9 +267,15 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
    }
 
    std::map<std::string, std::pair<double, double>> out;
-   std::shared_ptr<TMemFile> memFile;
    if (!gDirectory->IsWritable()) {
-      memFile = std::make_shared<TMemFile>("memory", "RECREATE");
+      // locate a TMemFile in the open list of files and move to that
+      // or create one if cannot find
+      for(auto file : *gROOT->GetListOfFiles()) {
+         if(auto f = dynamic_cast<TMemFile*>(file)) { f->cd(); break; }
+      }
+      if(!gDirectory->IsWritable()) {
+         new TMemFile("fitDatabase","RECREATE");
+      }
    }
    for (int nSigma : nSigmas) {
       auto lim = FindLimit(TString::Format("p%s exp%s%d", opt, nSigma > 0 ? "+" : "", nSigma), relUncert);
