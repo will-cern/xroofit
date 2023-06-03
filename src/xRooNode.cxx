@@ -9096,6 +9096,48 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
       // const_cast<Node2*>(this)->sterilize(); - tried this to reduce mem leak on readback but no improve
       if (!w->writeToFile(filename, sOpt != "update")) {
          Info("SaveAs", "%s saved to %s", w->GetName(), filename);
+         // save any fitDatabase that is loaded in memory too
+         // TODO: We should do this as well for SaveAs on a scan object
+         if(auto fitDb = dynamic_cast<TFile*>(gROOT->GetListOfFiles()->FindObject("fitDatabase"))) {
+
+            std::function<void(TDirectory*,TDirectory*)> CopyDir;
+
+            CopyDir = [&](TDirectory* source,TDirectory* dest) {
+               auto dir = dest->GetDirectory(source->GetName());
+               if(!dir) {
+                  dir = dest->mkdir(source->GetName());
+               }
+               for(auto k : *source->GetListOfKeys()) {
+                  auto key = dynamic_cast<TKey*>(k);
+                  const char *classname = key->GetClassName();
+                  TClass *cl = gROOT->GetClass(classname);
+                  //std::cout << "processing " << key->GetName() << " " << classname << std::endl;
+                  if (!cl) {
+                     continue;
+                  } else if (cl->InheritsFrom(TDirectory::Class())) {
+                     CopyDir(source->GetDirectory(key->GetName()),dir);
+                  } else {
+                     // don't write object if it already exists
+                     if(dir->FindKey(key->GetName())) continue;
+                     // support FitConfigs ....
+                     if (strcmp(classname,"ROOT::Fit::FitConfig")==0) {
+                        auto fc = key->ReadObject<ROOT::Fit::FitConfig>();
+                        dir->WriteObject(fc,key->GetName());
+                        delete fc;
+                     } else {
+                        TObject *obj = key->ReadObj();
+                        if(obj) {
+                           dir->WriteTObject(obj, key->GetName());
+                           delete obj;
+                        }
+                     }
+                  }
+               }
+            };
+            CopyDir(fitDb,std::make_unique<TFile>(filename,"UPDATE").get());
+            Info("SaveAs","Saved fitDatabase to %s",filename);
+         }
+
       } else {
          Error("SaveAs", "Unable to save to %s", filename);
       }
