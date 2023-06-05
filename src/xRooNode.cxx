@@ -7649,6 +7649,8 @@ void xRooNode::Draw(Option_t *opt)
    sOpt.ToLower();
    sOpt.ReplaceAll("ratio", "");
    sOpt.ReplaceAll("significance", ""); // remove old option if still given
+   bool nostack = sOpt.Contains("nostack");
+   sOpt.ReplaceAll("nostack","");
    bool hasSame = sOpt.Contains("same");
    sOpt.ReplaceAll("same", "");
    bool hasGoff = sOpt.Contains("goff");
@@ -8711,184 +8713,186 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    if (!hasOverlay && (rarNode->get()->InheritsFrom("RooRealSumPdf") || rarNode->get()->InheritsFrom("RooAddPdf"))) {
-      // build a stack
-      THStack *stack = new THStack(TString::Format("%s_stack", rar->GetName()),
-                                   TString::Format("%s;%s", rar->GetTitle(), h->GetXaxis()->GetTitle()));
-      int count = 2;
-      std::map<std::string, int> colorByTitle; // TODO: should fill from any existing legend
-      std::set<std::string> allTitles;
-      bool titleMatchName = true;
-      std::map<std::string, TH1 *> histGroups;
-      std::vector<TH1 *> hhs;
+      // build a stack unless not requested
+      if(!nostack) {
+          THStack *stack = new THStack(TString::Format("%s_stack", rar->GetName()),
+                                       TString::Format("%s;%s", rar->GetTitle(), h->GetXaxis()->GetTitle()));
+          int count = 2;
+          std::map<std::string, int> colorByTitle; // TODO: should fill from any existing legend
+          std::set<std::string> allTitles;
+          bool titleMatchName = true;
+          std::map<std::string, TH1 *> histGroups;
+          std::vector<TH1 *> hhs;
 
-      // support for CMS model case where has single component containing many coeffs
-      // will build stack by setting each coeff equal to 0 in turn, rebuilding the histogram
-      // the difference from the "full" histogram will be the component
-      RooArgList cms_coefs;
-      if(!rarNode->components().empty()) {
-         auto comps = rarNode->components()[0];
-         for (auto &c: *comps) {
-            if (c->fFolder == "!.coeffs")
-               cms_coefs.add(*c->get<RooAbsArg>());
-         }
-      }
-      if (!cms_coefs.empty()) {
-            RooRealVar zero("zero", "", 0);
-            std::shared_ptr<TH1> prevHist((TH1 *)h->Clone());
-            for (auto c : cms_coefs) {
-               // seems I have to remake the function each time, as haven't figured out what cache needs clearing?
-               std::unique_ptr<RooAbsReal> f(dynamic_cast<RooAbsReal *>(rarNode->components()[0]->get()->Clone("tmpCopy")));
-               zero.setAttribute(
-                  Form("ORIGNAME:%s", c->GetName()));            // used in redirectServers to say what this replaces
-               f->redirectServers(RooArgSet(zero), false, true); // each time will replace one additional coef
-               // zero.setAttribute(Form("ORIGNAME:%s",c->GetName()),false); (commented out so that on next iteration
-               // will still replace all prev)
-               auto hh = xRooNode(*f, *this).BuildHistogram(v);
-               if (sf) hh->Scale(sf->getVal());
-               if (strlen(hh->GetTitle()) == 0)
-                  hh->SetTitle(c->GetName()); // ensure all hists has titles
-               titleMatchName &= (TString(c->GetName()) == hh->GetTitle() ||
-                                  TString(hh->GetTitle()).BeginsWith(TString(c->GetName()) + "_"));
-               std::shared_ptr<TH1> nextHist((TH1 *)hh->Clone());
-               hh->Add(prevHist.get(), -1.);
-               hh->Scale(-1.);
-               hhs.push_back(hh);
-               prevHist = nextHist;
-            }
-      } else {
-         for (auto &samp : rarNode->components()) {
-            auto hh = samp->BuildHistogram(v);
-            if (sf) hh->Scale(sf->getVal());
-            hhs.push_back(hh);
-            if (strlen(hh->GetTitle()) == 0)
-               hh->SetTitle(samp->GetName()); // ensure all hists has titles
-            titleMatchName &= (TString(samp->GetName()) == hh->GetTitle() ||
-                               TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
-         }
-      }
-      for (auto &hh : hhs) {
-         // automatically group hists that all have the same title
-         if (histGroups.find(hh->GetTitle()) == histGroups.end()) {
-            histGroups[hh->GetTitle()] = hh;
-         } else {
-            // add it into this group
-            histGroups[hh->GetTitle()]->Add(hh);
-            delete hh;
-            continue;
-         }
-         auto hhMin = (hh->GetMinimum() == 0) ? hh->GetMinimum(1e-9) : hh->GetMinimum();
-         if (!stack->GetHists() && h->GetMinimum() > hhMin) {
-            auto newMin = hhMin - (h->GetMaximum() - hhMin) * gStyle->GetHistTopMargin();
-            if (hhMin >= 0 && newMin < 0)
-               newMin = hhMin * 0.99;
-            adjustYRange(newMin, h->GetMaximum());
-         }
+          // support for CMS model case where has single component containing many coeffs
+          // will build stack by setting each coeff equal to 0 in turn, rebuilding the histogram
+          // the difference from the "full" histogram will be the component
+          RooArgList cms_coefs;
+          if(!rarNode->components().empty()) {
+             auto comps = rarNode->components()[0];
+             for (auto &c: *comps) {
+                if (c->fFolder == "!.coeffs")
+                   cms_coefs.add(*c->get<RooAbsArg>());
+             }
+          }
+          if (!cms_coefs.empty()) {
+                RooRealVar zero("zero", "", 0);
+                std::shared_ptr<TH1> prevHist((TH1 *)h->Clone());
+                for (auto c : cms_coefs) {
+                   // seems I have to remake the function each time, as haven't figured out what cache needs clearing?
+                   std::unique_ptr<RooAbsReal> f(dynamic_cast<RooAbsReal *>(rarNode->components()[0]->get()->Clone("tmpCopy")));
+                   zero.setAttribute(
+                      Form("ORIGNAME:%s", c->GetName()));            // used in redirectServers to say what this replaces
+                   f->redirectServers(RooArgSet(zero), false, true); // each time will replace one additional coef
+                   // zero.setAttribute(Form("ORIGNAME:%s",c->GetName()),false); (commented out so that on next iteration
+                   // will still replace all prev)
+                   auto hh = xRooNode(*f, *this).BuildHistogram(v);
+                   if (sf) hh->Scale(sf->getVal());
+                   if (strlen(hh->GetTitle()) == 0)
+                      hh->SetTitle(c->GetName()); // ensure all hists has titles
+                   titleMatchName &= (TString(c->GetName()) == hh->GetTitle() ||
+                                      TString(hh->GetTitle()).BeginsWith(TString(c->GetName()) + "_"));
+                   std::shared_ptr<TH1> nextHist((TH1 *)hh->Clone());
+                   hh->Add(prevHist.get(), -1.);
+                   hh->Scale(-1.);
+                   hhs.push_back(hh);
+                   prevHist = nextHist;
+                }
+          } else {
+             for (auto &samp : rarNode->components()) {
+                auto hh = samp->BuildHistogram(v);
+                if (sf) hh->Scale(sf->getVal());
+                hhs.push_back(hh);
+                if (strlen(hh->GetTitle()) == 0)
+                   hh->SetTitle(samp->GetName()); // ensure all hists has titles
+                titleMatchName &= (TString(samp->GetName()) == hh->GetTitle() ||
+                                   TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
+             }
+          }
+          for (auto &hh : hhs) {
+             // automatically group hists that all have the same title
+             if (histGroups.find(hh->GetTitle()) == histGroups.end()) {
+                histGroups[hh->GetTitle()] = hh;
+             } else {
+                // add it into this group
+                histGroups[hh->GetTitle()]->Add(hh);
+                delete hh;
+                continue;
+             }
+             auto hhMin = (hh->GetMinimum() == 0) ? hh->GetMinimum(1e-9) : hh->GetMinimum();
+             if (!stack->GetHists() && h->GetMinimum() > hhMin) {
+                auto newMin = hhMin - (h->GetMaximum() - hhMin) * gStyle->GetHistTopMargin();
+                if (hhMin >= 0 && newMin < 0)
+                   newMin = hhMin * 0.99;
+                adjustYRange(newMin, h->GetMaximum());
+             }
 
-         /*if(stack->GetHists() && stack->GetHists()->GetEntries()>0) {
-             // to remove rounding effects on bin boundaries, see if binnings compatible
-             auto _h1 = dynamic_cast<TH1*>(stack->GetHists()->At(0));
-             if(_h1->GetNbinsX()==hh->GetNbinsX()) TODO ... finish dealing with silly rounding effects
-         }*/
-         TString thisOpt = dOpt;
-         // uncomment next line to blend continuous with discrete components .. get some unpleasant "poke through"
-         // effects though
-         // if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ? ""
-         // : "LF2";
-         stack->Add(hh, thisOpt);
-         allTitles.insert(hh->GetTitle());
-      }
-      stack->SetBit(kCanDelete); // should delete its sub histograms
-      stack->Draw("noclear same");
-      h->Draw("axissame"); // overlay axis again
+             /*if(stack->GetHists() && stack->GetHists()->GetEntries()>0) {
+                 // to remove rounding effects on bin boundaries, see if binnings compatible
+                 auto _h1 = dynamic_cast<TH1*>(stack->GetHists()->At(0));
+                 if(_h1->GetNbinsX()==hh->GetNbinsX()) TODO ... finish dealing with silly rounding effects
+             }*/
+             TString thisOpt = dOpt;
+             // uncomment next line to blend continuous with discrete components .. get some unpleasant "poke through"
+             // effects though
+             // if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ? ""
+             // : "LF2";
+             stack->Add(hh, thisOpt);
+             allTitles.insert(hh->GetTitle());
+          }
+          stack->SetBit(kCanDelete); // should delete its sub histograms
+          stack->Draw("noclear same");
+          h->Draw(dOpt+sOpt+"same"); // overlay again .. redraws axis + if stack would cover original hist (negative components) we still see integral
 
-      TList *ll = stack->GetHists();
-      if (ll && ll->GetEntries()) {
+          TList *ll = stack->GetHists();
+          if (ll && ll->GetEntries()) {
 
-         // get common prefix to strip off only if all titles match names and
-         // any title is longer than 10 chars
-         size_t e = std::min(allTitles.begin()->size(), allTitles.rbegin()->size());
-         size_t ii = 0;
-         bool goodPrefix = false;
-         std::string commonSuffix;
-         if (titleMatchName && ll->GetEntries() > 1) {
-            while (ii < e - 1 && allTitles.begin()->at(ii) == allTitles.rbegin()->at(ii)) {
-               ii++;
-               if (allTitles.begin()->at(ii) == '_' || allTitles.begin()->at(ii) == ' ')
-                  goodPrefix = true;
-            }
+             // get common prefix to strip off only if all titles match names and
+             // any title is longer than 10 chars
+             size_t e = std::min(allTitles.begin()->size(), allTitles.rbegin()->size());
+             size_t ii = 0;
+             bool goodPrefix = false;
+             std::string commonSuffix;
+             if (titleMatchName && ll->GetEntries() > 1) {
+                while (ii < e - 1 && allTitles.begin()->at(ii) == allTitles.rbegin()->at(ii)) {
+                   ii++;
+                   if (allTitles.begin()->at(ii) == '_' || allTitles.begin()->at(ii) == ' ')
+                      goodPrefix = true;
+                }
 
-            // find common suffix if there is one .. must start with a "_"
-            bool stop = false;
-            while (!stop && commonSuffix.size() < size_t(e - 1)) {
-               commonSuffix = allTitles.begin()->substr(allTitles.begin()->length() - commonSuffix.length() - 1);
-               for (auto &t : allTitles) {
-                  if (!TString(t).EndsWith(commonSuffix.c_str())) {
-                     commonSuffix = commonSuffix.substr(1);
-                     stop = true;
-                     break;
-                  }
-               }
-            }
-            if (commonSuffix.find('_') == std::string::npos)
-               commonSuffix = "";
-            else
-               commonSuffix = commonSuffix.substr(commonSuffix.find('_'));
-         }
-         if (!goodPrefix)
-            ii = 0;
+                // find common suffix if there is one .. must start with a "_"
+                bool stop = false;
+                while (!stop && commonSuffix.size() < size_t(e - 1)) {
+                   commonSuffix = allTitles.begin()->substr(allTitles.begin()->length() - commonSuffix.length() - 1);
+                   for (auto &t : allTitles) {
+                      if (!TString(t).EndsWith(commonSuffix.c_str())) {
+                         commonSuffix = commonSuffix.substr(1);
+                         stop = true;
+                         break;
+                      }
+                   }
+                }
+                if (commonSuffix.find('_') == std::string::npos)
+                   commonSuffix = "";
+                else
+                   commonSuffix = commonSuffix.substr(commonSuffix.find('_'));
+             }
+             if (!goodPrefix)
+                ii = 0;
 
-         // also find how many characters are needed to distinguish all entries (that dont have the same name)
-         // then carry on up to first space or underscore
-         size_t jj = 0;
-         std::map<std::string, std::string> reducedTitles;
-         while (reducedTitles.size() != allTitles.size()) {
-            jj++;
-            std::map<std::string, int> titlesMap;
-            for (auto &s : allTitles) {
-               if (reducedTitles.count(s))
-                  continue;
-               titlesMap[s.substr(0, jj)]++;
-            }
-            for (auto &s : allTitles) {
-               if (titlesMap[s.substr(0, jj)] == 1 && (jj >= s.length() || s.at(jj) == ' ' || s.at(jj) == '_')) {
-                  reducedTitles[s] = s.substr(0, jj);
-               }
-            }
-         }
+             // also find how many characters are needed to distinguish all entries (that dont have the same name)
+             // then carry on up to first space or underscore
+             size_t jj = 0;
+             std::map<std::string, std::string> reducedTitles;
+             while (reducedTitles.size() != allTitles.size()) {
+                jj++;
+                std::map<std::string, int> titlesMap;
+                for (auto &s : allTitles) {
+                   if (reducedTitles.count(s))
+                      continue;
+                   titlesMap[s.substr(0, jj)]++;
+                }
+                for (auto &s : allTitles) {
+                   if (titlesMap[s.substr(0, jj)] == 1 && (jj >= s.length() || s.at(jj) == ' ' || s.at(jj) == '_')) {
+                      reducedTitles[s] = s.substr(0, jj);
+                   }
+                }
+             }
 
-         // strip common prefix and suffix before adding
-         for (int i = ll->GetEntries() - 1; i >= 0; i--) { // go in reverse order
-            auto _title = (ll->GetEntries() > 5) ? reducedTitles[ll->At(i)->GetTitle()] : ll->At(i)->GetTitle();
-            _title = _title.substr(ii < _title.size() ? ii : 0);
-            if (!commonSuffix.empty() && TString(_title).EndsWith(commonSuffix.c_str()))
-               _title = _title.substr(0, _title.length() - commonSuffix.length());
+             // strip common prefix and suffix before adding
+             for (int i = ll->GetEntries() - 1; i >= 0; i--) { // go in reverse order
+                auto _title = (ll->GetEntries() > 5) ? reducedTitles[ll->At(i)->GetTitle()] : ll->At(i)->GetTitle();
+                _title = _title.substr(ii < _title.size() ? ii : 0);
+                if (!commonSuffix.empty() && TString(_title).EndsWith(commonSuffix.c_str()))
+                   _title = _title.substr(0, _title.length() - commonSuffix.length());
 
-            // style hists according to availble styles ... creating if necessary
-            dynamic_cast<TNamed *>(ll->At(i))->SetTitle(_title.c_str());
-            addLegendEntry(ll->At(i), _title.c_str(), "f");
-         }
-         // finally, ensure all hists are styled
-         for(auto hh : hhs) {
-            bool createdStyle = (xRooNode(*hh,*this).style(nullptr,false)==nullptr);
+                // style hists according to availble styles ... creating if necessary
+                dynamic_cast<TNamed *>(ll->At(i))->SetTitle(_title.c_str());
+                addLegendEntry(ll->At(i), _title.c_str(), "f");
+             }
+             // finally, ensure all hists are styled
+             for(auto hh : hhs) {
+                bool createdStyle = (xRooNode(*hh,*this).style(nullptr,false)==nullptr);
 
-            if(createdStyle) {
-               // give hist a color, that isn't the same as any other hists color
-               bool used=false;
-               do {
-                  hh->SetFillColor((count++) % 100);
-                  // check not already used this color
-                  used=false;
-                  for(auto hh2 : hhs) {
-                     auto _style = xRooNode(*hh2,*this).style(hh2,false);
-                     if(hh != hh2 && _style && _style->GetFillColor()==hh->GetFillColor()) { used=true; break; } }
-               } while(used);
-            }
+                if(createdStyle) {
+                   // give hist a color, that isn't the same as any other hists color
+                   bool used=false;
+                   do {
+                      hh->SetFillColor((count++) % 100);
+                      // check not already used this color
+                      used=false;
+                      for(auto hh2 : hhs) {
+                         auto _style = xRooNode(*hh2,*this).style(hh2,false);
+                         if(hh != hh2 && _style && _style->GetFillColor()==hh->GetFillColor()) { used=true; break; } }
+                   } while(used);
+                }
 
-            auto _style = xRooNode(*hh,*this).style(hh);
-            *dynamic_cast<TAttLine *>(hh) = *_style;
-            *dynamic_cast<TAttFill *>(hh) = *_style;
-            *dynamic_cast<TAttMarker *>(hh) = *_style;
-         }
+                auto _style = xRooNode(*hh,*this).style(hh);
+                *dynamic_cast<TAttLine *>(hh) = *_style;
+                *dynamic_cast<TAttFill *>(hh) = *_style;
+                *dynamic_cast<TAttMarker *>(hh) = *_style;
+             }
+          }
       }
    } else if (!overlayExisted) {
 
