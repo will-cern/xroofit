@@ -277,18 +277,12 @@ public:
       //  expX: do expected, X sigma (use +X or -X for contour, otherwise will return band unless X=0)
       //  toys: pvalues from available toys
       //  readonly: don't compute anything, just return available values
-      std::shared_ptr<TGraphErrors> BuildGraph(const char *opt);
+      std::shared_ptr<TGraphErrors> graph(const char *opt);
 
       // return a TMultiGraph containing the set of graphs for a particular visualization
       std::shared_ptr<TMultiGraph> graphs(const char* opt);
 
-      // estimates where corresponding pValues graph becomes equal to 0.05
-      // linearly interpolates log(pVal) when obtaining limits.
-      // returns value and error
-      static std::pair<double, double> GetLimit(const TGraph &pValues, double target = 0.05);
-
       // will evaluate more points until limit is below given relative uncert
-
       std::pair<double, double> FindLimit(const char *opt, double relUncert = std::numeric_limits<double>::infinity(), unsigned int maxTries=20);
 
       // key is nSigma or "obs" for observed
@@ -302,6 +296,11 @@ public:
       RooStats::HypoTestInverterResult *result();
 
    private:
+       // estimates where corresponding pValues graph becomes equal to 0.05
+       // linearly interpolates log(pVal) when obtaining limits.
+       // returns value and error
+       static std::pair<double, double> GetLimit(const TGraph &pValues, double target = 0.05);
+
       static RooArgList toArgs(const char *str);
 
       xRooFit::Asymptotics::PLLType fTestStatType = xRooFit::Asymptotics::Unknown;
@@ -310,6 +309,7 @@ public:
       std::map<std::shared_ptr<xRooNode>, std::shared_ptr<xRooNLLVar>> fNlls; // existing NLL functions of added pdfs;
 
       std::set<std::pair<std::shared_ptr<RooArgList>, std::shared_ptr<xRooNode>>> fPdfs;
+
    };
 
    xRooHypoSpace hypoSpace(const char *parName, int nPoints, double low, double high,

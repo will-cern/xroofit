@@ -921,9 +921,9 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::getVal(const char *what)
    TString sWhat(what);
    sWhat.ToLower();
    bool doTS = sWhat.Contains("ts");
-   bool doCLs = sWhat.Contains("cls");
-   bool doNull = sWhat.Contains("null");
-   bool doAlt = sWhat.Contains("alt");
+   bool doCLs = sWhat.Contains("pcls");
+   bool doNull = sWhat.Contains("pnull");
+   bool doAlt = sWhat.Contains("palt");
    double nSigma = (sWhat.Contains("exp"))
                       ? (TString(sWhat(sWhat.Index("exp") + 3, sWhat.Index(" ", sWhat.Index("exp")) == -1
                                                                   ? sWhat.Length()

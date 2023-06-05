@@ -767,13 +767,15 @@ void xRooNLLVar::xRooHypoSpace::Print(Option_t * /*opt*/) const
    std::cout << "Number of bad fits: " << badFits << std::endl;
 }
 
-std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *opt)
+std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt)
 {
 
    TString sOpt(opt);
    sOpt.ToLower();
 
    bool doCLs = sOpt.Contains("cls");
+   bool readOnly = sOpt.Contains("readonly");
+   bool visualize = sOpt.Contains("visualize") && !readOnly;
 
    double nSigma =
       (sOpt.Contains("exp"))
@@ -807,7 +809,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
       out->SetNameTitle(TString::Format("obs_p%s", sCL), title);
       out->SetMarkerStyle(20);out->SetMarkerSize(0.5);
       if (sOpt.Contains("ts"))
-         out->SetNameTitle("obs_ts", TString::Format("Observed;%s;Test Statistic", _axes.at(0)->GetTitle()));
+         out->SetNameTitle("obs_ts", TString::Format("Observed;%s;%s", _axes.at(0)->GetTitle(),(empty() ? "" : front().tsTitle(true).Data())));
    } else {
       out->SetNameTitle(TString::Format("exp%d_p%s", int(nSigma), sCL), title);
       out->SetMarkerStyle(0);out->SetMarkerSize(0.5);
@@ -848,7 +850,27 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
    };
    int nPointsDown = 0;
    bool above = true;
+   TStopwatch s;
+   s.Start();
+   size_t nDone = 0; bool drawn=false;
    for (auto &p : *this) {
+      if(s.RealTime() > 5) {
+         if(visualize) {
+            // draw readonly version of the graph
+            auto gra = graph(sOpt + " readOnly");
+            if (gra && gra->GetN()) {
+               if (!gPad) gra->Draw(); // in 6.28 DrawClone wont make the gPad defined :( ... so Draw then clear and Draw Clone
+               gPad->Clear();
+               gra->DrawClone("ALP")->SetBit(kCanDelete);
+               gSystem->ProcessEvents(); drawn=true;
+            }
+         } else {
+            Info("graph", "Completed %lu/%lu points for %s", nDone, size(), sOpt.Data());
+         }
+         s.Start();
+      } else {
+         s.Continue();
+      }
       double _x = p.coords->getRealValue(_axes.at(0)->GetName(), std::numeric_limits<double>::quiet_NaN());
       auto pval = p.getVal(sOpt);
       auto idx = out->GetN() - nPointsDown;
@@ -878,7 +900,10 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::BuildGraph(const char *
                above = false; // the -sigma points are actually above +sigma
          }
       }
+      nDone++;
    }
+
+   if(drawn) { gPad->Clear(); }
 
    if (out->GetN() == 0)
       return out;
@@ -918,10 +943,10 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
    std::shared_ptr<TMultiGraph> out;
    if (sOpt.Contains("pcls") || sOpt.Contains("pnull")) {
 
-      auto exp2 = BuildGraph(sOpt + " exp2");
-      auto exp1 = BuildGraph(sOpt + " exp1");
-      auto exp = BuildGraph(sOpt + " exp");
-      auto obs = BuildGraph(sOpt);
+      auto exp2 = graph(sOpt + " exp2");
+      auto exp1 = graph(sOpt + " exp1");
+      auto exp = graph(sOpt + " exp");
+      auto obs = graph(sOpt);
 
       out = std::make_shared<TMultiGraph>(GetName(),GetTitle());
       if (exp2 && exp2->GetN()>1) out->Add(static_cast<TGraph*>(exp2->Clone()),"FP");
@@ -967,11 +992,11 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
       }
       // add current limit estimates to legend
       if (exp2 && exp2->GetN()>1) {
-         auto l = matchPrecision(GetLimit(*BuildGraph(sOpt + "exp-2")));
+         auto l = matchPrecision(GetLimit(*graph(sOpt + "exp-2")));
          leg->AddEntry((TObject*)nullptr,TString::Format("-2#sigma: %g +/- %g", l.first,l.second),"");
       }
       if (exp1 && exp1->GetN()>1) {
-         auto l = matchPrecision(GetLimit(*BuildGraph(sOpt + "exp-1")));
+         auto l = matchPrecision(GetLimit(*graph(sOpt + "exp-1")));
          leg->AddEntry((TObject*)nullptr,TString::Format("-1#sigma: %g +/- %g", l.first,l.second),"");
       }
       if (exp && exp->GetN()>1) {
@@ -979,11 +1004,11 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
          leg->AddEntry((TObject*)nullptr,TString::Format("0#sigma: %g +/- %g", l.first,l.second),"");
       }
       if (exp1 && exp1->GetN()>1) {
-         auto l = matchPrecision(GetLimit(*BuildGraph(sOpt + "exp+1")));
+         auto l = matchPrecision(GetLimit(*graph(sOpt + "exp+1")));
          leg->AddEntry((TObject*)nullptr,TString::Format("+1#sigma: %g +/- %g", l.first,l.second),"");
       }
       if (exp2 && exp2->GetN()>1) {
-         auto l = matchPrecision(GetLimit(*BuildGraph(sOpt + "exp+2")));
+         auto l = matchPrecision(GetLimit(*graph(sOpt + "exp+2")));
          leg->AddEntry((TObject*)nullptr,TString::Format("+2#sigma: %g +/- %g", l.first,l.second),"");
       }
       if (obs && obs->GetN()>1) {
@@ -1071,7 +1096,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
    TString sOpt(opt);
    bool visualize = sOpt.Contains("visualize");
    sOpt.ReplaceAll("visualize","");
-   std::shared_ptr<TGraphErrors> gr = BuildGraph(sOpt + " readonly");
+   std::shared_ptr<TGraphErrors> gr = graph(sOpt + " readonly");
    if (visualize) {
       auto gra = graphs(sOpt.Contains("toys") ? "pcls readonly toys" : "pcls readonly");
       if (gra) {
@@ -1087,7 +1112,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
    }
 
    // resync parameter boundaries from nlls (may have been modified by fits)
-   for (auto p : poi()) {
+   for (auto p : axes()) {
       for (auto &[pdf, nll] : fNlls) {
          if (auto _v = dynamic_cast<RooRealVar *>(nll->pars()->find(*p))) {
             dynamic_cast<RooRealVar *>(p)->setRange(_v->getMin(), _v->getMax());
@@ -1096,7 +1121,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
    }
 
    if (!gr || gr->GetN() < 2) {
-      auto v = (poi().empty()) ? nullptr : dynamic_cast<RooRealVar *>(poi().first());
+      auto v = (axes().empty()) ? nullptr : dynamic_cast<RooRealVar *>(*axes().rbegin());
       if (!v)
          return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
       double muMax = std::min(v->getMax(), v->getMax("physical"));
@@ -1149,7 +1174,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       return lim;
    }
 
-   auto v = dynamic_cast<RooRealVar *>(poi().first());
+   auto v = dynamic_cast<RooRealVar *>(*axes().rbegin());
    double maxMu = std::min(v->getMax("physical"), v->getMax());
    double minMu = std::max(v->getMin("physical"), v->getMin());
 
@@ -1347,6 +1372,8 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
             gPad->SetLogy(false);
       }
 
+      gSystem->ProcessEvents();
+
       return;
    }
 
@@ -1522,11 +1549,13 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
       basePad->cd();
    }
 
-   if (!xRooNode::gIntObj) {
-      xRooNode::gIntObj = new xRooNode::InteractiveObject;
+   if(doFits) {
+      if (!xRooNode::gIntObj) {
+         xRooNode::gIntObj = new xRooNode::InteractiveObject;
+      }
+      gPad->GetCanvas()->Connect("Highlighted(TVirtualPad*,TObject*,Int_t,Int_t)", "xRooNode::InteractiveObject",
+                                 xRooNode::gIntObj, "Interactive_PLLPlot(TVirtualPad*,TObject*,Int_t,Int_t)");
    }
-   gPad->GetCanvas()->Connect("Highlighted(TVirtualPad*,TObject*,Int_t,Int_t)", "xRooNode::InteractiveObject",
-                              xRooNode::gIntObj, "Interactive_PLLPlot(TVirtualPad*,TObject*,Int_t,Int_t)");
 
    return;
 }
