@@ -7224,7 +7224,6 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             // p->Print();rar->Print();
             r *= (p->expectedEvents(normSet));
          } // do in here in case dependency on var
-         std::cout << r << " for " << (x?x->getVal() : 0) << " addr=" << x << std::endl;
          h->SetBinContent(i, r);
 
          if (errors) {
