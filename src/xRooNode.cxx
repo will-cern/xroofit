@@ -2733,10 +2733,12 @@ xRooNode xRooNode::Replace(const xRooNode& node) {
       throw std::runtime_error("Only replacement of RooAbsArg is supported");
    }
    node.convertForAcquisition(*this,"func");
+
    auto new_p = node.get<RooAbsArg>();
    if (!new_p) {
       throw std::runtime_error(TString::Format("Cannot replace with %s",node.GetName()));
    }
+   auto out = acquire(node.fComp); new_p = std::dynamic_pointer_cast<RooAbsArg>(out).get();
 
    std::set<RooAbsArg *> cl;
    for (auto &arg : p5->clients()) {
@@ -2758,8 +2760,6 @@ xRooNode xRooNode::Replace(const xRooNode& node) {
    for (auto arg : cl) {
       arg->redirectServers(RooArgSet(*new_p), false, true);
    }
-
-
    return node;
 
 }
@@ -3246,6 +3246,74 @@ void xRooNode::_generate_(const char *datasetName, bool expected)
                    kMBIconExclamation); // deletes self on dismiss?
    }
 }
+
+void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double lowX, double highX, const char*, int, double, double, const char *constParValues) {
+   try {
+      TString sWhat(what);
+      sWhat.ToLower();
+      //bool doToys = sWhat.Contains("toys");
+      sWhat.ReplaceAll("toys","");
+      if(sWhat!="pcls" && sWhat != "ts" && sWhat!="pnull") {
+         throw std::runtime_error("what must be equal to one of: pcls, ts, pnull");
+      }
+      TString sXvar(xvar);
+      if (sXvar=="") {
+         // try using POI if one available
+         auto _poi = poi();
+         if (_poi.empty()) {
+            throw std::runtime_error("Must specify xvar if POI not defined");
+         }
+         sXvar = _poi.at(0)->GetName();
+      }
+      // use the first selected dataset
+      auto _dsets = datasets();
+      TString dsetName = "";
+      for (auto &d : _dsets) {
+         if (d->get()->TestBit(1 << 20)) {
+            dsetName = d->get()->GetName();
+            break;
+         }
+      }
+      auto _pars = pars();
+      std::unique_ptr<RooAbsCollection> snap(_pars.argList().snapshot());
+      TStringToken pattern(constParValues, ",");
+      while (pattern.NextToken()) {
+         auto idx = pattern.Index('=');
+         TString pat = (idx == -1) ? TString(pattern) : TString(pattern(0, idx));
+         double val =
+                 (idx == -1) ? std::numeric_limits<double>::quiet_NaN() : TString(pattern(idx + 1, pattern.Length())).Atof();
+         for (auto p : _pars.argList()) {
+            if (TString(p->GetName()).Contains(TRegexp(pat, true))) {
+               p->setAttribute("Constant", true);
+               if (!std::isnan(val)) { dynamic_cast<RooAbsRealLValue *>(p)->setVal(val); }
+            }
+         }
+      }
+      if (sWhat == "pcls" || sWhat == "ts") {
+         auto hs = nll(dsetName.Data()).hypoSpace(sXvar,nBinsX,lowX,highX);
+         if (sWhat == "ts") {
+            hs.graph(sWhat + " visualize");
+         } else if (nBinsX==0) {
+            if(sWhat != "ts") {
+               hs.limits("cls visualize");
+            }
+         } else {
+            hs.graphs(sWhat + " visualize");
+         }
+         hs.SetName(TUUID().AsString());
+         if(ws()) {
+            ws()->import( *hs.result() );
+         }
+      }
+
+      _pars.argList() = *snap; // restore pars
+
+   } catch(const std::exception& e) {
+      new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),
+                   kMBIconExclamation);
+   }
+}
+
 
 void xRooNode::_SetBinContent_(int bin, double value, const char *par, double parVal)
 {
@@ -7156,6 +7224,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             // p->Print();rar->Print();
             r *= (p->expectedEvents(normSet));
          } // do in here in case dependency on var
+         std::cout << r << " for " << (x?x->getVal() : 0) << " addr=" << x << std::endl;
          h->SetBinContent(i, r);
 
          if (errors) {
