@@ -2748,7 +2748,7 @@ xRooNode xRooNode::Replace(const xRooNode& node) {
    // if multiple clients, see if only one client is in parentage route
    // if so, then assume thats the only client we should replace in
    if (cl.size() > 1) {
-      if (cl.count(fParent->get<RooAbsArg>()) > 0) {
+      if (fParent && fParent->get<RooAbsArg>() && cl.count(fParent->get<RooAbsArg>()) > 0) {
          cl.clear();
          cl.insert(fParent->get<RooAbsArg>());
       } else {
