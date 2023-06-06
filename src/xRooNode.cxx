@@ -66,6 +66,8 @@
 
 #include "RooStats/HypoTestInverterResult.h"
 
+#include "coutCapture.h"
+
 RooWorkspace* GETWS(RooAbsArg * a) { return a->workspace(); }
 const auto& GETWSSETS(RooWorkspace * w){ return  w->sets(); }
 auto& GETWSSNAPSHOTS(RooWorkspace * w){ return  w->getSnapshots(); }
@@ -2042,6 +2044,13 @@ xRooNode xRooNode::shallowCopy(const std::string &name, std::shared_ptr<xRooNode
 
 void xRooNode::Print(Option_t *opt) const
 {
+   static std::unique_ptr<cout_redirect> capture;
+   std::string captureStr; bool doCapture = false;
+   if (!capture && GetTreeItem(nullptr)) {
+      capture = std::make_unique<cout_redirect>(captureStr);
+      doCapture = true;
+   }
+
    TString sOpt(opt);
    int depth = 0;
    if (sOpt.Contains("depth=")) {
@@ -2165,6 +2174,11 @@ void xRooNode::Print(Option_t *opt) const
          } else
             std::cout << " NULL " << std::endl;
       }
+   }
+   if(doCapture) {
+      capture.reset(); // no captureStr has the string to display
+      const TGWindow* w = (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot();
+         new TGMsgBox(gClient->GetRoot(), w, GetName(),captureStr.c_str());
    }
 }
 
