@@ -653,6 +653,10 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       result->setEDM(0);
       result->setStatus(floatPars->getSize() == 0 ? 0 : 1);
 
+      std::vector<std::pair<std::string, int>> statusHistory;
+      statusHistory.emplace_back(std::make_pair("EVAL",result->status()));
+      result->setStatusHistory(statusHistory);
+
       if (cacheDir && cacheDir->IsWritable()) {
          // save a copy of fit result to relevant dir
          if (!cacheDir->GetDirectory(nll.GetName()))
