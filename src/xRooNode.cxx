@@ -61,12 +61,6 @@
 #include "RooProdPdf.h"
 #include "TRootBrowser.h"
 #include "TGFileBrowser.h"
-#include "RooExtendPdf.h"
-#include "RooExtendedBinding.h"
-
-#include "RooStats/HypoTestInverterResult.h"
-
-#include "coutCapture.h"
 
 RooWorkspace* GETWS(RooAbsArg * a) { return a->workspace(); }
 const auto& GETWSSETS(RooWorkspace * w){ return  w->sets(); }
@@ -110,6 +104,12 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "TGedEditor.h"
 #include "TGMimeTypes.h"
 #include "TH2.h"
+#include "RooExtendPdf.h"
+#include "RooExtendedBinding.h"
+
+#include "RooStats/HypoTestInverterResult.h"
+
+#include "coutCapture.h"
 
 //#include "RooFitTrees/RooFitResultTree.h"
 //#include "RooFitTrees/RooDataTree.h"
@@ -3272,6 +3272,7 @@ void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double low
       sWhat.ToLower();
       //bool doToys = sWhat.Contains("toys");
       sWhat.ReplaceAll("toys","");
+      sWhat.Strip();
       if(sWhat!="pcls" && sWhat != "ts" && sWhat!="pnull") {
          throw std::runtime_error("\"what\" field must be equal to one of: pcls, ts, pnull");
       }
