@@ -2320,8 +2320,13 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
          nullToyDS->add(nullDetails,std::get<2>(t));
       }
       out.SetNullDistribution(new RooStats::SamplingDistribution("null", "Null dist", values, weights, tsTitle()));
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
+      out.fNullPValue = pNull_toys().first; // technically set above
+      out.fNullPValueError = pNull_toys().second; // overrides binomial error used in SamplingDistribution::IntegralAndError
+#else
       out.SetNullPValue(pNull_toys().first); // technically set above
       out.SetNullPValueError(pNull_toys().second); // overrides binomial error used in SamplingDistribution::IntegralAndError
+#endif
    } else {
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       out.fNullPValue = pNull_asymp().first;
@@ -2354,8 +2359,14 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       }
       out.SetAltDistribution(new RooStats::SamplingDistribution("alt", "Alt dist", values, weights, tsTitle()));
       out.SetAltDetailedOutput(altToyDS);
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
+      out.fAlternatePValue = pAlt_toys().first; // technically set above
+      out.fAlternatePValueError = pAlt_toys().second; // overrides binomial error used in SamplingDistribution::IntegralAndError
+#else
       out.SetAltPValue(pAlt_toys().first); // technically set above
       out.SetAltPValueError(pAlt_toys().second); // overrides binomial error used in SamplingDistribution::IntegralAndError
+#endif
+
    } else {
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       out.fAlternatePValue = pAlt_asymp().first;
