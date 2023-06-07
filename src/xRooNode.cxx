@@ -519,7 +519,8 @@ void xRooNode::Browse(TBrowser *b)
          } else
             Draw(b->GetDrawOption());
       } catch (const std::exception &e) {
-         new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),
+         new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot()
+         , "Exception", e.what(),
                       kMBIconExclamation); // deletes self on dismiss?
       }
    }
@@ -2766,7 +2767,9 @@ xRooNode xRooNode::Replace(const xRooNode& node) {
          cl.clear();
          cl.insert(fParent->get<RooAbsArg>());
       } else {
-         Warning("Replace", "Replacing %s in all clients", p5->GetName());
+         std::stringstream clientList;
+         for(auto c : cl) clientList << c->GetName() << ",";
+         Warning("Replace", "Replacing %s in all clients: %s", p5->GetName(), clientList.str().c_str());
       }
    }
 
@@ -3246,7 +3249,8 @@ void xRooNode::_fitTo_(const char *datasetName, const char *constParValues)
                       TString::Format("%s\nFit Status Code = %d\n-------------%s", fr->GetName(), fr->status(),statusCodes.Data()));
       }
    } catch (const std::exception &e) {
-      new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),
+      new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot()
+      , "Exception", e.what(),
                    kMBIconExclamation, kMBOk); // deletes self on dismiss?
    }
 }
@@ -3256,7 +3260,8 @@ void xRooNode::_generate_(const char *datasetName, bool expected)
    try {
       datasets().Add(datasetName, expected ? "asimov" : "toy");
    } catch (const std::exception &e) {
-      new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),
+      new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot()
+      , "Exception", e.what(),
                    kMBIconExclamation); // deletes self on dismiss?
    }
 }
@@ -3268,7 +3273,7 @@ void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double low
       //bool doToys = sWhat.Contains("toys");
       sWhat.ReplaceAll("toys","");
       if(sWhat!="pcls" && sWhat != "ts" && sWhat!="pnull") {
-         throw std::runtime_error("what must be equal to one of: pcls, ts, pnull");
+         throw std::runtime_error("\"what\" field must be equal to one of: pcls, ts, pnull");
       }
       TString sXvar(xvar);
       if (sXvar=="") {
@@ -3323,7 +3328,8 @@ void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double low
       _pars.argList() = *snap; // restore pars
 
    } catch(const std::exception& e) {
-      new TGMsgBox(gClient->GetRoot(), gClient->GetRoot(), "Exception", e.what(),
+      new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot()
+      , "Exception", e.what(),
                    kMBIconExclamation);
    }
 }
