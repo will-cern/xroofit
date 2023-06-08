@@ -146,6 +146,7 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "TMultiGraph.h"
 #include "TFrame.h"
 #include "RooProjectedPdf.h"
+#include "TMemFile.h"
 
 BEGIN_XROOFIT_NAMESPACE
 
@@ -3266,7 +3267,7 @@ void xRooNode::_generate_(const char *datasetName, bool expected)
    }
 }
 
-void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double lowX, double highX, const char*, int, double, double, const char *constParValues) {
+void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double lowX, double highX/*, const char*, int, double, double*/, const char *constParValues) {
    try {
       TString sWhat(what);
       sWhat.ToLower();
@@ -3309,21 +3310,43 @@ void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double low
             }
          }
       }
-      if (sWhat == "pcls" || sWhat == "ts") {
-         auto hs = nll(dsetName.Data()).hypoSpace(sXvar,nBinsX,lowX,highX);
+      auto hs = nll(dsetName.Data()).hypoSpace("",sWhat=="ts" ? xRooFit::Asymptotics::TwoSided : xRooFit::Asymptotics::Unknown);
+      hs.SetTitle(sWhat + " scan");
+
+      // open the fitDatabase if required
+      if (!gDirectory->IsWritable()) {
+         // locate a TMemFile in the open list of files and move to that
+         // or create one if cannot find
+         for(auto file : *gROOT->GetListOfFiles()) {
+            if(auto f = dynamic_cast<TMemFile*>(file)) { f->cd(); break; }
+         }
+         if(!gDirectory->IsWritable()) {
+            new TMemFile("fitDatabase","RECREATE");
+         }
+      }
+      if(nBinsX) {
+         // add points
+         double step = (highX - lowX)/nBinsX;
+         for(int i=0;i<nBinsX;i++) {
+            hs.AddPoint(TString::Format("%s=%g",sXvar.Data(),lowX+step*i));
+         }
          if (sWhat == "ts") {
-            hs.graph(sWhat + " visualize");
-         } else if (nBinsX==0) {
-            if(sWhat != "ts") {
-               hs.limits("cls visualize");
-            }
+            hs.graphs(sWhat + " visualize");
          } else {
             hs.graphs(sWhat + " visualize");
          }
-         hs.SetName(TUUID().AsString());
-         if(ws()) {
-            ws()->import( *hs.result() );
+      } else {
+         // automatic scan
+         if(sWhat != "ts") {
+            hs.limits("cls visualize");
+         } else {
+            throw std::runtime_error("Automatic scan not supported for ts scan");
          }
+      }
+
+      hs.SetName(TUUID().AsString());
+      if(ws()) {
+         ws()->import( *hs.result() );
       }
 
       _pars.argList() = *snap; // restore pars
@@ -8113,6 +8136,7 @@ void xRooNode::Draw(Option_t *opt)
    if (auto fr = get<RooFitResult>(); fr) {
       if (sOpt.Contains("corr")) {
          // do correlation matrix
+
          auto hist = fr->correlationHist(fr->GetName());
          hist->SetTitle(fr->GetTitle());
          hist->SetBit(kCanDelete);
