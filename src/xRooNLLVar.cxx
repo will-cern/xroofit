@@ -1119,6 +1119,8 @@ xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResul
    if(hypoTestResult) {
       // load the pllType
       fPllType = xRooFit::Asymptotics::PLLType(hypoTestResult->GetFitInfo()->getGlobalObservables()->getCatIndex("pllType"));
+      isExpected = hypoTestResult->GetFitInfo()->getGlobalObservables()->getRealValue("isExpected");
+
       // load the toys
       auto toys = hypoTestResult->GetNullDetailedOutput();
       if(toys) {
@@ -1338,6 +1340,8 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
             rfit->setFinalParList(RooArgList());
          }
          rfit->setConstParList(RooArgList()); rfit->setInitParList(RooArgList());
+         TMatrixDSym cov(0);
+         rfit->setCovarianceMatrix(cov);
          return rfit;
       }
    }
@@ -2189,11 +2193,13 @@ const char *xRooNLLVar::xRooHypoPoint::fPOIName()
 }
 double xRooNLLVar::xRooHypoPoint::fNullVal()
 {
-   return dynamic_cast<RooAbsReal *>(poi().first())->getVal();
+   auto first_poi = dynamic_cast<RooAbsReal *>(poi().first());
+   return (first_poi==nullptr) ? std::numeric_limits<double>::quiet_NaN() : first_poi->getVal();
 }
 double xRooNLLVar::xRooHypoPoint::fAltVal()
 {
-   return dynamic_cast<RooAbsReal *>(alt_poi().first())->getVal();
+   auto first_poi = dynamic_cast<RooAbsReal *>(alt_poi().first());
+   return (first_poi==nullptr) ? std::numeric_limits<double>::quiet_NaN() : first_poi->getVal();
 }
 
 xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints, double low, double high,
@@ -2265,6 +2271,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       fitMeta.addClone(ufit()->floatParsFinal());
    }
    fitMeta.setCatIndex("pllType",int(fPllType));
+   fitMeta.addClone(RooRealVar("isExpected","isExpected",int(isExpected)));
    fitDetails.addClone(RooCategory("type","fit type",{{"ufit",0},{"cfit_null",1},{"cfit_alt",2},{"asimov_ufit",3},{"asimov_cfit_null",4},{"gen",5}}));
    //fitDetails.addClone(RooStringVar("name", "Fit Name", "")); -- not supported properly in ROOT yet
    fitDetails.addClone(RooRealVar("status", "status", 0));
