@@ -390,6 +390,14 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
 
    *_allVars = *_snap;
 
+   // June2023: Added this because found that generation was otherwise getting progressively slower
+   // the RooAbsPdf::generate does a clone, and it seems that the RooCacheManager of the original pdf
+   // is getting polluted on each generate call, causing it to grow larger and therefore the clone of it
+   // to take longer and longer. So sterilize to clear the caches of all components
+   if(pdf.workspace()) {
+      xRooNode(*pdf.workspace()).sterilize();
+   }
+
    return out;
 }
 
