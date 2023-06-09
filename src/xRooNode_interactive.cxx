@@ -134,6 +134,7 @@ void xRooNode::Interactive_Pull()
       static_cast<TAttFill&>(*gStyle) = bak2;
       _pars = *snap;
       _tmpPad->GetCanvas()->cd();
+      gPad->GetCanvas()->Paint(); gPad->GetCanvas()->Update();
    }
 }
 
