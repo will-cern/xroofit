@@ -186,12 +186,12 @@ int xRooNLLVar::xRooHypoSpace::AddPoints(const char *parName, size_t nPoints, do
       return nPoints;
    }
 
-   double step = (high - low) / nPoints;
+   double step = (high - low) / (nPoints-1);
    if (step <= 0)
       throw std::runtime_error("Invalid steps");
 
-   for (double v = low + step * 0.5; v <= high; v += step) {
-      _par->setVal(v);
+   for (size_t i = 0; i < nPoints; i ++) {
+      _par->setVal((i==nPoints-1) ? high : (low+step*i));
       AddPoint();
    }
    return nPoints;
@@ -232,6 +232,16 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
 {
    TString sOpt(opt);
    if (sOpt.Contains("cls")) {
+
+      if(axes().empty()) {
+         // set the first poi as the axis variable to scan
+         if(poi().empty()) {
+            throw std::runtime_error("No POI to scan for limit");
+         } else {
+            poi().first()->setAttribute("axis");
+         }
+      }
+
       for (auto p : poi()) {
          if (!p->hasRange("physical")) {
             Info("limits", "No physical range set for %s, setting to [0,inf]", p->GetName());
@@ -249,7 +259,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
             v->setMin(altVal - 1e-5);
          }
          if (v->getMax() <= altVal) {
-            Info("limits", "range of POI does not straddle alt value, adjusting minimum to %g", altVal + 1e-5);
+            Info("limits", "range of POI does not straddle alt value, adjusting maximum to %g", altVal + 1e-5);
             v->setMax(altVal + 1e-5);
          }
          for (auto &[pdf, nll] : fNlls) {
@@ -890,7 +900,8 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
             // draw readonly version of the graph
             auto gra = graph(sOpt + " readOnly");
             if (gra && gra->GetN()) {
-               gra->DrawClone("ALP")->SetBit(kCanDelete);
+               if(gPad) gPad->Clear();
+               gra->DrawClone(expBand ? "AF" : "ALP")->SetBit(kCanDelete);
                gSystem->ProcessEvents(); drawn=true;
             }
          } else {
@@ -968,7 +979,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
    if(visualize) {
       // draw result
       if(gPad) gPad->Clear();
-      out->DrawClone("ALP")->SetBit(kCanDelete);
+      out->DrawClone(expBand ? "AF" : "ALP")->SetBit(kCanDelete);
       gSystem->ProcessEvents();
    }
 
@@ -1069,7 +1080,14 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
 
       if(sOpt.Contains("visualize")) {
          if(gPad) gPad->Clear();
-         out->DrawClone("ALP")->SetBit(kCanDelete);
+         auto gra2 = static_cast<TMultiGraph*>(out->DrawClone("AF"));
+         gra2->SetBit(kCanDelete);
+         gra2->GetHistogram()->SetMinimum(1e-6);
+         if(gPad) {
+            gPad->RedrawAxis();
+            gPad->GetCanvas()->Paint();gPad->GetCanvas()->Update();
+            gSystem->ProcessEvents();
+         }
          gSystem->ProcessEvents();
       }
 
@@ -1157,10 +1175,11 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       if (gra) {
          if (!gPad) gra->Draw(); // in 6.28 DrawClone wont make the gPad defined :( ... so Draw then clear and Draw Clone
          gPad->Clear();
-         gra->DrawClone("A")->SetBit(kCanDelete);
-         gPad->RedrawAxis();gPad->Modified();
+         gra->DrawClone("AF")->SetBit(kCanDelete);
+         gPad->RedrawAxis();
          gra->GetHistogram()->SetMinimum(1e-9);
          gra->GetHistogram()->GetYaxis()->SetRangeUser(1e-9,1);
+         gPad->Modified();
          gSystem->ProcessEvents();
       }
 
@@ -1296,6 +1315,11 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
    if(sOpt=="" && !empty()) {
       if(front().fPllType==xRooFit::Asymptotics::OneSidedPositive) {
          sOpt = "pcls"; // default to showing cls p-value scan if drawing a limit
+         for(auto& hp :*this) {
+            if(hp.nullToys.size() || hp.altToys.size()) {
+               sOpt += " toys"; break; // default to toys if done toys
+            }
+         }
       } else if(front().fPllType==xRooFit::Asymptotics::TwoSided) {
          sOpt = "ts";
       }
@@ -1445,7 +1469,11 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          auto gra2 = static_cast<TMultiGraph*>(gra->DrawClone("A"));
          gra2->SetBit(kCanDelete);
          gra2->GetHistogram()->SetMinimum(1e-6);
-         if(gPad) gPad->RedrawAxis();
+         if(gPad) {
+            gPad->RedrawAxis();
+            gPad->GetCanvas()->Paint();gPad->GetCanvas()->Update();
+            gSystem->ProcessEvents();
+         }
       }
       if (!sOpt.Contains("same") && gPad) {
 //         auto mg = static_cast<TMultiGraph*>(gPad->GetPrimitive(gra->GetName()));
