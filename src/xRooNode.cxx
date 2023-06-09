@@ -147,6 +147,9 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "TFrame.h"
 #include "RooProjectedPdf.h"
 #include "TMemFile.h"
+//#include <thread>
+//#include <future>
+
 
 BEGIN_XROOFIT_NAMESPACE
 
@@ -2048,7 +2051,7 @@ void xRooNode::Print(Option_t *opt) const
 {
    static std::unique_ptr<cout_redirect> capture;
    std::string captureStr; bool doCapture = false;
-   if (!capture && GetTreeItem(nullptr)) {
+   if (!capture && gROOT->FromPopUp()) { // FromPopUp means user executed from the context menu
       capture = std::make_unique<cout_redirect>(captureStr);
       doCapture = true;
    }
@@ -3267,14 +3270,11 @@ void xRooNode::_generate_(const char *datasetName, bool expected)
    }
 }
 
-void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double lowX, double highX/*, const char*, int, double, double*/, const char *constParValues) {
+void xRooNode::_scan_(const char* what, double nToys,const char* xvar, int nBinsX, double lowX, double highX/*, const char*, int, double, double*/, const char *constParValues) {
    try {
       TString sWhat(what);
       sWhat.ToLower();
-      //bool doToys = sWhat.Contains("toys");
-      sWhat.ReplaceAll("toys","");
-      sWhat.Strip();
-      if(sWhat!="pcls" && sWhat != "ts" && sWhat!="pnull") {
+      if(!sWhat.Contains("pcls") && !sWhat.Contains("ts") && !sWhat.Contains("pnull")) {
          throw std::runtime_error("\"what\" field must be equal to one of: pcls, ts, pnull");
       }
       TString sXvar(xvar);
@@ -3286,6 +3286,37 @@ void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double low
          }
          sXvar = _poi.at(0)->GetName();
       }
+      auto p = dynamic_cast<RooRealVar*>(pars().get<RooArgList>()->find(sXvar));
+
+      // if doing a pcls scan ensure that sXvar has an altVal on it
+      if(p && sWhat.Contains("pcls")) {
+            if (!p->hasRange("physical")) {
+               Info("scan", "No physical range set for %s, setting to [0,inf]", p->GetName());
+               p->setRange("physical", 0, std::numeric_limits<double>::infinity());
+            }
+            if (!p->getStringAttribute("altVal") || !strlen(p->getStringAttribute("altVal"))) {
+               Info("scan", "No altVal set for %s, setting to 0", p->GetName());
+               p->setStringAttribute("altVal", "0");
+            }
+            // ensure range straddles altVal
+            double altVal = TString(p->getStringAttribute("altVal")).Atof();
+            if (p->getMin() >= altVal) {
+               Info("scan", "range of POI does not straddle alt value, adjusting minimum to %g", altVal - 1e-5);
+               p->setMin(altVal - 1e-5);
+            }
+            if (p->getMax() <= altVal) {
+               Info("scan", "range of POI does not straddle alt value, adjusting maximum to %g", altVal + 1e-5);
+               p->setMax(altVal + 1e-5);
+            }
+      }
+
+      if(p && highX <= lowX) {
+         // take from parameter
+         lowX = p->getMin("scan");
+         highX = p->getMax("scan");
+         Info("scan","Using %s range: %g - %g",p->GetName(),lowX,highX);
+      }
+
       // use the first selected dataset
       auto _dsets = datasets();
       TString dsetName = "";
@@ -3303,14 +3334,20 @@ void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double low
          TString pat = (idx == -1) ? TString(pattern) : TString(pattern(0, idx));
          double val =
                  (idx == -1) ? std::numeric_limits<double>::quiet_NaN() : TString(pattern(idx + 1, pattern.Length())).Atof();
-         for (auto p : _pars.argList()) {
-            if (TString(p->GetName()).Contains(TRegexp(pat, true))) {
-               p->setAttribute("Constant", true);
-               if (!std::isnan(val)) { dynamic_cast<RooAbsRealLValue *>(p)->setVal(val); }
+         for (auto par : _pars.argList()) {
+            if (TString(par->GetName()).Contains(TRegexp(pat, true))) {
+               par->setAttribute("Constant", true);
+               if (!std::isnan(val)) { dynamic_cast<RooAbsRealLValue *>(par)->setVal(val); }
             }
          }
       }
-      auto hs = nll(dsetName.Data()).hypoSpace("",sWhat=="ts" ? xRooFit::Asymptotics::TwoSided : xRooFit::Asymptotics::Unknown);
+      auto hs = nll(dsetName.Data()).hypoSpace("",sWhat.Contains("ts") ? xRooFit::Asymptotics::TwoSided : xRooFit::Asymptotics::Unknown);
+      if(nToys) {
+         sWhat += " toys";
+         if(nToys > 0) {
+            sWhat += TString::Format("=%g",nToys);
+         }
+      }
       hs.SetTitle(sWhat + " scan");
 
       // open the fitDatabase if required
@@ -3326,19 +3363,32 @@ void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double low
       }
       if(nBinsX) {
          // add points
-         double step = (highX - lowX)/nBinsX;
-         for(int i=0;i<nBinsX;i++) {
-            hs.AddPoint(TString::Format("%s=%g",sXvar.Data(),lowX+step*i));
+         if(nBinsX==1) {
+            hs.AddPoint(TString::Format("%s=%g",sXvar.Data(),(highX+lowX)/2.));
+         } else {
+            double step = (highX - lowX) / (nBinsX - 1);
+            for (int i = 0; i < nBinsX; i++) {
+               hs.AddPoint(TString::Format("%s=%g", sXvar.Data(), lowX + step * i));
+            }
          }
-         if (sWhat == "ts") {
+         if (sWhat.Contains("ts")) {
             hs.graphs(sWhat + " visualize");
          } else {
+//            std::promise<void> intFinish;
+//            std::thread intThread([finish_future = intFinish.get_future()]() {
+//                auto oldHandler = signal(SIGINT, [](int signum) { std::cout << "Received " << signum << std::endl; });
+//                finish_future.wait();
+//                signal(SIGINT,oldHandler);
+//            });
             hs.graphs(sWhat + " visualize");
+//            intFinish.set_value();
+//            std::cout << "waiting for thread" << std::endl;
+//            intThread.join();
          }
       } else {
          // automatic scan
-         if(sWhat != "ts") {
-            hs.limits("cls visualize");
+         if(!sWhat.Contains("ts")) {
+            hs.limits(sWhat + " visualize");
          } else {
             throw std::runtime_error("Automatic scan not supported for ts scan");
          }
@@ -3346,7 +3396,7 @@ void xRooNode::_scan_(const char* what, const char* xvar, int nBinsX, double low
 
       hs.SetName(TUUID().AsString());
       if(ws()) {
-         ws()->import( *hs.result() );
+          if(auto res = hs.result()) ws()->import( *res );
       }
 
       _pars.argList() = *snap; // restore pars
@@ -5921,12 +5971,16 @@ xRooNode xRooNode::fitResult(const char *opt) const
                 // create new fit result using covariances from this fit result
                 std::unique_ptr<RooArgList> _pars(
                         dynamic_cast<RooArgList *>(pars().argList().selectByAttrib("Constant", false)));
-                auto fr = std::make_shared<RooFitResult>("");
+                auto fr = std::make_shared<RooFitResult>(TString::Format("%s-dirty",_fr->GetName()));
                 fr->SetTitle(TString::Format("%s parameter snapshot", GetName()));
                 fr->setFinalParList(*_pars);
-                TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(fr.get(),_VM));
+                TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(_fr,_VM));
                 if (prevCov) {
                    auto cov = _fr->reducedCovarianceMatrix(*_pars);
+                   // make the diagonals all the current error values
+                   for(size_t i=0;i<_pars->size();i++) {
+                      cov(i,i) = pow(dynamic_cast<RooRealVar*>(_pars->at(i))->getError(),2);
+                   }
                    fr->setCovarianceMatrix(cov);
                 }
 
@@ -7594,7 +7648,7 @@ public:
    {
       if (fPad) {
          getLegend(false, true);
-         fPad->GetCanvas()->Update();
+         fPad->GetCanvas()->Paint();fPad->GetCanvas()->Update();
          fPad->cd();
       }
       nExisting--;
@@ -7607,6 +7661,20 @@ int PadRefresher::nExisting = 0;
 
 void xRooNode::Draw(Option_t *opt)
 {
+   // in order to catch exceptions to prevent crash of GUI, do this:
+   if(gROOT->FromPopUp()) {
+      gROOT->SetFromPopUp(false);
+      try {
+         Draw(opt);
+      } catch (const std::exception &e) {
+         new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot()
+                 , "Exception", e.what(),
+                      kMBIconExclamation); // deletes self on dismiss?
+      }
+      gROOT->SetFromPopUp(true);
+      return;
+   }
+
    TString sOpt2(opt);
    sOpt2.ToLower();
    if (!get() && !IsFolder() && !sOpt2.Contains("x="))
@@ -7614,9 +7682,15 @@ void xRooNode::Draw(Option_t *opt)
 
    if( auto ir = get<RooStats::HypoTestInverterResult>() ) {
       xRooHypoSpace(ir).Draw(opt);
+      gSystem->ProcessEvents();
       return;
    } else if(auto tr = get<RooStats::HypoTestResult>()) {
+      if(gPad) gPad->Clear();
       xRooNLLVar::xRooHypoPoint(std::dynamic_pointer_cast<RooStats::HypoTestResult>(fComp)).Draw(opt);
+      if(gPad) {
+         gPad->GetCanvas()->Paint();gPad->GetCanvas()->Update();
+      }
+      gSystem->ProcessEvents();
       return;
    }
 
@@ -8915,7 +8989,8 @@ void xRooNode::Draw(Option_t *opt)
           }
           stack->SetBit(kCanDelete); // should delete its sub histograms
           stack->Draw("noclear same");
-          h->Draw(dOpt+sOpt+"same"); // overlay again .. redraws axis + if stack would cover original hist (negative components) we still see integral
+          h->Draw(dOpt+sOpt+"same"); // overlay again ..  if stack would cover original hist (negative components) we still see integral
+          h->Draw("axissame"); //redraws axis
 
           TList *ll = stack->GetHists();
           if (ll && ll->GetEntries()) {
