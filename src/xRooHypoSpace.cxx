@@ -35,6 +35,7 @@
 #include "TLegend.h"
 #include "TLine.h"
 #include "RooStats/HypoTestInverterResult.h"
+#include "TEnv.h"
 
 BEGIN_XROOFIT_NAMESPACE
 
@@ -233,6 +234,12 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
    TString sOpt(opt);
    if (sOpt.Contains("cls")) {
 
+      if(empty() && relUncert == std::numeric_limits<double>::infinity()) {
+         // use default uncertainty precision of 10%
+         Info("limits","Using default precision of 10%% for auto-scan");
+         relUncert = 0.1;
+      }
+
       if(axes().empty()) {
          // set the first poi as the axis variable to scan
          if(poi().empty()) {
@@ -298,7 +305,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
       }
    }
    for (int nSigma : nSigmas) {
-      auto lim = FindLimit(TString::Format("p%s exp%s%d", opt, nSigma > 0 ? "+" : "", nSigma), relUncert);
+      auto lim = limit(TString::Format("p%s exp%s%d", opt, nSigma > 0 ? "+" : "", nSigma), relUncert);
       if (lim.second < 0)
          lim.second = -lim.second; // make errors positive for this method
       out[TString::Format("%d", nSigma).Data()] = matchPrecision(lim);
@@ -322,7 +329,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
 #endif
    }
    if (doObs) {
-      auto lim = FindLimit(TString::Format("p%s obs", opt), relUncert);
+      auto lim = limit(TString::Format("p%s obs", opt), relUncert);
       if (lim.second < 0)
          lim.second = -lim.second;
       out["obs"] = matchPrecision(lim);
@@ -1080,9 +1087,11 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
 
       if(sOpt.Contains("visualize")) {
          if(gPad) gPad->Clear();
-         auto gra2 = static_cast<TMultiGraph*>(out->DrawClone("AF"));
+         auto gra2 = static_cast<TMultiGraph*>(out->DrawClone("A"));
          gra2->SetBit(kCanDelete);
-         gra2->GetHistogram()->SetMinimum(1e-6);
+         if(sOpt.Contains("pcls") || sOpt.Contains("pnull")) {
+            gra2->GetHistogram()->SetMinimum(1e-6);
+         }
          if(gPad) {
             gPad->RedrawAxis();
             gPad->GetCanvas()->Paint();gPad->GetCanvas()->Update();
@@ -1099,6 +1108,10 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
 
 std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pValues, double target)
 {
+
+   if(std::isnan(target)) {
+      target = 1. - gEnv->GetValue("xRooHypoSpace.CL",95.)/100.;
+   }
 
    auto gr = std::make_shared<TGraph>(pValues);
    // remove any nan points and duplicates
@@ -1164,7 +1177,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pVal
    }
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, double relUncert, unsigned int maxTries)
+std::pair<double, double> xRooNLLVar::xRooHypoSpace::limit(const char *opt, double relUncert, unsigned int maxTries)
 {
    TString sOpt(opt);
    bool visualize = sOpt.Contains("visualize");
@@ -1175,7 +1188,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       if (gra) {
          if (!gPad) gra->Draw(); // in 6.28 DrawClone wont make the gPad defined :( ... so Draw then clear and Draw Clone
          gPad->Clear();
-         gra->DrawClone("AF")->SetBit(kCanDelete);
+         gra->DrawClone("A")->SetBit(kCanDelete);
          gPad->RedrawAxis();
          gra->GetHistogram()->SetMinimum(1e-9);
          gra->GetHistogram()->GetYaxis()->SetRangeUser(1e-9,1);
@@ -1206,7 +1219,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
             return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
          }
          gr.reset();
-         return FindLimit(opt, relUncert,maxTries-1); // do this to resync parameter limits
+         return limit(opt, relUncert, maxTries - 1); // do this to resync parameter limits
       }
 
       // can approximate expected limit using
@@ -1218,7 +1231,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
       // if done an expected limit, assume data is like expected and choose expected limit point as first test point
       if (sOpt.Contains("obs")) {
          TString sOpt2 = sOpt; sOpt2.ReplaceAll("obs","exp");
-         auto expLim = FindLimit(sOpt2,std::numeric_limits<double>::infinity(),0);
+         auto expLim = limit(sOpt2, std::numeric_limits<double>::infinity(), 0);
          if(!std::isnan(expLim.first) && expLim.first < nextPoint) nextPoint = expLim.first;
       }
 
@@ -1229,7 +1242,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
          double another_estimate = point->mu_hat().getVal() + rough_sigma_mu*ROOT::Math::gaussian_quantile(0.95,1);
          //if (another_estimate < nextPoint) {
             nextPoint = another_estimate;
-            Info("FindLimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
+            Info("limit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
          //}
       }
 
@@ -1239,7 +1252,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
          return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
       }
       gr.reset();
-      return FindLimit(opt, relUncert,maxTries-1);
+      return limit(opt, relUncert, maxTries - 1);
    }
 
    auto lim = GetLimit(*gr);
@@ -1275,7 +1288,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
          double another_estimate = point->mu_hat().getVal() + rough_sigma_mu*ROOT::Math::gaussian_quantile(0.95,1);
          //if (another_estimate < nextPoint) {
          nextPoint = std::max(nextPoint,another_estimate);
-         Info("FindLimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
+         Info("limit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
          //}
       }
       nextPoint += nextPoint*relUncert*0.99; // ensure we step over location
@@ -1298,12 +1311,12 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::FindLimit(const char *opt, 
    // got here need a new point .... evaluate the estimated lim location +/- the relUncert (signed error takes care of
    // direction)
 
-   Info("FindLimit", "%s -- Testing new point @ %s=%g (delta=%g)", sOpt.Data(), v->GetName(), nextPoint,lim.second);
+   Info("limit", "%s -- Testing new point @ %s=%g (delta=%g)", sOpt.Data(), v->GetName(), nextPoint,lim.second);
    if (maxTries == 0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
       return lim;
    }
    gr.reset();
-   return FindLimit(opt, relUncert,maxTries-1);
+   return limit(opt, relUncert, maxTries - 1);
 }
 
 void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
@@ -1312,16 +1325,16 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
    TString sOpt(opt);
    sOpt.ToLower();
 
-   if(sOpt=="" && !empty()) {
+   if((sOpt==""||sOpt=="same") && !empty()) {
       if(front().fPllType==xRooFit::Asymptotics::OneSidedPositive) {
-         sOpt = "pcls"; // default to showing cls p-value scan if drawing a limit
+         sOpt += "pcls"; // default to showing cls p-value scan if drawing a limit
          for(auto& hp :*this) {
             if(hp.nullToys.size() || hp.altToys.size()) {
                sOpt += " toys"; break; // default to toys if done toys
             }
          }
       } else if(front().fPllType==xRooFit::Asymptotics::TwoSided) {
-         sOpt = "ts";
+         sOpt += "ts";
       }
    }
 
@@ -1466,9 +1479,11 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          gPad->Clear();
       }
       if(gra) {
-         auto gra2 = static_cast<TMultiGraph*>(gra->DrawClone("A"));
+         auto gra2 = static_cast<TMultiGraph*>(gra->DrawClone(sOpt.Contains("same") ? "" : "A"));
          gra2->SetBit(kCanDelete);
-         gra2->GetHistogram()->SetMinimum(1e-6);
+         if(sOpt.Contains("pcls") || sOpt.Contains("pnull")) {
+            gra2->GetHistogram()->SetMinimum(1e-6);
+         }
          if(gPad) {
             gPad->RedrawAxis();
             gPad->GetCanvas()->Paint();gPad->GetCanvas()->Update();

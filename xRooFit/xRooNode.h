@@ -209,6 +209,15 @@ public:
    {
       return dynamic_cast<T *>(get());
    }
+   TObject* xget() const { return xget<TObject>(); }
+   template <typename T> T* xget() const {
+      for (auto &c : fBrowsables) {
+         if(strcmp(c->GetName(),".memory")==0) {
+            return c->get<T>();
+         }
+      }
+      return nullptr;
+   }
 
    TObject *operator->() const { return get(); }
 
@@ -352,7 +361,7 @@ public:
 
    void _fitTo_(const char *datasetName = "", const char *constParValues = ""); // *MENU*
    void _generate_(const char *name = "", bool expected = false);               // *MENU*
-   void _scan_(const char* what, double nToys=0, const char* xvar="", int nBinsX=0, double lowX=0, double highX=0/*, const char* yvar="", int nBinsY=0, double lowY=0, double highY=0*/, const char *constParValues=""); // *MENU*
+   void _scan_(const char* what="ts", double nToys=0, const char* xvar="", int nPointsX=0, double lowX=0, double highX=0/*, const char* yvar="", int nBinsY=0, double lowY=0, double highY=0*/, const char *constParValues=""); // *MENU*
    //    xRooNode fitTo(const char* datasetName) const;
    //    xRooNode fitTo(const xRooNode& _data) const;
    //    xRooNode generate(bool expected=false) const;

@@ -283,11 +283,11 @@ public:
       std::shared_ptr<TMultiGraph> graphs(const char* opt);
 
       // will evaluate more points until limit is below given relative uncert
-      std::pair<double, double> FindLimit(const char *opt, double relUncert = std::numeric_limits<double>::infinity(), unsigned int maxTries=20);
+      std::pair<double, double> limit(const char *opt, double relUncert = std::numeric_limits<double>::infinity(), unsigned int maxTries=20);
 
       // key is nSigma or "obs" for observed
       // will only do obs if "obs" dataset is not a generated dataset
-      std::map<std::string, std::pair<double, double>> limits(const char *opt = "cls", const std::vector<double>& nSigmas={0, 1, 2, -1, -2}, double relUncert = 0.1);
+      std::map<std::string, std::pair<double, double>> limits(const char *opt = "cls", const std::vector<double>& nSigmas={0, 1, 2, -1, -2}, double relUncert = std::numeric_limits<double>::infinity());
 
       std::shared_ptr<xRooNode> pdf(const RooAbsCollection &parValues) const;
       std::shared_ptr<xRooNode> pdf(const char *parValues = "") const;
@@ -299,7 +299,7 @@ public:
        // estimates where corresponding pValues graph becomes equal to 0.05
        // linearly interpolates log(pVal) when obtaining limits.
        // returns value and error
-       static std::pair<double, double> GetLimit(const TGraph &pValues, double target = 0.05);
+       static std::pair<double, double> GetLimit(const TGraph &pValues, double target = std::numeric_limits<double>::quiet_NaN());
 
       static RooArgList toArgs(const char *str);
 

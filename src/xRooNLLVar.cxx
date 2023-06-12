@@ -1476,7 +1476,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null(bool re
    *nllVar->fFuncVars = *coords; // will reconst the coords
    if (nllVar->fFuncGlobs)
       nllVar->fFuncGlobs->setAttribAll("Constant", true);
-   nllVar->fFuncVars->find(fPOIName())
+   if(fPOIName()) nllVar->fFuncVars->find(fPOIName())
       ->setStringAttribute("altVal", (!std::isnan(fAltVal())) ? TString::Format("%g", fAltVal()) : nullptr);
    if (fGenFit) {
       nllVar->get()->SetName(
@@ -2032,6 +2032,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    auto pAlt = pAlt_toys();
    auto pNullA = pNull_asymp();
    auto pAltA = pAlt_asymp();
+   sigma_mu(true);
    auto asi = (fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit) ? fAsimov->pll().first
                                                                  : std::numeric_limits<double>::quiet_NaN();
    if (!std::isnan(asi) && asi > 0 && fPllType != xRooFit::Asymptotics::Unknown) {
@@ -2070,7 +2071,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       //                }
       //            }
       //        }
-      title += TString::Format("%s' = %g", fPOIName(), (isAlt) ? fAltVal() : fNullVal());
+      if(fPOIName()) title += TString::Format("%s' = %g", fPOIName(), (isAlt) ? fAltVal() : fNullVal());
       title += TString::Format(" , N_{toys}=%lu", (isAlt) ? altToys.size() : nullToys.size());
       if (nBadOrZero > 0)
          title += TString::Format(" (N_{bad/0}=%lu)", nBadOrZero);
@@ -2206,8 +2207,9 @@ TString xRooNLLVar::xRooHypoPoint::tsTitle(bool inWords)
    } else if (fPllType == xRooFit::Asymptotics::TwoSided) {
       if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity())
          return (inWords) ? TString::Format("Lower-Bound PLR") : TString::Format("#tilde{t}_{%s=%g}", v->GetTitle(), v->getVal());
-      else if (v)
-         return (inWords) ? TString::Format("PLR") : TString::Format("t_{%s=%g}", v->GetTitle(), v->getVal());
+      else if (v) {
+         return (inWords) ? TString::Format("-2log[L(%s,#hat{#hat{#theta}})/L(#hat{%s},#hat{#theta})]",v->GetTitle(),v->GetTitle()) : TString::Format("t_{%s=%g}", v->GetTitle(), v->getVal());
+      }
       else
          return "t";
    } else if (fPllType == xRooFit::Asymptotics::OneSidedNegative) {
@@ -2231,7 +2233,7 @@ TString xRooNLLVar::xRooHypoPoint::tsTitle(bool inWords)
 
 const char *xRooNLLVar::xRooHypoPoint::fPOIName()
 {
-   return (poi().first())->GetName();
+   return (poi().empty()) ? nullptr : (poi().first())->GetName();
 }
 double xRooNLLVar::xRooHypoPoint::fNullVal()
 {
@@ -2276,8 +2278,9 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, const xRooF
       if (axes->empty())
          throw std::runtime_error("parameter not found");
       axes->setAttribAll("axis", true);
-   } /*else if (std::unique_ptr<RooAbsCollection>(s.pars()->selectByAttrib("poi", true))->empty()) {
-      throw std::runtime_error("You must specify a POI for the hypoSpace");
+   }
+   /*if (std::unique_ptr<RooAbsCollection>(s.pars()->selectByAttrib("poi", true))->empty()) {
+      throw std::runtime_error("You must specify at least one POI for the hypoSpace");
    }*/
    s.fNlls[s.fPdfs.begin()->second] = std::make_shared<xRooNLLVar>(*this);
    s.fTestStatType = pllType;

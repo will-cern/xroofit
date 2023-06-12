@@ -1181,7 +1181,18 @@ void xRooNode::_Vary_(const char *what)
 xRooNode xRooNode::Remove(const xRooNode &child)
 {
 
-   if (strcmp(GetName(), ".factors") == 0 || strcmp(GetName(), ".constraints") == 0 ||
+   if (strcmp(GetName(),".poi") == 0) {
+       // demote a parameter from being a poi
+       auto toRemove =
+               (child.get<RooAbsArg>() || !find(child.GetName())) ? child : xRooNode(find(child.GetName())->fComp);
+       if(toRemove) {
+           if (!toRemove.get<RooAbsArg>()->getAttribute("poi")) {
+               throw std::runtime_error(TString::Format("%s is not a poi",toRemove.GetName()));
+           }
+           toRemove.get<RooAbsArg>()->setAttribute("poi",false);
+           return toRemove;
+       }
+   } else if (strcmp(GetName(), ".factors") == 0 || strcmp(GetName(), ".constraints") == 0 ||
        strcmp(GetName(), ".components") == 0) {
       auto toRemove =
          (child.get<RooAbsArg>() || !find(child.GetName())) ? child : xRooNode(find(child.GetName())->fComp);
@@ -1351,7 +1362,14 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
           return xRooNode(*out,*this);
       }
       throw std::runtime_error("Failed to add global observable");
-   }else if ((strcmp(GetName(), ".pars") == 0 || strcmp(GetName(),".vars")==0) && fParent->get<RooWorkspace>()) {
+   } else if((strcmp(GetName(),".poi")==0)) {
+       if (child.get<RooAbsLValue>() || (!child.fComp && getObject<RooAbsLValue>(child.GetName()))) {
+           auto out = (child.get<RooAbsArg>()) ? child.get<RooAbsArg>() : getObject<RooAbsArg>(child.GetName()).get();
+           out->setAttribute("poi");
+           return xRooNode(*out,*this);
+       }
+       throw std::runtime_error("Failed to add parameter of interest");
+   } else if ((strcmp(GetName(), ".pars") == 0 || strcmp(GetName(),".vars")==0) && fParent->get<RooWorkspace>()) {
       // adding a parameter, interpret as factory string unless no "[" then create RooRealVar
       TString fac(child.GetName());
       if (!fac.Contains("["))
@@ -9237,7 +9255,7 @@ void xRooNode::Draw(Option_t *opt)
    }*/
 
    // now draw selected datasets on top if this was a pdf
-   if (auto _pdf = get<RooAbsPdf>(); !hasSame && _pdf && _pdf->canBeExtended() && coefs().empty()) {
+   if (auto _pdf = get<RooAbsPdf>(); !hasSame && _pdf && (_pdf->canBeExtended() || robs().empty()) && coefs().empty()) {
       auto _dsets = datasets();
       // bool _drawn=false;
       for (auto &d : _dsets) {
