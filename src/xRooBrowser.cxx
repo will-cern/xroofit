@@ -111,6 +111,14 @@ xRooBrowser::xRooBrowser()
 {
 }
 
+xRooNode* xRooBrowser::Open(const char* filename) {
+   if(TString(filename).EndsWith(".root")) {
+      return fTopNode->emplace_back(std::make_shared<xRooNode>(std::make_shared<TFile>(filename))).get();
+   } else {
+      return fTopNode->emplace_back(std::make_shared<xRooNode>(filename)).get();
+   }
+}
+
 void xRooBrowser::ls(const char *path) const
 {
    if (!fNode)
