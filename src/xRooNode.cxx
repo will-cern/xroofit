@@ -3290,50 +3290,8 @@ void xRooNode::_generate_(const char *datasetName, bool expected)
 
 void xRooNode::_scan_(const char* what, double nToys,const char* xvar, int nBinsX, double lowX, double highX/*, const char*, int, double, double*/, const char *constParValues) {
    try {
-      TString sWhat(what);
-      sWhat.ToLower();
-      if(!sWhat.Contains("pcls") && !sWhat.Contains("ts") && !sWhat.Contains("pnull")) {
-         throw std::runtime_error("\"what\" field must be equal to one of: pcls, ts, pnull");
-      }
       TString sXvar(xvar);
-      if (sXvar=="") {
-         // try using POI if one available
-         auto _poi = poi();
-         if (_poi.empty()) {
-            throw std::runtime_error("Must specify xvar if POI not defined");
-         }
-         sXvar = _poi.at(0)->GetName();
-      }
-      auto p = dynamic_cast<RooRealVar*>(pars().get<RooArgList>()->find(sXvar));
-
-      // if doing a pcls scan ensure that sXvar has an altVal on it
-      if(p && sWhat.Contains("pcls")) {
-            if (!p->hasRange("physical")) {
-               Info("scan", "No physical range set for %s, setting to [0,inf]", p->GetName());
-               p->setRange("physical", 0, std::numeric_limits<double>::infinity());
-            }
-            if (!p->getStringAttribute("altVal") || !strlen(p->getStringAttribute("altVal"))) {
-               Info("scan", "No altVal set for %s, setting to 0", p->GetName());
-               p->setStringAttribute("altVal", "0");
-            }
-            // ensure range straddles altVal
-            double altVal = TString(p->getStringAttribute("altVal")).Atof();
-            if (p->getMin() >= altVal) {
-               Info("scan", "range of POI does not straddle alt value, adjusting minimum to %g", altVal - 1e-5);
-               p->setMin(altVal - 1e-5);
-            }
-            if (p->getMax() <= altVal) {
-               Info("scan", "range of POI does not straddle alt value, adjusting maximum to %g", altVal + 1e-5);
-               p->setMax(altVal + 1e-5);
-            }
-      }
-
-      if(p && highX <= lowX) {
-         // take from parameter
-         lowX = p->getMin("scan");
-         highX = p->getMax("scan");
-         Info("scan","Using %s range: %g - %g",p->GetName(),lowX,highX);
-      }
+      TString sWhat(what);
 
       // use the first selected dataset
       auto _dsets = datasets();
@@ -3359,59 +3317,15 @@ void xRooNode::_scan_(const char* what, double nToys,const char* xvar, int nBins
             }
          }
       }
-      auto hs = nll(dsetName.Data()).hypoSpace("",sWhat.Contains("ts") ? xRooFit::Asymptotics::TwoSided : xRooFit::Asymptotics::Unknown);
+      auto hs = nll(dsetName.Data()).hypoSpace(sXvar);
       if(nToys) {
          sWhat += " toys";
          if(nToys > 0) {
             sWhat += TString::Format("=%g",nToys);
          }
       }
-      hs.SetTitle(sWhat + " scan");
-
-      // open the fitDatabase if required
-      if (!gDirectory->IsWritable()) {
-         // locate a TMemFile in the open list of files and move to that
-         // or create one if cannot find
-         for(auto file : *gROOT->GetListOfFiles()) {
-            if(auto f = dynamic_cast<TMemFile*>(file)) { f->cd(); break; }
-         }
-         if(!gDirectory->IsWritable()) {
-            new TMemFile("fitDatabase","RECREATE");
-         }
-      }
-      if(nBinsX) {
-         // add points
-         if(nBinsX==1) {
-            hs.AddPoint(TString::Format("%s=%g",sXvar.Data(),(highX+lowX)/2.));
-         } else {
-            double step = (highX - lowX) / (nBinsX - 1);
-            for (int i = 0; i < nBinsX; i++) {
-               hs.AddPoint(TString::Format("%s=%g", sXvar.Data(), lowX + step * i));
-            }
-         }
-         if (sWhat.Contains("ts")) {
-            hs.graphs(sWhat + " visualize");
-         } else {
-//            std::promise<void> intFinish;
-//            std::thread intThread([finish_future = intFinish.get_future()]() {
-//                auto oldHandler = signal(SIGINT, [](int signum) { std::cout << "Received " << signum << std::endl; });
-//                finish_future.wait();
-//                signal(SIGINT,oldHandler);
-//            });
-            hs.graphs(sWhat + " visualize");
-//            intFinish.set_value();
-//            std::cout << "waiting for thread" << std::endl;
-//            intThread.join();
-         }
-      } else {
-         // automatic scan
-         if(!sWhat.Contains("ts")) {
-            hs.limits(sWhat + " visualize");
-         } else {
-            throw std::runtime_error("Automatic scan not supported for ts scan");
-         }
-      }
-
+      hs.SetTitle(sWhat + " scan" + ((dsetName!="") ? TString::Format(" [data=%s]",dsetName.Data()) : ""));
+      hs.scan(sWhat + " visualize",nBinsX,lowX,highX);
       hs.SetName(TUUID().AsString());
       if(ws()) {
           if(auto res = hs.result()) ws()->import( *res );

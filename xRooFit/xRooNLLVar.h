@@ -298,7 +298,7 @@ public:
 
       // key is nSigma or "obs" for observed
       // will only do obs if "obs" dataset is not a generated dataset
-      std::map<std::string, std::pair<double, double>> limits(const char *opt = "cls", const std::vector<double>& nSigmas={0, 1, 2, -1, -2}, double relUncert = std::numeric_limits<double>::infinity());
+      std::map<std::string, std::pair<double, double>> limits(const char *opt = "cls", const std::vector<double>& nSigmas={0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()}, double relUncert = std::numeric_limits<double>::infinity());
 
       std::shared_ptr<xRooNode> pdf(const RooAbsCollection &parValues) const;
       std::shared_ptr<xRooNode> pdf(const char *parValues = "") const;

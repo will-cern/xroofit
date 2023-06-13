@@ -231,6 +231,13 @@ std::pair<double, double> matchPrecision(const std::pair<double, double> &in)
 
 int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low, double high,const std::vector<double>& nSigmas, double relUncert) {
 
+   TString sType(type);
+   sType.ToLower();
+   if(sType.Contains("cls") && !sType.Contains("pcls")) sType.ReplaceAll("cls","pcls");
+   if(!sType.Contains("pcls") && !sType.Contains("ts") && !sType.Contains("pnull") && !sType.Contains("plr")) {
+      throw std::runtime_error("scan type must be equal to one of: plr, cls, ts, pnull");
+   }
+
    // will scan the first axes variable ... if there is none, specify the first poi as the axis var
    if(axes().empty()) {
       // set the first poi as the axis variable to scan
@@ -246,25 +253,29 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
       axes().first()->setAttribute("poi");
    }
 
-   TString sOpt(type);
-   if (sOpt.Contains("cls")) {
+   auto p = dynamic_cast<RooRealVar*>(axes().first());
+   if(!p) {
+      throw std::runtime_error(TString::Format("%s not scanable",axes().first()->GetName()));
+   }
+
+   if (sType.Contains("cls")) {
       if(empty() && relUncert == std::numeric_limits<double>::infinity()) {
          // use default uncertainty precision of 10%
          Info("scan","Using default precision of 10%% for auto-scan");
          relUncert = 0.1;
       }
-      for (auto p : axes()) {
-         if (!p->hasRange("physical")) {
+      for (auto a : axes()) {
+         if (!a->hasRange("physical")) {
             Info("limits", "No physical range set for %s, setting to [0,inf]", p->GetName());
-            dynamic_cast<RooRealVar *>(p)->setRange("physical", 0, std::numeric_limits<double>::infinity());
+            dynamic_cast<RooRealVar *>(a)->setRange("physical", 0, std::numeric_limits<double>::infinity());
          }
-         if (!p->getStringAttribute("altVal") || !strlen(p->getStringAttribute("altVal"))) {
-            Info("limits", "No altVal set for %s, setting to 0", p->GetName());
-            p->setStringAttribute("altVal", "0");
+         if (!a->getStringAttribute("altVal") || !strlen(p->getStringAttribute("altVal"))) {
+            Info("limits", "No altVal set for %s, setting to 0", a->GetName());
+            a->setStringAttribute("altVal", "0");
          }
          // ensure range straddles altVal
-         double altVal = TString(p->getStringAttribute("altVal")).Atof();
-         auto v = dynamic_cast<RooRealVar *>(p);
+         double altVal = TString(a->getStringAttribute("altVal")).Atof();
+         auto v = dynamic_cast<RooRealVar *>(a);
          if (v->getMin() >= altVal) {
             Info("scan", "range of POI does not straddle alt value, adjusting minimum to %g", altVal - 1e-5);
             v->setMin(altVal - 1e-5);
@@ -274,15 +285,23 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
             v->setMax(altVal + 1e-5);
          }
          for (auto &[pdf, nll] : fNlls) {
-            if (auto _v = dynamic_cast<RooRealVar *>(nll->pars()->find(*p))) {
+            if (auto _v = dynamic_cast<RooRealVar *>(nll->pars()->find(*a))) {
                _v->setRange(v->getMin(), v->getMax());
             }
          }
       }
-   } else if(sOpt.Contains("plr")) {
+   } else if(sType.Contains("plr")) {
       // force use of two-sided test statistic for any new points
       fTestStatType = xRooFit::Asymptotics::TwoSided;
-      sOpt.ReplaceAll("plr","ts");
+      sType.ReplaceAll("plr","ts");
+   }
+
+
+   if(p && high <= low) {
+      // take from parameter
+      low = p->getMin("scan");
+      high = p->getMax("scan");
+      Info("scan","Using %s range: %g - %g",p->GetName(),low,high);
    }
 
    bool doObs = false;
@@ -332,13 +351,13 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
 
    if(nPoints==0) {
       // automatic scan
-      if(sOpt.Contains("cls")) {
+      if(sType.Contains("cls")) {
          for (double nSigma: nSigmas) {
             if (std::isnan(nSigma)) {
                if(!doObs) continue;
-               findlimit(TString::Format("p%s obs",type),relUncert);
+               findlimit(TString::Format("%s obs",sType.Data()),relUncert);
             } else {
-               findlimit(TString::Format("p%s exp%s%d", type, nSigma > 0 ? "+" : "", int(nSigma)), relUncert);
+               findlimit(TString::Format("%s exp%s%d", sType.Data(), nSigma > 0 ? "+" : "", int(nSigma)), relUncert);
             }
          }
       } else {
@@ -354,7 +373,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
             AddPoint(TString::Format("%s=%g", poi().first()->GetName(), low + step * i));
          }
       }
-      graphs(sOpt); // triggers computation
+      graphs(sType); // triggers computation
    }
 
    if(origDir) origDir->cd();

@@ -953,16 +953,19 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::getVal(const char *what)
       if(toys) {
          sigma_mu(); // means we will be able to evaluate the asymptotic values too
       }
-      if(sWhat.Contains("toys=")) {
-         // extract number of toys required ... format is "nullToys.altToysFraction" if altToysFraction=0 then use same for both
-         size_t nToys = TString(sWhat(sWhat.Index("toys=")+5,sWhat.Length())).Atoi();
-         size_t nToysAlt = (TString(sWhat(sWhat.Index("toys=")+5,sWhat.Length())).Atof() - nToys)*nToys;
-         if(nToysAlt==0) nToysAlt = nToys;
-         if (nullToys.size() < nToys) { addNullToys(nToys - nullToys.size());}
-         if (altToys.size() < nToysAlt) { addAltToys(nToysAlt - altToys.size()); }
-      } else if(doCLs && toys) {
-         // auto toy-generating for limits .. do in blocks of 100
-         addCLsToys(100,0,0.05,nSigma);
+      // only add toys if actually required
+      if(getVal(sWhat + " readonly").second!=0) {
+         if (sWhat.Contains("toys=")) {
+            // extract number of toys required ... format is "nullToys.altToysFraction" if altToysFraction=0 then use same for both
+            size_t nToys = TString(sWhat(sWhat.Index("toys=") + 5, sWhat.Length())).Atoi();
+            size_t nToysAlt = (TString(sWhat(sWhat.Index("toys=") + 5, sWhat.Length())).Atof() - nToys) * nToys;
+            if (nToysAlt == 0) nToysAlt = nToys;
+            if (nullToys.size() < nToys) { addNullToys(nToys - nullToys.size()); }
+            if (altToys.size() < nToysAlt) { addAltToys(nToysAlt - altToys.size()); }
+         } else if (doCLs && toys) {
+            // auto toy-generating for limits .. do in blocks of 100
+            addCLsToys(100, 0, 0.05, nSigma);
+         }
       }
    }
 
@@ -1173,8 +1176,7 @@ std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(boo
 {
 
    if (!fAsimov && (nllVar||hypoTestResult)) {
-      auto theFit = (!fData.first && fGenFit &&
-              isExpected) ? fGenFit : cfit_alt(readOnly);
+      auto theFit = (!fData.first && fGenFit && !isExpected) ? fGenFit : cfit_alt(readOnly); // first condition allows genFit to be used as the altFit *if* the data is entirely absent, provided not expected data because we postpone data creation til later in that case (see below)
       if (!theFit || allowedStatusCodes.find(theFit->status()) == allowedStatusCodes.end())
          return fAsimov;
       fAsimov = std::make_shared<xRooHypoPoint>(*this);
@@ -2243,7 +2245,8 @@ double xRooNLLVar::xRooHypoPoint::fNullVal()
 }
 double xRooNLLVar::xRooHypoPoint::fAltVal()
 {
-   auto first_poi = dynamic_cast<RooAbsReal *>(alt_poi().first());
+   auto _alt_poi = alt_poi(); // need to keep alive as alt_poi owns its contents
+   auto first_poi = dynamic_cast<RooAbsReal *>(_alt_poi.first());
    return (first_poi==nullptr) ? std::numeric_limits<double>::quiet_NaN() : first_poi->getVal();
 }
 
