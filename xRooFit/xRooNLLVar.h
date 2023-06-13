@@ -59,6 +59,13 @@ class xRooNode;
 class xRooNLLVar : public std::shared_ptr<RooAbsReal> {
 
 public:
+
+  struct xValueWithError : public std::pair<double,double> {
+      xValueWithError(const std::pair<double,double>& in) : std::pair<double,double>(in) { }
+      double value() const { return std::pair<double,double>::first; }
+      double error() const { return std::pair<double,double>::second; }
+  };
+
    void Print(Option_t *opt = "");
 
    xRooNLLVar(RooAbsPdf &pdf, const std::pair<RooAbsData *, const RooAbsCollection *> &data,
@@ -283,7 +290,11 @@ public:
       std::shared_ptr<TMultiGraph> graphs(const char* opt);
 
       // will evaluate more points until limit is below given relative uncert
-      std::pair<double, double> limit(const char *opt, double relUncert = std::numeric_limits<double>::infinity(), unsigned int maxTries=20);
+      xValueWithError findlimit(const char *opt, double relUncert = std::numeric_limits<double>::infinity(), unsigned int maxTries=20);
+
+      // get currently available limit, with error. Use nSigma = nan for observed limit
+      xValueWithError limit(const char* type = "cls", double nSigma = std::numeric_limits<double>::quiet_NaN());
+      int scan(const char* type = "cls", size_t nPoints = 0, double low = std::numeric_limits<double>::quiet_NaN(), double high = std::numeric_limits<double>::quiet_NaN(),const std::vector<double>& nSigmas={0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()}, double relUncert = 0.1);
 
       // key is nSigma or "obs" for observed
       // will only do obs if "obs" dataset is not a generated dataset

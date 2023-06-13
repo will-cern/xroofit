@@ -229,27 +229,31 @@ std::pair<double, double> matchPrecision(const std::pair<double, double> &in)
    return out;
 }
 
-std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limits(const char *opt,const std::vector<double>& nSigmas, double relUncert)
-{
-   TString sOpt(opt);
-   if (sOpt.Contains("cls")) {
+int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low, double high,const std::vector<double>& nSigmas, double relUncert) {
 
+   // will scan the first axes variable ... if there is none, specify the first poi as the axis var
+   if(axes().empty()) {
+      // set the first poi as the axis variable to scan
+      if(poi().empty()) {
+         throw std::runtime_error("No POI to scan");
+      } else {
+         poi().first()->setAttribute("axis");
+      }
+   }
+
+   if(poi().empty()) {
+      // treat first axis var as the poi
+      axes().first()->setAttribute("poi");
+   }
+
+   TString sOpt(type);
+   if (sOpt.Contains("cls")) {
       if(empty() && relUncert == std::numeric_limits<double>::infinity()) {
          // use default uncertainty precision of 10%
-         Info("limits","Using default precision of 10%% for auto-scan");
+         Info("scan","Using default precision of 10%% for auto-scan");
          relUncert = 0.1;
       }
-
-      if(axes().empty()) {
-         // set the first poi as the axis variable to scan
-         if(poi().empty()) {
-            throw std::runtime_error("No POI to scan for limit");
-         } else {
-            poi().first()->setAttribute("axis");
-         }
-      }
-
-      for (auto p : poi()) {
+      for (auto p : axes()) {
          if (!p->hasRange("physical")) {
             Info("limits", "No physical range set for %s, setting to [0,inf]", p->GetName());
             dynamic_cast<RooRealVar *>(p)->setRange("physical", 0, std::numeric_limits<double>::infinity());
@@ -262,11 +266,11 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
          double altVal = TString(p->getStringAttribute("altVal")).Atof();
          auto v = dynamic_cast<RooRealVar *>(p);
          if (v->getMin() >= altVal) {
-            Info("limits", "range of POI does not straddle alt value, adjusting minimum to %g", altVal - 1e-5);
+            Info("scan", "range of POI does not straddle alt value, adjusting minimum to %g", altVal - 1e-5);
             v->setMin(altVal - 1e-5);
          }
          if (v->getMax() <= altVal) {
-            Info("limits", "range of POI does not straddle alt value, adjusting maximum to %g", altVal + 1e-5);
+            Info("scan", "range of POI does not straddle alt value, adjusting maximum to %g", altVal + 1e-5);
             v->setMax(altVal + 1e-5);
          }
          for (auto &[pdf, nll] : fNlls) {
@@ -275,45 +279,28 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
             }
          }
       }
+   } else if(sOpt.Contains("plr")) {
+      // force use of two-sided test statistic for any new points
+      fTestStatType = xRooFit::Asymptotics::TwoSided;
    }
 
-   // don't do the observed limit if all the NLL datas are *EXPECTED* generated
-   bool doObs = true;
+   bool doObs = false;
+   for(auto nSigma : nSigmas) {
+      if(std::isnan(nSigma)) { doObs = true; break; }
+   }
 
    if(fNlls.empty()) {
-       // this happens when loaded hypoSpace from a hypoSpaceInverterResult
-       // set relUncert to infinity so that we don't test any new points
-       relUncert = std::numeric_limits<double>::infinity(); // no NLL available so just get whatever limit we can
+      // this happens when loaded hypoSpace from a hypoSpaceInverterResult
+      // set relUncert to infinity so that we don't test any new points
+      relUncert = std::numeric_limits<double>::infinity(); // no NLL available so just get whatever limit we can
 
-       // if any of the defined points are 'expected' data don't do obs
-       for(auto& hp : *this) {
-          if(hp.isExpected) {
-             doObs = false; break;
-          }
-       }
-   }
-
-   std::map<std::string, std::pair<double, double>> out;
-   if (!gDirectory->IsWritable()) {
-      // locate a TMemFile in the open list of files and move to that
-      // or create one if cannot find
-      for(auto file : *gROOT->GetListOfFiles()) {
-         if(auto f = dynamic_cast<TMemFile*>(file)) { f->cd(); break; }
+      // if any of the defined points are 'expected' data don't do obs
+      for(auto& hp : *this) {
+         if(hp.isExpected) {
+            doObs = false; break;
+         }
       }
-      if(!gDirectory->IsWritable()) {
-         new TMemFile("fitDatabase","RECREATE");
-      }
-   }
-   for (int nSigma : nSigmas) {
-      auto lim = limit(TString::Format("p%s exp%s%d", opt, nSigma > 0 ? "+" : "", nSigma), relUncert);
-      if (lim.second < 0)
-         lim.second = -lim.second; // make errors positive for this method
-      out[TString::Format("%d", nSigma).Data()] = matchPrecision(lim);
-   }
-
-
-
-   if (!fNlls.empty()) { // handles case where loaded space from a HypoTestInverterResult
+   } else {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
       bool allGen = true;
       for (auto &[pdf, nll]: fNlls) {
@@ -328,11 +315,94 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
          doObs = false;
 #endif
    }
-   if (doObs) {
-      auto lim = limit(TString::Format("p%s obs", opt), relUncert);
+
+   // create a fitDatabase if required
+   if (!gDirectory->IsWritable()) {
+      // locate a TMemFile in the open list of files and move to that
+      // or create one if cannot find
+      for(auto file : *gROOT->GetListOfFiles()) {
+         if(auto f = dynamic_cast<TMemFile*>(file)) { f->cd(); break; }
+      }
+      if(!gDirectory->IsWritable()) {
+         new TMemFile("fitDatabase","RECREATE");
+      }
+   }
+
+   if(nPoints==0) {
+      // automatic scan
+      if(sOpt.Contains("cls")) {
+         for (double nSigma: nSigmas) {
+            if (std::isnan(nSigma)) {
+               if(!doObs) continue;
+               findlimit(TString::Format("p%s obs",type),relUncert);
+            } else {
+               findlimit(TString::Format("p%s exp%s%d", type, nSigma > 0 ? "+" : "", int(nSigma)), relUncert);
+            }
+         }
+      } else {
+         throw std::runtime_error(TString::Format("Automatic scanning not yet supported for %s",type));
+      }
+   } else {
+      // add the required points and then compute the required value
+      if(nPoints==1) {
+         AddPoint(TString::Format("%s=%g",poi().first()->GetName(),(high+low)/2.));
+      } else {
+         double step = (high - low) / (nPoints - 1);
+         for (size_t i = 0; i < nPoints; i++) {
+            AddPoint(TString::Format("%s=%g", poi().first()->GetName(), low + step * i));
+         }
+      }
+      graphs(type); // triggers computation
+   }
+
+
+   return 0;
+}
+
+
+std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limits(const char *opt,const std::vector<double>& nSigmas, double relUncert)
+{
+   bool doObs = false;
+   for(auto nSigma : nSigmas) {
+      if(std::isnan(nSigma)) { doObs = true; break; }
+   }
+
+   if(fNlls.empty()) {
+      // this happens when loaded hypoSpace from a hypoSpaceInverterResult
+      // set relUncert to infinity so that we don't test any new points
+      relUncert = std::numeric_limits<double>::infinity(); // no NLL available so just get whatever limit we can
+
+      // if any of the defined points are 'expected' data don't do obs
+      for(auto& hp : *this) {
+         if(hp.isExpected) {
+            doObs = false; break;
+         }
+      }
+   } else {
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
+      bool allGen = true;
+      for (auto &[pdf, nll]: fNlls) {
+         auto _d = dynamic_cast<RooDataSet *>(nll->data());
+         if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult") ||
+             !_d->weightVar()->getAttribute("expected")) {
+            allGen = false;
+            break;
+         }
+      }
+      if (allGen)
+         doObs = false;
+#endif
+   }
+
+   scan(opt,0,std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::quiet_NaN(),nSigmas,relUncert);
+
+   std::map<std::string, std::pair<double,double>> out;
+   for(auto nSigma : nSigmas) {
+      if(std::isnan(nSigma) && !doObs) continue;
+      auto lim = limit(opt,nSigma);
       if (lim.second < 0)
-         lim.second = -lim.second;
-      out["obs"] = matchPrecision(lim);
+         lim.second = -lim.second; // make errors positive for this method
+      out[std::isnan(nSigma) ? "obs" : TString::Format("%d", int(nSigma)).Data()] = matchPrecision(lim);
    }
    return out;
 }
@@ -1177,7 +1247,17 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pVal
    }
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoSpace::limit(const char *opt, double relUncert, unsigned int maxTries)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::limit(const char* type, double nSigma) {
+   TString sOpt = TString::Format("p%s",type);
+   if(std::isnan(nSigma)) {
+      sOpt += "obs";
+   } else {
+      sOpt += TString::Format("exp%s%d",nSigma>=0 ? "+" : "-",int(nSigma));
+   }
+   return findlimit(sOpt.Data());
+}
+
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::findlimit(const char *opt, double relUncert, unsigned int maxTries)
 {
    TString sOpt(opt);
    bool visualize = sOpt.Contains("visualize");
@@ -1210,16 +1290,16 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::limit(const char *opt, doub
    if (!gr || gr->GetN() < 2) {
       auto v = (axes().empty()) ? nullptr : dynamic_cast<RooRealVar *>(*axes().rbegin());
       if (!v)
-         return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
+         return std::pair(std::numeric_limits<double>::quiet_NaN(), 0.);
       double muMax = std::min(v->getMax(), v->getMax("physical"));
       double muMin = std::max(v->getMin("physical"), v->getMin());
       if (!gr || gr->GetN() < 1) {
          if (maxTries==0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), muMin)).getVal(sOpt).first)) {
             // first point failed ... give up
-            return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
+            return std::pair(std::numeric_limits<double>::quiet_NaN(), 0.);
          }
          gr.reset();
-         return limit(opt, relUncert, maxTries - 1); // do this to resync parameter limits
+         return findlimit(opt, relUncert, maxTries - 1); // do this to resync parameter limits
       }
 
       // can approximate expected limit using
@@ -1231,7 +1311,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::limit(const char *opt, doub
       // if done an expected limit, assume data is like expected and choose expected limit point as first test point
       if (sOpt.Contains("obs")) {
          TString sOpt2 = sOpt; sOpt2.ReplaceAll("obs","exp");
-         auto expLim = limit(sOpt2, std::numeric_limits<double>::infinity(), 0);
+         auto expLim = findlimit(sOpt2, std::numeric_limits<double>::infinity(), 0);
          if(!std::isnan(expLim.first) && expLim.first < nextPoint) nextPoint = expLim.first;
       }
 
@@ -1242,17 +1322,17 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::limit(const char *opt, doub
          double another_estimate = point->mu_hat().getVal() + rough_sigma_mu*ROOT::Math::gaussian_quantile(0.95,1);
          //if (another_estimate < nextPoint) {
             nextPoint = another_estimate;
-            Info("limit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
+            Info("findlimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
          //}
       }
 
       if (maxTries == 0 || std::isnan(
              AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
          // second point failed ... give up
-         return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
+         return std::pair(std::numeric_limits<double>::quiet_NaN(), 0.);
       }
       gr.reset();
-      return limit(opt, relUncert, maxTries - 1);
+      return findlimit(opt, relUncert, maxTries - 1);
    }
 
    auto lim = GetLimit(*gr);
@@ -1288,7 +1368,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::limit(const char *opt, doub
          double another_estimate = point->mu_hat().getVal() + rough_sigma_mu*ROOT::Math::gaussian_quantile(0.95,1);
          //if (another_estimate < nextPoint) {
          nextPoint = std::max(nextPoint,another_estimate);
-         Info("limit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
+         Info("findlimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
          //}
       }
       nextPoint += nextPoint*relUncert*0.99; // ensure we step over location
@@ -1311,12 +1391,12 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::limit(const char *opt, doub
    // got here need a new point .... evaluate the estimated lim location +/- the relUncert (signed error takes care of
    // direction)
 
-   Info("limit", "%s -- Testing new point @ %s=%g (delta=%g)", sOpt.Data(), v->GetName(), nextPoint,lim.second);
+   Info("findlimit", "%s -- Testing new point @ %s=%g (delta=%g)", sOpt.Data(), v->GetName(), nextPoint,lim.second);
    if (maxTries == 0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
       return lim;
    }
    gr.reset();
-   return limit(opt, relUncert, maxTries - 1);
+   return findlimit(opt, relUncert, maxTries - 1);
 }
 
 void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
