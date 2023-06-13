@@ -477,8 +477,8 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
    // and now remove anything that's marked floating
    // note have to snapshot because we are removing from the thing that owns it
    // so otherwise there's an invalid read
-   const_cast<RooAbsCollection *>(out.coords.get())
-      ->remove(*std::unique_ptr<RooAbsCollection>(std::unique_ptr<RooAbsCollection>(out.coords->selectByAttrib("Constant", false))->snapshot()), true, true);
+    std::unique_ptr<RooAbsCollection> toRemove(std::unique_ptr<RooAbsCollection>(out.coords->selectByAttrib("Constant", false))->snapshot());
+   const_cast<RooAbsCollection *>(out.coords.get())->remove(*toRemove, true, true);
    double value = out.fNullVal();
    double alt_value = out.fAltVal();
 
