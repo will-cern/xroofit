@@ -1002,7 +1002,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::getVal(const char *what)
    throw std::runtime_error(std::string("Unknown: ") + what);
 }
 
-RooArgList xRooNLLVar::xRooHypoPoint::poi()
+RooArgList xRooNLLVar::xRooHypoPoint::poi() const
 {
    RooArgList out;
    out.setName("poi");
@@ -1010,7 +1010,7 @@ RooArgList xRooNLLVar::xRooHypoPoint::poi()
    return out;
 }
 
-RooArgList xRooNLLVar::xRooHypoPoint::alt_poi()
+RooArgList xRooNLLVar::xRooHypoPoint::alt_poi() const
 {
    RooArgList out;
    out.setName("alt_poi");
@@ -1173,7 +1173,8 @@ std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(boo
 {
 
    if (!fAsimov && (nllVar||hypoTestResult)) {
-      auto theFit = (!fData.first && fGenFit && !isExpected) ? fGenFit : cfit_alt(readOnly);
+      auto theFit = (!fData.first && fGenFit &&
+              isExpected) ? fGenFit : cfit_alt(readOnly);
       if (!theFit || allowedStatusCodes.find(theFit->status()) == allowedStatusCodes.end())
          return fAsimov;
       fAsimov = std::make_shared<xRooHypoPoint>(*this);
@@ -2194,7 +2195,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    if(auto ax = dynamic_cast<TH1*>(gPad->GetPrimitive(".axis"))) ax->GetYaxis()->SetRangeUser(1e-7,1);
 }
 
-TString xRooNLLVar::xRooHypoPoint::tsTitle(bool inWords)
+TString xRooNLLVar::xRooHypoPoint::tsTitle(bool inWords) const
 {
    auto v = dynamic_cast<RooRealVar *>(poi().empty() ? nullptr : poi().first());
    if (fPllType == xRooFit::Asymptotics::OneSidedPositive) {

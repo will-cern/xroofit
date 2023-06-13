@@ -282,6 +282,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
    } else if(sOpt.Contains("plr")) {
       // force use of two-sided test statistic for any new points
       fTestStatType = xRooFit::Asymptotics::TwoSided;
+      sOpt.ReplaceAll("plr","ts");
    }
 
    bool doObs = false;
@@ -317,13 +318,14 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
    }
 
    // create a fitDatabase if required
-   if (!gDirectory->IsWritable()) {
+   TDirectory* origDir = gDirectory;
+   if (!gDirectory || !gDirectory->IsWritable()) {
       // locate a TMemFile in the open list of files and move to that
       // or create one if cannot find
       for(auto file : *gROOT->GetListOfFiles()) {
          if(auto f = dynamic_cast<TMemFile*>(file)) { f->cd(); break; }
       }
-      if(!gDirectory->IsWritable()) {
+      if(!gDirectory || !gDirectory->IsWritable()) {
          new TMemFile("fitDatabase","RECREATE");
       }
    }
@@ -352,9 +354,10 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
             AddPoint(TString::Format("%s=%g", poi().first()->GetName(), low + step * i));
          }
       }
-      graphs(type); // triggers computation
+      graphs(sOpt); // triggers computation
    }
 
+   if(origDir) origDir->cd();
 
    return 0;
 }
@@ -885,7 +888,7 @@ void xRooNLLVar::xRooHypoSpace::Print(Option_t * /*opt*/) const
    std::cout << "Number of bad fits: " << badFits << std::endl;
 }
 
-std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*, const std::function<void(xRooNLLVar::xRooHypoSpace*)>& progress*/)
+std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*, const std::function<void(xRooNLLVar::xRooHypoSpace*)>& progress*/) const
 {
 
    TString sOpt(opt);
@@ -970,7 +973,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
    bool above = true;
    TStopwatch s;
    s.Start();
-   size_t nDone = 0; bool drawn=false;
+   size_t nDone = 0;
    for (auto &p : *this) {
       if(s.RealTime() > 5) {
          if(visualize) {
@@ -979,7 +982,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
             if (gra && gra->GetN()) {
                if(gPad) gPad->Clear();
                gra->DrawClone(expBand ? "AF" : "ALP")->SetBit(kCanDelete);
-               gSystem->ProcessEvents(); drawn=true;
+               gSystem->ProcessEvents();
             }
          } else {
             Info("graph", "Completed %lu/%lu points for %s", nDone, size(), sOpt.Data());
@@ -989,7 +992,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
          s.Continue();
       }
       double _x = p.coords->getRealValue(_axes.at(0)->GetName(), std::numeric_limits<double>::quiet_NaN());
-      auto pval = p.getVal(sOpt);
+      auto pval = const_cast<xRooHypoPoint&>(p).getVal(sOpt);
       auto idx = out->GetN() - nPointsDown;
 
       if (std::isnan(pval.first) ) {
@@ -1004,7 +1007,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
       if (expBand && nSigma) {
          TString sOpt2 = sOpt;
          sOpt2.ReplaceAll("exp", "exp-");
-         pval = p.getVal(sOpt2);
+         pval = const_cast<xRooHypoPoint&>(p).getVal(sOpt2);
          if (std::isnan(pval.first)) {
             if(p.status()!=0) { // if status is 0 then bad pval is really just absence of fits, not bad fits
                badPoints()->SetPoint(badPoints()->GetN(), _x, 0);
@@ -1247,14 +1250,14 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pVal
    }
 }
 
-xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::limit(const char* type, double nSigma) {
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::limit(const char* type, double nSigma) const {
    TString sOpt = TString::Format("p%s",type);
    if(std::isnan(nSigma)) {
       sOpt += "obs";
    } else {
-      sOpt += TString::Format("exp%s%d",nSigma>=0 ? "+" : "-",int(nSigma));
+      sOpt += TString::Format("exp%s%d",nSigma>0 ? "+" : "",int(nSigma));
    }
-   return findlimit(sOpt.Data());
+   return GetLimit(*graph(sOpt + " readonly"));
 }
 
 xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::findlimit(const char *opt, double relUncert, unsigned int maxTries)

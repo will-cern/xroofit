@@ -195,8 +195,8 @@ public:
       void addCLsToys(int nToys = 1, int seed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN());  // if seed=0 will use a random seed
 
 
-      RooArgList poi();
-      RooArgList alt_poi(); // values of the poi in the alt hypothesis (will be nans if not defined)
+      RooArgList poi() const;
+      RooArgList alt_poi() const; // values of the poi in the alt hypothesis (will be nans if not defined)
       RooRealVar &mu_hat(); // throws exception if ufit not available
 
       std::shared_ptr<xRooHypoPoint>
@@ -228,7 +228,7 @@ public:
       std::shared_ptr<RooStats::HypoTestResult> hypoTestResult = nullptr;
       std::shared_ptr<const RooFitResult> retrieveFit(int type);
 
-       TString tsTitle(bool inWords=false);
+       TString tsTitle(bool inWords=false) const;
    private:
       std::pair<double, double> pX_toys(bool alt, double nSigma = std::numeric_limits<double>::quiet_NaN());
       size_t addToys(bool alt, int nToys, int initialSeed = 0, double target = std::numeric_limits<double>::quiet_NaN(), double target_nSigma = std::numeric_limits<double>::quiet_NaN(),bool targetCLs=false,double relErrThreshold=2., size_t maxToys=10000);
@@ -284,7 +284,7 @@ public:
       //  expX: do expected, X sigma (use +X or -X for contour, otherwise will return band unless X=0)
       //  toys: pvalues from available toys
       //  readonly: don't compute anything, just return available values
-      std::shared_ptr<TGraphErrors> graph(const char *opt);
+      std::shared_ptr<TGraphErrors> graph(const char *opt) const;
 
       // return a TMultiGraph containing the set of graphs for a particular visualization
       std::shared_ptr<TMultiGraph> graphs(const char* opt);
@@ -293,7 +293,7 @@ public:
       xValueWithError findlimit(const char *opt, double relUncert = std::numeric_limits<double>::infinity(), unsigned int maxTries=20);
 
       // get currently available limit, with error. Use nSigma = nan for observed limit
-      xValueWithError limit(const char* type = "cls", double nSigma = std::numeric_limits<double>::quiet_NaN());
+      xValueWithError limit(const char* type = "cls", double nSigma = std::numeric_limits<double>::quiet_NaN()) const;
       int scan(const char* type = "cls", size_t nPoints = 0, double low = std::numeric_limits<double>::quiet_NaN(), double high = std::numeric_limits<double>::quiet_NaN(),const std::vector<double>& nSigmas={0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()}, double relUncert = 0.1);
 
       // key is nSigma or "obs" for observed
