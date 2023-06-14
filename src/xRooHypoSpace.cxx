@@ -475,10 +475,11 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
    // ensure all poi are marked const ... required by xRooHypoPoint behaviour
    out.poi().setAttribAll("Constant");
    // and now remove anything that's marked floating
-   // note have to snapshot because we are removing from the thing that owns it
-   // so otherwise there's an invalid read
-    std::unique_ptr<RooAbsCollection> toRemove(std::unique_ptr<RooAbsCollection>(out.coords->selectByAttrib("Constant", false))->snapshot());
-   const_cast<RooAbsCollection *>(out.coords.get())->remove(*toRemove, true, true);
+
+   // do to bug in remove have to ensure not using the hash map otherwise will be doing an invalid read after the deletion of the owned pars
+   const_cast<RooAbsCollection *>(out.coords.get())->useHashMapForFind(false);
+   const_cast<RooAbsCollection *>(out.coords.get())->remove(*std::unique_ptr<RooAbsCollection>(out.coords->selectByAttrib("Constant", false)), true, true);
+
    double value = out.fNullVal();
    double alt_value = out.fAltVal();
 
