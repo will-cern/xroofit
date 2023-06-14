@@ -60,6 +60,7 @@ class xRooFit {
 public:
    // Extra options for NLL creation:
    static RooCmdArg ReuseNLL(bool flag); // if should try to reuse the NLL object when it changes dataset
+   static constexpr double OBS = std::numeric_limits<double>::quiet_NaN();
 
    // Static methods that work with the 'first class' object types:
    //    Pdfs: RooAbsPdf

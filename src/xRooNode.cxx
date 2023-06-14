@@ -3232,7 +3232,7 @@ xRooNode &xRooNode::operator=(const TObject &o)
     */
 }
 
-void xRooNode::_fitTo_(const char *datasetName, const char *constParValues)
+void xRooNode::_fit_(const char *constParValues)
 {
    try {
       auto _pars = pars();
@@ -3250,7 +3250,16 @@ void xRooNode::_fitTo_(const char *datasetName, const char *constParValues)
             }
          }
       }
-      auto _nll = nll(datasetName);
+      // use the first selected dataset
+      auto _dsets = datasets();
+      TString dsetName = "";
+      for (auto &d : _dsets) {
+         if (d->get()->TestBit(1 << 20)) {
+            dsetName = d->get()->GetName();
+            break;
+         }
+      }
+      auto _nll = nll(dsetName.Data());
       _nll.fitConfigOptions()->SetValue("LogSize", 65536);
       _nll.fitConfig()->MinimizerOptions().SetPrintLevel(0);
       auto fr = _nll.minimize();
@@ -3265,10 +3274,10 @@ void xRooNode::_fitTo_(const char *datasetName, const char *constParValues)
       const TGWindow* w = (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot();
       if (fr->status() != 0) {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished with Bad Status Code",
-                      TString::Format("%s\nFit Status Code = %d\n-------------%s", fr->GetName(), fr->status(),statusCodes.Data()), kMBIconExclamation, kMBOk);
+                      TString::Format("%s\nData = %s\nFit Status Code = %d\n-------------%s", fr->GetName(), dsetName.Data(),fr->status(),statusCodes.Data()), kMBIconExclamation, kMBOk);
       } else {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished Successfully",
-                      TString::Format("%s\nFit Status Code = %d\n-------------%s", fr->GetName(), fr->status(),statusCodes.Data()));
+                      TString::Format("%s\nData = %s\nFit Status Code = %d\n-------------%s", fr->GetName(), dsetName.Data(),fr->status(),statusCodes.Data()));
       }
    } catch (const std::exception &e) {
       new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot()
@@ -3325,7 +3334,12 @@ void xRooNode::_scan_(const char* what, double nToys,const char* xvar, int nBins
          }
       }
       hs.SetTitle(sWhat + " scan" + ((dsetName!="") ? TString::Format(" [data=%s]",dsetName.Data()) : ""));
-      hs.scan(sWhat + " visualize",nBinsX,lowX,highX);
+      int scanStatus = hs.scan(sWhat + " visualize",nBinsX,lowX,highX);
+      if( scanStatus != 0) {
+         new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot(),
+                      "Scan Finished with Bad Status Code",
+                      TString::Format("%s\nData = %s\nScan Status Code = %d", hs.GetName(), dsetName.Data(),scanStatus), kMBIconExclamation, kMBOk);
+      }
       hs.SetName(TUUID().AsString());
       if(ws()) {
           if(auto res = hs.result()) ws()->import( *res );
@@ -5716,10 +5730,11 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
       //            }
       //        }
       auto _style = style(dataGraph);
-      *dynamic_cast<TAttLine *>(dataGraph) = *_style;
-      *dynamic_cast<TAttFill *>(dataGraph) = *_style;
-      *dynamic_cast<TAttMarker *>(dataGraph) = *_style;
-
+      if(_style) {
+         *dynamic_cast<TAttLine *>(dataGraph) = *_style;
+         *dynamic_cast<TAttFill *>(dataGraph) = *_style;
+         *dynamic_cast<TAttMarker *>(dataGraph) = *_style;
+      }
       return dataGraph;
    }
 
@@ -6313,7 +6328,7 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
          int covQualBackup = fr->covQual();
          fr->setCovarianceMatrix(_tmp);
          fr->setCovQual(covQualBackup);
-         const_cast<RooArgList&>(fr->floatParsFinal()).remove(_remPars, true);
+         const_cast<RooArgList&>(fr->floatParsFinal()).remove(_remPars, true); // is this a memory leak ... should delete the remPars?
          return out;
 
       } else if (!get() || get<RooAbsCollection>()) {
@@ -6940,9 +6955,11 @@ xRooNode xRooNode::histo(const xRooNode& vars, const xRooNode& fr, bool content,
 
                // style hists according to availble styles ... creating if necessary
                auto _style = xRooNode(*ll->At(i),*this).style(ll->At(i));
-               *dynamic_cast<TAttLine *>(ll->At(i)) = *_style;
-               *dynamic_cast<TAttFill *>(ll->At(i)) = *_style;
-               *dynamic_cast<TAttMarker *>(ll->At(i)) = *_style;
+               if(_style) {
+                  *dynamic_cast<TAttLine *>(ll->At(i)) = *_style;
+                  *dynamic_cast<TAttFill *>(ll->At(i)) = *_style;
+                  *dynamic_cast<TAttMarker *>(ll->At(i)) = *_style;
+               }
             }
          }
          h->GetListOfFunctions()->Add( stack, "noclearsame" );
@@ -7149,7 +7166,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                int covQualBackup = fr->covQual();
                fr->setCovarianceMatrix(_tmp);
                fr->setCovQual(covQualBackup);
-               const_cast<RooArgList &>(fr->floatParsFinal()).remove(*_p, true);
+               const_cast<RooArgList &>(fr->floatParsFinal()).remove(*_p, true); // NOTE: I think this might be a memory leak, should delete _p after removal
             }
          }
       }
@@ -8806,10 +8823,11 @@ void xRooNode::Draw(Option_t *opt)
          //            (TAttMarker&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          auto _style = style(h);
          rar->setStringAttribute("style",oldStyle=="" ? nullptr : oldStyle.Data()); // restores old style
-         (TAttLine &)(*h) = *_style;
-         (TAttFill &)(*h) = *_style;
-         (TAttMarker &)(*h) = *_style;
-
+         if(_style) {
+            (TAttLine &) (*h) = *_style;
+            (TAttFill &) (*h) = *_style;
+            (TAttMarker &) (*h) = *_style;
+         }
          h->Draw(dOpt);
          if (errHist) {
             errHist->SetTitle(overlayName);
@@ -8991,7 +9009,9 @@ void xRooNode::Draw(Option_t *opt)
                 addLegendEntry(ll->At(i), _title.c_str(), "f");
              }
              // finally, ensure all hists are styled
-             for(auto hh : hhs) {
+             for(auto ho : *ll) {
+                TH1* hh = dynamic_cast<TH1*>(ho);
+                if(!hh) continue;
                 bool createdStyle = (xRooNode(*hh,*this).style(nullptr,false)==nullptr);
 
                 if(createdStyle) {
@@ -9001,16 +9021,20 @@ void xRooNode::Draw(Option_t *opt)
                       hh->SetFillColor((count++) % 100);
                       // check not already used this color
                       used=false;
-                      for(auto hh2 : hhs) {
+                      for(auto ho2 : *ll) {
+                         TH1* hh2 = dynamic_cast<TH1*>(ho2);
+                         if(!hh2) continue;
                          auto _style = xRooNode(*hh2,*this).style(hh2,false);
                          if(hh != hh2 && _style && _style->GetFillColor()==hh->GetFillColor()) { used=true; break; } }
                    } while(used);
                 }
 
                 auto _style = xRooNode(*hh,*this).style(hh);
-                *dynamic_cast<TAttLine *>(hh) = *_style;
-                *dynamic_cast<TAttFill *>(hh) = *_style;
-                *dynamic_cast<TAttMarker *>(hh) = *_style;
+                if(_style) {
+                   *dynamic_cast<TAttLine *>(hh) = *_style;
+                   *dynamic_cast<TAttFill *>(hh) = *_style;
+                   *dynamic_cast<TAttMarker *>(hh) = *_style;
+                }
              }
           }
       }

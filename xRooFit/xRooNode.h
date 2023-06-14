@@ -359,7 +359,7 @@ public:
    void SetFitResult(const std::shared_ptr<const RooFitResult> &fr) { SetFitResult(fr.get()); }
    void SetFitResult(const xRooNode &fr);
 
-   void _fitTo_(const char *datasetName = "", const char *constParValues = ""); // *MENU*
+   void _fit_(const char *constParValues = ""); // *MENU*
    void _generate_(const char *name = "", bool expected = false);               // *MENU*
    void _scan_(const char* what="plr", double nToys=0, const char* xvar="", int nPointsX=0, double lowX=0, double highX=0/*, const char* yvar="", int nBinsY=0, double lowY=0, double highY=0*/, const char *constParValues=""); // *MENU*
    //    xRooNode fitTo(const char* datasetName) const;

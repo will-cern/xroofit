@@ -294,9 +294,11 @@ public:
 
       // get currently available limit, with error. Use nSigma = nan for observed limit
       xValueWithError limit(const char* type = "cls", double nSigma = std::numeric_limits<double>::quiet_NaN()) const;
-      int scan(const char* type = "cls", size_t nPoints = 0, double low = std::numeric_limits<double>::quiet_NaN(), double high = std::numeric_limits<double>::quiet_NaN(),const std::vector<double>& nSigmas={0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()}, double relUncert = 0.1);
+      int scan(const char* type, size_t nPoints, double low = std::numeric_limits<double>::quiet_NaN(), double high = std::numeric_limits<double>::quiet_NaN(),const std::vector<double>& nSigmas={0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()}, double relUncert = 0.1);
+      int scan(const char* type = "cls", const std::vector<double>& nSigmas={0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()}, double relUncert = 0.1) { return scan(type,0,std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::quiet_NaN(),nSigmas,relUncert); }
+      int scan(const char* type, double nSigma, double relUncert = 0.1) { return scan(type,std::vector<double>{nSigma},relUncert); }
 
-      // key is nSigma or "obs" for observed
+       // key is nSigma or "obs" for observed
       // will only do obs if "obs" dataset is not a generated dataset
       std::map<std::string, std::pair<double, double>> limits(const char *opt = "cls", const std::vector<double>& nSigmas={0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()}, double relUncert = std::numeric_limits<double>::infinity());
 

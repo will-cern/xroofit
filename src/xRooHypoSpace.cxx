@@ -248,10 +248,9 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
       }
    }
 
-   if(poi().empty()) {
-      // treat first axis var as the poi
-      axes().first()->setAttribute("poi");
-   }
+   // promote all axes to being poi and demote all non-axes to non-poi
+   poi().setAttribAll("poi",false);
+   axes().setAttribAll("poi");
 
    auto p = dynamic_cast<RooRealVar*>(axes().first());
    if(!p) {
@@ -315,24 +314,24 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
       relUncert = std::numeric_limits<double>::infinity(); // no NLL available so just get whatever limit we can
 
       // if any of the defined points are 'expected' data don't do obs
-      for(auto& hp : *this) {
-         if(hp.isExpected) {
-            doObs = false; break;
-         }
-      }
+//      for(auto& hp : *this) {
+//         if(hp.isExpected) {
+//            doObs = false; break;
+//         }
+//      }
    } else {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
-      bool allGen = true;
-      for (auto &[pdf, nll]: fNlls) {
-         auto _d = dynamic_cast<RooDataSet *>(nll->data());
-         if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult") ||
-             !_d->weightVar()->getAttribute("expected")) {
-            allGen = false;
-            break;
-         }
-      }
-      if (allGen)
-         doObs = false;
+//      bool allGen = true;
+//      for (auto &[pdf, nll]: fNlls) {
+//         auto _d = dynamic_cast<RooDataSet *>(nll->data());
+//         if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult") ||
+//             !_d->weightVar()->getAttribute("expected")) {
+//            allGen = false;
+//            break;
+//         }
+//      }
+//      if (allGen)
+//         doObs = false;
 #endif
    }
 
@@ -349,16 +348,21 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
       }
    }
 
+   int out = 0;
+
    if(nPoints==0) {
       // automatic scan
       if(sType.Contains("cls")) {
          for (double nSigma: nSigmas) {
+            xValueWithError res(std::make_pair(0.,0.));
             if (std::isnan(nSigma)) {
                if(!doObs) continue;
-               findlimit(TString::Format("%s obs",sType.Data()),relUncert);
+               res = findlimit(TString::Format("%s obs",sType.Data()),relUncert);
             } else {
-               findlimit(TString::Format("%s exp%s%d", sType.Data(), nSigma > 0 ? "+" : "", int(nSigma)), relUncert);
+               res = findlimit(TString::Format("%s exp%s%d", sType.Data(), nSigma > 0 ? "+" : "", int(nSigma)), relUncert);
             }
+            if(std::isnan(res.first) || std::isnan(res.second)) out = 1;
+            else if(std::isinf(res.second)) out = 2;
          }
       } else {
          throw std::runtime_error(TString::Format("Automatic scanning not yet supported for %s",type));
@@ -378,7 +382,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
 
    if(origDir) origDir->cd();
 
-   return 0;
+   return out;
 }
 
 
@@ -393,30 +397,9 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
       // this happens when loaded hypoSpace from a hypoSpaceInverterResult
       // set relUncert to infinity so that we don't test any new points
       relUncert = std::numeric_limits<double>::infinity(); // no NLL available so just get whatever limit we can
-
-      // if any of the defined points are 'expected' data don't do obs
-      for(auto& hp : *this) {
-         if(hp.isExpected) {
-            doObs = false; break;
-         }
-      }
-   } else {
-#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
-      bool allGen = true;
-      for (auto &[pdf, nll]: fNlls) {
-         auto _d = dynamic_cast<RooDataSet *>(nll->data());
-         if (!_d || !_d->weightVar() || !_d->weightVar()->getStringAttribute("fitResult") ||
-             !_d->weightVar()->getAttribute("expected")) {
-            allGen = false;
-            break;
-         }
-      }
-      if (allGen)
-         doObs = false;
-#endif
    }
 
-   scan(opt,0,std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::quiet_NaN(),nSigmas,relUncert);
+   scan(opt,nSigmas,relUncert);
 
    std::map<std::string, std::pair<double,double>> out;
    for(auto nSigma : nSigmas) {
@@ -470,6 +453,7 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
    out.nllVar = fNlls[_pdf];
    out.fData = fNlls[_pdf]->getData();
    out.isExpected = dynamic_cast<RooDataSet*>(out.fData.first.get()) && dynamic_cast<RooDataSet*>(out.fData.first.get())->weightVar()->getAttribute("expected");
+   // TODO: need to access the genfit of the data and add that to the point, somehow ...
 
    out.coords.reset(fPars->snapshot()); // should already have altVal prop on poi, and poi labelled
    // ensure all poi are marked const ... required by xRooHypoPoint behaviour
@@ -1096,8 +1080,8 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
       auto exp2 = graph(sOpt + " exp2");
       auto exp1 = graph(sOpt + " exp1");
       auto exp = graph(sOpt + " exp");
-      bool doObs = false;
-      for(auto& hp : *this) { if(!hp.isExpected) {doObs=true; break;} }
+      bool doObs = true;
+      //for(auto& hp : *this) { if(hp.isExpected) {doObs=false; break;} }
       auto obs = (doObs) ? graph(sOpt) : nullptr;
 
       out = std::make_shared<TMultiGraph>(GetName(),GetTitle());

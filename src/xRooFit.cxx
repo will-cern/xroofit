@@ -395,7 +395,20 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
    // is getting polluted on each generate call, causing it to grow larger and therefore the clone of it
    // to take longer and longer. So sterilize to clear the caches of all components
    if(pdf.workspace()) {
-      xRooNode(*pdf.workspace()).sterilize();
+      // do explicitly rather than via xRooNode sterilize method because don't want to invoke the constructor
+      // workspace tweaking features (which sets poi etc etc)
+      for(auto obj : pdf.workspace()->components()) {
+         for(int i=0;i<obj->numCaches();i++) {
+            if(auto cache = dynamic_cast<RooObjCacheManager*>(obj->getCache(i))) {
+               cache->reset();
+            }
+         }
+         if (RooAbsPdf *p = dynamic_cast<RooAbsPdf *>(obj); p) {
+            p->setNormRange(p->normRange());
+         }
+         obj->setValueDirty();
+      }
+      //xRooNode(pdf.workspace()).sterilize();
    }
 
    return out;
