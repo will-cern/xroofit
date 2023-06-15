@@ -7633,7 +7633,7 @@ void xRooNode::Draw(Option_t *opt)
       xRooHypoSpace(ir).Draw(opt);
       gSystem->ProcessEvents();
       return;
-   } else if(auto tr = get<RooStats::HypoTestResult>()) {
+   } else if(get<RooStats::HypoTestResult>()) {
       if(gPad) gPad->Clear();
       xRooNLLVar::xRooHypoPoint(std::dynamic_pointer_cast<RooStats::HypoTestResult>(fComp)).Draw(opt);
       if(gPad) {
