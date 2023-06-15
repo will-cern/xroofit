@@ -229,6 +229,25 @@ std::pair<double, double> matchPrecision(const std::pair<double, double> &in)
    return out;
 }
 
+xRooNLLVar::xRooHypoPoint& xRooNLLVar::xRooHypoSpace::AddPoint(double value) {
+   if(axes().empty()) {
+      // set the first poi as the axis variable to scan
+      if(poi().empty()) {
+         throw std::runtime_error("No POI to scan");
+      } else {
+         poi().first()->setAttribute("axis");
+      }
+   }
+
+   if(empty()) {
+      // promote all axes to being poi and demote all non-axes to non-poi
+      poi().setAttribAll("poi",false);
+      axes().setAttribAll("poi");
+   }
+
+   return AddPoint(TString::Format("%s=%f",axes().first()->GetName(),value));
+}
+
 int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low, double high,const std::vector<double>& nSigmas, double relUncert) {
 
    TString sType(type);

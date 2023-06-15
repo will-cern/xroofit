@@ -274,6 +274,7 @@ public:
       std::shared_ptr<RooArgSet> pars() const { return fPars; };
       RooArgList axes() const;
 
+      xRooHypoPoint &AddPoint(double value); // adds by using the first axis var
       xRooHypoPoint &AddPoint(const char *coords = ""); // adds a new point at given coords or returns existing
 
       xRooHypoPoint &point(size_t i) { return at(i); }
