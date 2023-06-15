@@ -394,10 +394,15 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
    // the RooAbsPdf::generate does a clone, and it seems that the RooCacheManager of the original pdf
    // is getting polluted on each generate call, causing it to grow larger and therefore the clone of it
    // to take longer and longer. So sterilize to clear the caches of all components
-   if(pdf.workspace()) {
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
+   auto _ws = pdf._myws;
+#else
+   auto _ws = pdf.workspace();
+#endif
+   if(_ws) {
       // do explicitly rather than via xRooNode sterilize method because don't want to invoke the constructor
       // workspace tweaking features (which sets poi etc etc)
-      for(auto obj : pdf.workspace()->components()) {
+      for(auto obj : _ws->components()) {
          for(int i=0;i<obj->numCaches();i++) {
             if(auto cache = dynamic_cast<RooObjCacheManager*>(obj->getCache(i))) {
                cache->reset();
