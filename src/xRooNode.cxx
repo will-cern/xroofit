@@ -147,6 +147,7 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "TFrame.h"
 #include "RooProjectedPdf.h"
 #include "TMemFile.h"
+#include "TGaxis.h"
 //#include <thread>
 //#include <future>
 
@@ -7971,7 +7972,7 @@ void xRooNode::Draw(Option_t *opt)
       gPad->SetName("pull");
       // split the pull graph into individual points -- for benefit of GUI status bar
       auto pullGraph =
-         dynamic_cast<TGraphAsymmErrors *>(gPad->GetPrimitive(TString::Format("%s_pull", _fr->GetName())));
+         dynamic_cast<TGraphAsymmErrors *>(gPad->GetPrimitive("pulls"));
       if (!pullGraph) {
          Error("Draw","Couldn't find pull graph");
          return;
@@ -7980,9 +7981,12 @@ void xRooNode::Draw(Option_t *opt)
       TMultiGraph *mg = new TMultiGraph;
       mg->SetName("editables");
 
+      auto scaleHist = static_cast<TH1*>(pullGraph->FindObject("scales"));
+      if(!scaleHist) throw std::runtime_error("Could not find scales in fit result");
+
       for (auto i = 0; i < pullGraph->GetN(); i++) {
          auto g = new TGraphAsymmErrors;
-         g->SetName(pullGraph->GetHistogram()->GetXaxis()->GetBinLabel(i + 1));
+         g->SetName(scaleHist->GetXaxis()->GetBinLabel(i + 1));
          auto _p = dynamic_cast<RooRealVar *>(_fr.get<RooFitResult>()->floatParsFinal().find(g->GetName()));
          if (!_p) {
             Warning("Draw", "Found a non-var in the floatParsFinal list: %s - this shouldn't happen", g->GetName());
@@ -7992,7 +7996,7 @@ void xRooNode::Draw(Option_t *opt)
             "%s=%g +/- %s [%g,%g]", strlen(_p->GetTitle()) ? _p->GetTitle() : _p->GetName(), _p->getVal(),
             _p->hasAsymError() ? TString::Format("(%g,%g)", _p->getAsymErrorHi(), _p->getAsymErrorLo()).Data()
                                : TString::Format("%g", _p->getError()).Data(),
-            pullGraph->GetHistogram()->GetBinContent(i + 1), pullGraph->GetHistogram()->GetBinError(i + 1)));
+            scaleHist->GetBinContent(i + 1), scaleHist->GetBinError(i + 1)));
          g->SetPoint(0, pullGraph->GetPointX(i), pullGraph->GetPointY(i));
          g->SetPointEYhigh(0, pullGraph->GetErrorYhigh(i));
          g->SetPointEYlow(0, pullGraph->GetErrorYlow(i));
@@ -8010,9 +8014,10 @@ void xRooNode::Draw(Option_t *opt)
       _thisClone->AppendPad();
 
       // ensure statusbar visible for interactive plot
-      if (gPad->GetCanvas() && !gPad->GetCanvas()->TestBit(TCanvas::kShowEventStatus)) {
-         gPad->GetCanvas()->ToggleEventStatus();
-      }
+      // turned this off for now ... as not needed if doing through browser, status bar already there
+//      if (gPad->GetCanvas() && !gPad->GetCanvas()->TestBit(TCanvas::kShowEventStatus)) {
+//         gPad->GetCanvas()->ToggleEventStatus();
+//      }
       gPad->AddExec("interactivePull", TString::Format("%s::Interactive_Pull()", ClassName()));
 
       pad->cd();
@@ -8178,7 +8183,7 @@ void xRooNode::Draw(Option_t *opt)
          return;
       }
 
-      // plot pull
+      // plot pull or impact
       TGraphAsymmErrors *out = new TGraphAsymmErrors;
       out->SetName(TString::Format("%s_pull", fr->GetName()));
       out->SetTitle("Fit Result Pulls");
@@ -8313,11 +8318,100 @@ void xRooNode::Draw(Option_t *opt)
       graph->Merge(&tmpList);
       tmpList.RemoveAll();
       delete ugraph;
+      for (auto &l : ugraphLabels) {
+         graphLabels.push_back(l);
+      }
 
       graph->SetBit(kCanDelete);
       graph->SetMarkerStyle(20);
       graph->SetMarkerSize(0.5);
 
+      graph->SetMaximum(4);
+      graph->SetMinimum(-4);
+
+      bool doHorizontal = sOpt.Contains("h");
+
+
+      std::vector<std::pair<double,std::string>> covariances;
+      double poiError = 0; std::string poiName; double maxImpact = 0;
+      if(sOpt.Contains("impact")) {
+        std::unique_ptr<RooAbsCollection> poi( fr->floatParsFinal().selectByAttrib("poi",true) );
+        if(poi->empty()) {
+            throw std::runtime_error("No floating poi in the fit");
+        } else if(poi->size()!=1) {
+            throw std::runtime_error("Multiple poi in the fit");
+        }
+        poiName = poi->first()->GetName();
+        size_t poiIdx = fr->floatParsFinal().index(*poi->first());
+        // put parameters in order of impact on the poi
+
+          // impact is regression coefficient * npError
+          // relevant regression coefficient is cov / (npVariance)
+          // i.e. DeltaX/sigmaX = [cov(X,Y)/(sigmaXsigmaY)]DeltaY/sigmaY
+          // ... DeltaX = [cov(X,Y)/(sigmaY^2)]DeltaY
+          // if DeltaY is just sigmaY then DeltaX = cov(X,Y)/sigmaY
+
+        for(auto& label : graphLabels) {
+            covariances.emplace_back( fr->covarianceMatrix()(poiIdx,fr->floatParsFinal().index(label)) / dynamic_cast<RooRealVar*>(fr->floatParsFinal().find(label))->getError(), label );
+        }
+        std::sort(covariances.begin(),covariances.end(),[&](std::pair<double,std::string> i, std::pair<double,std::string> j) { return doHorizontal ? (std::abs(i.first) < std::abs(j.first)) : (std::abs(i.first) > std::abs(j.first)); });
+
+        TGraphAsymmErrors sortedGraph;
+        std::vector<TString> sortedLabels;
+        maxImpact = (doHorizontal) ? covariances.back().first : covariances.front().first; // note: max impact is likely to be self variance
+        for(auto& c : covariances) {
+           if(c.second == poi->first()->GetName()) {
+              poiError = sqrt(c.first);
+              continue; // skip self
+           }
+           c.first *= 4./(maxImpact*1.2);
+            sortedLabels.push_back(c.second);
+            size_t i=0;
+            for(;i<graphLabels.size();i++) {
+               if(graphLabels[i]==c.second) { break; }
+            }
+            sortedGraph.AddPoint( sortedGraph.GetN(), graph->GetPointY(i)  );
+            sortedGraph.SetPointError(sortedGraph.GetN()-1, 0, 0, graph->GetErrorYlow(i), graph->GetErrorYhigh(i));
+        }
+         graph->Set(0);
+         TList tmpList2;
+         tmpList2.SetName("tmpList");
+         tmpList2.Add(&sortedGraph);
+         graph->Merge(&tmpList2);
+         tmpList2.RemoveAll();
+         graphLabels = sortedLabels;
+         graph->SetTitle("Fit Result Impact");
+      }
+
+      // create a framing histogram
+      TH2D* hist;
+      if(doHorizontal) {
+         hist = new TH2D(GetName(),fr->GetTitle(),100,-4,4, std::max(graph->GetN(),1),-0.5, std::max(graph->GetN(),1)-0.5);
+         int i=1;
+         for (auto &l : graphLabels) {
+            hist->GetYaxis()->SetBinLabel(i++, l);
+         }
+         if(!graphLabels.empty()) hist->GetYaxis()->LabelsOption("v");
+         hist->GetXaxis()->SetTitle("(#hat{#theta}-#theta_{i})/#sigma_{i}");
+      } else {
+         hist = new TH2D(GetName(), fr->GetTitle(), std::max(graph->GetN(), 1), -0.5,
+                               std::max(graph->GetN(), 1) - 0.5,
+                               100, -4, 4);
+         int i=1;
+         for (auto &l : graphLabels) {
+            hist->GetXaxis()->SetBinLabel(i++, l);
+         }
+         if(!graphLabels.empty()) hist->GetXaxis()->LabelsOption("v");
+         hist->GetYaxis()->SetNdivisions(8, 0, 0);
+         hist->GetYaxis()->SetTitle("(#hat{#theta}-#theta_{i})/#sigma_{i}");
+      }
+      hist->SetStats(false);
+      hist->SetDirectory(nullptr);
+      hist->SetBit(kCanDelete);
+      auto _axis = (doHorizontal ? hist->GetYaxis() : hist->GetXaxis());
+
+
+/*
       auto t = TH1::AddDirectoryStatus();
       TH1::AddDirectory(false);
       auto hist = new TH1F(TString::Format(".%s_pullFrame", GetName()), fr->GetTitle(), std::max(graph->GetN(), 1),
@@ -8325,74 +8419,198 @@ void xRooNode::Draw(Option_t *opt)
       hist->SetStats(false);
       TH1::AddDirectory(t);
       hist->SetBit(kCanDelete);
-      int i = 1;
-      for (auto &l : graphLabels) {
-         hist->GetXaxis()->SetBinLabel(i++, l);
+      */
+//      auto hist = graph->GetHistogram();
+      graph->GetHistogram()->GetXaxis()->Set(std::max(graph->GetN(), 1),-0.5, std::max(graph->GetN(), 1) - 0.5);
+      for(int ii=1;ii<=_axis->GetNbins();ii++) {
+          graph->GetHistogram()->GetXaxis()->SetBinLabel(ii,_axis->GetBinLabel(ii));
       }
-      for (auto &l : ugraphLabels) {
-         hist->GetXaxis()->SetBinLabel(i++, l);
-      }
-      hist->SetMaximum(4);
-      hist->SetMinimum(-4);
-      if (graph->GetN())
-         hist->GetXaxis()->LabelsOption("v");
-      hist->GetYaxis()->SetNdivisions(8, 0, 0);
-      hist->GetYaxis()->SetTitle("(#hat{#theta}-#theta_{i})/#sigma_{i}");
-      hAxis = hist;
+//      int i = 1;
+//      for (auto &l : graphLabels) {
+//         hist->GetXaxis()->SetBinLabel(i++, l);
+//      }
+//      hist->SetMaximum(4);
+//      hist->SetMinimum(-4);
+//      if (graph->GetN())
+//         hist->GetXaxis()->LabelsOption("v");
+//      hist->GetYaxis()->SetNdivisions(8, 0, 0);
+//      hist->GetYaxis()->SetTitle("(#hat{#theta}-#theta_{i})/#sigma_{i}");
       clearPad();
       // create a new pad because adjust the margins ...
       auto oldPad = gPad;
       gPad->Divide(1, 1, 1e-9, 1e-9);
       gPad->cd(1);
-      gPad->SetBottomMargin(0.4);
 
-      auto pNamesHist = dynamic_cast<TH1F *>(hist->Clone("pnames"));
+
+      if(doHorizontal) {
+         gPad->SetLeftMargin(0.4);
+      } else {
+         gPad->SetBottomMargin(0.4);
+      }
+
+      auto pNamesHist = dynamic_cast<TH1F *>(graph->GetHistogram()->Clone("scales")); // used by interactive "pull" plot
       pNamesHist->Sumw2();
       pNamesHist->SetDirectory(0);
 
       for (int ii = 1; ii <= graph->GetN(); ii++) { // use graph->GetN() to protect against the 0 pars case
-         auto _p = fr->floatParsFinal().find(hist->GetXaxis()->GetBinLabel(ii));
+         auto _p = fr->floatParsFinal().find(_axis->GetBinLabel(ii));
          pNamesHist->SetBinContent(ii, offset[_p->GetName()]);
          pNamesHist->SetBinError(ii, scale[_p->GetName()]);
-         hist->GetXaxis()->SetBinLabel(ii, strlen(_p->GetTitle()) ? _p->GetTitle() : _p->GetName());
+         _axis->SetBinLabel(ii, strlen(_p->GetTitle()) ? _p->GetTitle() : _p->GetName());
       }
 
-      hist->Draw();
 
-      for (int ii = 2; ii >= 1; ii--) {
-         auto pullBox = new TGraphErrors;
-         pullBox->SetBit(kCanDelete);
-         pullBox->SetPoint(0, -0.5, 0);
-         pullBox->SetPoint(1, hist->GetNbinsX() - 0.5 - nUnconstrained, 0);
-         pullBox->SetPointError(0, 0, ii);
-         pullBox->SetPointError(1, 0, ii);
-         pullBox->SetFillColor((ii == 2) ? kYellow : kGreen);
-         pullBox->Draw("3");
-      }
-      auto pullLine = new TGraph;
-      pullLine->SetBit(kCanDelete);
-      pullLine->SetPoint(0, -0.5, 0);
-      pullLine->SetPoint(1, hist->GetNbinsX() - 0.5 - nUnconstrained, 0);
-      pullLine->SetLineStyle(2);
-      pullLine->SetEditable(false);
-      pullLine->Draw("l");
-      if (nUnconstrained > 0) {
-         pullLine = new TGraph;
+      //hist->Draw(); -- now just draw the graph
+
+      if(!sOpt.Contains("impact")) {
+         for (int ii = 2; ii >= 1; ii--) {
+            auto pullBox = new TGraphErrors;
+            pullBox->SetName(TString::Format("%dsigmaBand", ii));
+            pullBox->SetBit(kCanDelete);
+            pullBox->SetPoint(0, -0.5, 0);
+            pullBox->SetPoint(1, _axis->GetNbins() - 0.5 - nUnconstrained, 0);
+            pullBox->SetPointError(0, 0, ii);
+            pullBox->SetPointError(1, 0, ii);
+            pullBox->SetFillColor((ii == 2) ? kYellow : kGreen);
+            hist->GetListOfFunctions()->Add(pullBox, "3");//pullBox->Draw("3");
+         }
+         auto pullLine = new TGraph;
+         pullLine->SetName("0sigmaLine");
          pullLine->SetBit(kCanDelete);
-         pullLine->SetPoint(0, graph->GetN() - 0.5 - nUnconstrained, -100);
-         pullLine->SetPoint(1, graph->GetN() - 0.5 - nUnconstrained, 100);
+         pullLine->SetPoint(0, -0.5, 0);
+         pullLine->SetPoint(1, _axis->GetNbins() - 0.5, 0);
          pullLine->SetLineStyle(2);
          pullLine->SetEditable(false);
-         pullLine->Draw("l");
+         hist->GetListOfFunctions()->Add(pullLine, "l"); //pullLine->Draw("l");
+
+         // also draw vertical line separating constrained from unconstrained, if necessary
+         if (nUnconstrained > 0) {
+            pullLine = new TGraph;
+            pullLine->SetName("dividerLine");
+            pullLine->SetBit(kCanDelete);
+            pullLine->SetPoint(0, graph->GetN() - 0.5 - nUnconstrained, -100);
+            pullLine->SetPoint(1, graph->GetN() - 0.5 - nUnconstrained, 100);
+            pullLine->SetLineStyle(2);
+            pullLine->SetEditable(false);
+            hist->GetListOfFunctions()->Add(pullLine, "l");//pullLine->Draw("l");
+         }
+      } else {
+
+         TGaxis *axis = new TGaxis(_axis->GetXmin(),-4,
+                                   _axis->GetXmin(), 4,-1.2*maxImpact,1.2*maxImpact,510,"-");
+         axis->SetTextFont(_axis->GetTitleFont());
+         axis->SetLabelFont(_axis->GetLabelFont());
+         axis->SetLabelSize(_axis->GetLabelSize());
+         axis->SetTextSize(graph->GetHistogram()->GetTitleSize());
+         axis->SetTitle(TString::Format("#Delta %s",fr->floatParsFinal().find(poiName.c_str())->GetTitle()));
+
+
+         // create impact bar charts
+         for(int tt = 0; tt < 2; tt++) {
+            auto impact = static_cast<TH1 *>(graph->GetHistogram()->Clone(TString::Format("impactUp%s",tt==0?"prefit":"postfit")));
+            impact->GetYaxis()->SetTitle(TString::Format("#Delta%s/#sigma", poiName.c_str()));
+            impact->SetBarWidth(0.9);
+            impact->SetBarOffset(0.05);
+            impact->SetLineColor(kBlack);
+            impact->SetFillColor(kAzure - 4);
+            impact->SetFillStyle(tt==0 ? 3013 : 1001);
+            auto impact2 = static_cast<TH1 *>(impact->Clone(TString::Format("impactDown%s",tt==0?"prefit":"postfit")));
+            impact2->SetFillColor(kCyan);
+            for (int ii = 1; ii <= pNamesHist->GetNbinsX(); ii++) {
+               for (auto &c: covariances) {
+                  if (c.second != pNamesHist->GetXaxis()->GetBinLabel(ii)) continue;
+                  auto vv = dynamic_cast<RooRealVar *>(fr->floatParsFinal().find(c.second.c_str()));
+                  auto vv_init = dynamic_cast<RooRealVar *>(fr->floatParsInit().find(c.second.c_str()));
+                  impact->SetBinContent(ii, (tt==0&&!vv_init->hasError()) ? 0. : c.first * vv->getError() / vv->getErrorHi() * (tt==0 ? (vv_init->getErrorHi()/vv->getErrorHi()) : 1.));
+                  impact2->SetBinContent(ii, (tt==0&&!vv_init->hasError()) ? 0. : c.first * vv->getError() / vv->getErrorLo() * (tt==0 ? (vv_init->getErrorLo()/vv->getErrorLo()) : 1.));
+               }
+            }
+            hist->GetListOfFunctions()->Add(impact, (doHorizontal) ? "hbarsamemin0" : "bsame");
+            hist->GetListOfFunctions()->Add(impact2, (doHorizontal) ? "hbarsamemin0" : "bsame");
+         }
+         // add three lines
+         for(int ii=-1;ii<=1;ii++) {
+            auto pullLine = new TGraph;
+            pullLine->SetName(TString::Format("%dsigmaLine",ii));
+            pullLine->SetBit(kCanDelete);
+            pullLine->SetPoint(0, -0.5, ii);
+            pullLine->SetPoint(1, hist->GetNbinsX() - 0.5, ii);
+            pullLine->SetLineStyle(2);
+            pullLine->SetEditable(false);
+            hist->GetListOfFunctions()->Add(pullLine, "l");
+         }
+          hist->GetListOfFunctions()->Add(axis); // draw axis last
+
+          TLegend* leg1 = new TLegend(0.02,0.78,0.27,1.0);
+          leg1->SetFillStyle(0);leg1->SetBorderSize(0);leg1->SetMargin(0.25);leg1->SetNColumns(2);
+          //leg1.SetTextFont(gStyle->GetTextFont());
+          //leg1.SetTextSize(gStyle->GetTextSize());
+         leg1->AddEntry((TObject*)nullptr,"Pre-fit impact:","");leg1->AddEntry((TObject*)nullptr,"","");
+          leg1->AddEntry(hist->FindObject("impactUpprefit"),"#theta = #hat{#theta}+#Delta#theta","f");
+          leg1->AddEntry(hist->FindObject("impactDownprefit"),"#theta = #hat{#theta}-#Delta#theta","f");
+          leg1->AddEntry((TObject*)nullptr,"Post-fit impact:","");
+          leg1->AddEntry((TObject*)nullptr,"","");
+          leg1->AddEntry(hist->FindObject("impactUppostfit"),"#theta = #hat{#theta}+#Delta#theta","f");
+          leg1->AddEntry(hist->FindObject("impactDownpostfit"),"#theta = #hat{#theta}-#Delta#theta","f");
+
+          hist->GetListOfFunctions()->Add(leg1);
+
+
       }
       auto minMax = graphMinMax(graph);
       adjustYRange(minMax.first, minMax.second);
 
       graph->SetEditable(false);
-      graph->SetHistogram(pNamesHist);
-      graph->Draw("z0p");
-      hist->Draw(
-         "axissame"); // overlay axis again -- important is last so can remove if don't pad->Update before reclear
+      pNamesHist->SetLineWidth(0);pNamesHist->SetMarkerSize(0);
+      graph->GetListOfFunctions()->Add(pNamesHist,"same"); //graph->SetHistogram(pNamesHist);
+      if(doHorizontal) {
+
+         // flip the graph and contained graphs
+         for (int p = 0; p < graph->GetN(); p++) {
+            graph->SetPoint(p, graph->GetPointY(p), graph->GetPointX(p));
+            graph->SetPointError(p, graph->GetErrorYlow(p), graph->GetErrorYhigh(p), graph->GetErrorXlow(p),
+                                 graph->GetErrorXhigh(p));
+         }
+         for (auto f: *hist->GetListOfFunctions()) {
+            if (f->InheritsFrom("TH1")) {
+               //f->Draw("hbarsamemin0");
+            } else if (auto g2 = dynamic_cast<TGraphErrors *>(f)) {
+               for (int p = 0; p < g2->GetN(); p++) {
+                  g2->SetPoint(p, g2->GetPointY(p), g2->GetPointX(p));
+                  g2->SetPointError(p, g2->GetErrorY(p), g2->GetErrorX(p));
+               }
+               //g2->Draw("3");
+            } else if (auto g = dynamic_cast<TGraph *>(f)) {
+               for (int p = 0; p < g->GetN(); p++) {
+                  g->SetPoint(p, g->GetPointY(p), g->GetPointX(p));
+               }
+               //g->Draw("l");
+            } else if (auto l = dynamic_cast<TLine *>(f)) {
+               l->SetX1(l->GetY1());
+               l->SetX2(l->GetY2());
+               l->SetY1(_axis->GetXmax());
+               l->SetY2(_axis->GetXmax());
+               //l->Draw();
+            }
+         }
+      }
+
+      graph->SetName("pulls");
+      hist->GetListOfFunctions()->Add(graph,"z0p");
+
+      hist->Draw((sOpt.Contains("impact") && !doHorizontal)?"y+":"");
+//
+//      if(sOpt.Contains("impact")) {
+//         // make main object the histogram
+//         auto h = (TH1*)graph->GetHistogram()->Clone("impact");
+//         graph->GetListOfFunctions()->RemoveAll();
+//         for(int ii=1;ii<=h->GetNbinsX();ii++) h->SetBinContent(ii,-4);
+//         h->GetListOfFunctions()->Add(graph,"z0p");
+//         h->Draw("hbar");
+//      } else {
+//         graph->Draw(sOpt.Contains("impact") ? "az0py+" : "az0p");
+//      }
+      //hist->Draw("axissame"); // overlay axis again -- important is last so can remove if don't pad->Update before reclear
       gPad->Modified();
       oldPad->cd();
       // gPad->Update();
