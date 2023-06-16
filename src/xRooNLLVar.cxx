@@ -2253,10 +2253,7 @@ double xRooNLLVar::xRooHypoPoint::fAltVal()
 xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints, double low, double high,
                                                 double alt_value, const xRooFit::Asymptotics::PLLType &pllType)
 {
-   xRooNLLVar::xRooHypoSpace hs = hypoSpace(parName, pllType);
-   for(auto poi : hs.poi()) {
-      poi->setStringAttribute("altVal", std::isnan(alt_value) ? nullptr : TString::Format("%f", alt_value));
-   }
+   xRooNLLVar::xRooHypoSpace hs = hypoSpace(parName, pllType, alt_value);
    if (nPoints > 0)
       hs.AddPoints(parName, nPoints, low, high);
    return hs;
@@ -2272,7 +2269,7 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(int nPoints, double low, double 
    return hypoSpace(_poi->first()->GetName(), nPoints, low, high, alt_value, pllType);
 }
 
-xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, const xRooFit::Asymptotics::PLLType &pllType)
+xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, const xRooFit::Asymptotics::PLLType &pllType, double alt_value)
 {
    xRooNLLVar::xRooHypoSpace s(parName, parName);
 
@@ -2288,6 +2285,11 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, const xRooF
    }*/
    s.fNlls[s.fPdfs.begin()->second] = std::make_shared<xRooNLLVar>(*this);
    s.fTestStatType = pllType;
+
+   for(auto poi : s.poi()) {
+      poi->setStringAttribute("altVal", std::isnan(alt_value) ? nullptr : TString::Format("%f", alt_value));
+   }
+
    return s;
 }
 

@@ -330,7 +330,7 @@ public:
                            double alt_value = std::numeric_limits<double>::quiet_NaN(),
                            const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
    xRooHypoSpace
-   hypoSpace(const char *parName = "", const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
+   hypoSpace(const char *parName = "", const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown, double alt_value = std::numeric_limits<double>::quiet_NaN());
    xRooHypoSpace hypoSpace(int nPoints, double low, double high,
                            double alt_value = std::numeric_limits<double>::quiet_NaN(),
                            const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
