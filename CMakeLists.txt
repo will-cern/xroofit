@@ -1,5 +1,6 @@
 cmake_minimum_required( VERSION 3.11 FATAL_ERROR )
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(xRooFit)
 
 option(ENABLE_TESTS "Enable compilation of tests" OFF)
@@ -52,8 +53,8 @@ target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)
 target_include_directories(xRooFit BEFORE PRIVATE ${CMAKE_BINARY_DIR}/versioning)
 add_dependencies(xRooFit xRooFit_version)
-target_compile_options(xRooFit PRIVATE -Wall -Wpedantic -Wunused-variable -Wunused-parameter -Wextra)
-
+target_compile_options(xRooFit PRIVATE -Wall -Wpedantic -Wunused-variable -Wunused-parameter -Wextra -Wshadow)
+target_compile_features(xRooFit PUBLIC cxx_std_17)
 
 if (ENABLE_TESTS)
     add_subdirectory(test)
