@@ -12,6 +12,12 @@
 
 #include "RVersion.h"
 
+#define private public
+#include "Minuit2/Minuit2Minimizer.h"
+#undef private
+#include "Minuit2/FunctionMinimum.h"
+
+
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
 #define protected public
 #endif
@@ -39,6 +45,7 @@
 
 #include "RooStats/AsymptoticCalculator.h"
 #include "Math/GenAlgoOptions.h"
+#include "Math/Minimizer.h"
 #include "RooMinimizer.h"
 #include "coutCapture.h"
 
@@ -530,14 +537,16 @@ public:
       counter++;
       if (s.RealTime() > fInterval) {
          s.Reset();
-         std::cerr << (counter) << ") " << TDatime().AsString() << " : " << minVal << " Delta = " << (minVal - prevMin)
-                   << std::endl;
+         std::cerr << (counter) << ") " << TDatime().AsString();
+         if(!fState.empty()) std::cerr << " : " << fState;
+         std::cerr << " : " << minVal << " Delta = " << (minVal - prevMin) << std::endl;
          prevMin = minVal;
       } else {
          s.Continue();
       }
       return out;
    }
+    std::string fState;
 
 private:
    RooRealProxy fFunc;
@@ -546,6 +555,7 @@ private:
    mutable double prevMin = std::numeric_limits<double>::infinity();
    mutable int fInterval = 0; // time in seconds before next report
    mutable TStopwatch s;
+
 };
 bool ProgressMonitor::fInterrupt = false;
 ProgressMonitor *ProgressMonitor::me = nullptr;
@@ -730,8 +740,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       }
 
       bool hesse = _minimizer.fitter()->Config().ParabErrors();
-      _minimizer.fitter()->Config().SetParabErrors(
-         false); // turn "off" so can run hesse as a separate step, appearing in status
+      _minimizer.fitter()->Config().SetParabErrors(false); // turn "off" so can run hesse as a separate step, appearing in status
       bool minos = _minimizer.fitter()->Config().MinosErrors();
       _minimizer.fitter()->Config().SetMinosErrors(false);
       bool restore = !_minimizer.fitter()->Config().UpdateAfterFit();
@@ -791,6 +800,9 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
             minim = "Minuit2";
             algo = "Migrad";
          }
+         if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
+            fff->fState = minim + algo + std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy());
+         }
          status = _minimizer.minimize(minim, algo);
          if (first && actualFirstMinimizer != _minimizer.fitter()->Config().MinimizerType())
             actualFirstMinimizer = _minimizer.fitter()->Config().MinimizerType();
@@ -833,7 +845,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          // specified Also note that if fits are failing because of edm over max, it can be a good idea to activate the
          // Offset option when building nll
          if (printLevel >= -1)
-            Warning("fitTo", "%s Status=%d (edm=%f, tol=%f, strat=%d), tries=#%d...", fitName.Data(), status,
+            Warning("fitTo", "%s %s%s Status=%d (edm=%f, tol=%f, strat=%d), tries=#%d...", fitName.Data(),_minimizer.fitter()->Config().MinimizerType().c_str(),_minimizer.fitter()->Config().MinimizerAlgoType().c_str(),status,
                     _minimizer.fitter()->Result().Edm(), _minimizer.fitter()->Config().MinimizerOptions().Tolerance(),
                     _minimizer.fitter()->Config().MinimizerOptions().Strategy(), tries);
 
@@ -862,20 +874,46 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          Warning("fitTo", "%s final status is %d", fitName.Data(), status);
       }
 
+      // currently dont have a way to access the covariance "dcovar" which is a metric from iterative
+      // covariance method that is used by minuit2 to say if the covariance is accurate or not
+      // See MinimumError.h: IsAccurate if Dcovar < 0.1
+      // Note that if strategy=2 or strategy=1 and Dcovar>0.05 then hesse will be forced to be run (see VariadicMetricBuilder)
+      // So only in Strategy=0 can you skip hesse (even if SetParabErrors false).
+
+      double dCovar = std::numeric_limits<double>::quiet_NaN();
+      if(auto _minuit2 = dynamic_cast<ROOT::Minuit2::Minuit2Minimizer*>(_minimizer.fitter()->GetMinimizer()); _minuit2 && _minuit2->fMinimum) {
+         dCovar = _minuit2->fMinimum->Error().Dcovar();
+      }
+
       if (hesse && _minimizer.fitter()->Result().IsValid()) { // only do hesse if was a valid min
+         // Note: minima where the covariance was made posdef are deemed 'valid' ...
 
          // remove limits on pars before calculation
          // interesting note: error on pars before hesse can be significantly
-         // smaller than after hesse ... what is the pre-hesse error corresponding to?
+         // smaller than after hesse ... what is the pre-hesse error corresponding to? - corresponds to approximation
+         // of covariance matrix calculated with iterative method
          auto parSettings = _minimizer.fitter()->Config().ParamsSettings();
          for (auto &ss : _minimizer.fitter()->Config().ParamsSettings()) {
             ss.RemoveLimits();
+         }
+
+         //std::cout << "nIterations = " << _minimizer.fitter()->GetMinimizer()->NIterations() << std::endl;
+         //std::cout << "covQual before hesse = " << _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() << std::endl;
+         _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(2); // uses most precise hesse settings (step sizes and g2 tolerances)
+
+         if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
+            fff->fState = "Hesse";
          }
 
          //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? -
          // and also becomes WRONG :-S
          auto _status = _minimizer.hesse(); // note: I have seen that you can get 'full covariance quality' without
                                             // running hesse ... is that expected?
+
+        // note: hesse status will be -1 if hesse failed (no covariance matrix)
+        // otherwise the status appears to be whatever was the status before
+        // note that hesse succeeds even if the cov matrix it calculates is forced pos def. Failure is only
+        // if it cannot calculate a cov matrix at all.
 
         statusHistory.push_back(std::pair("Hesse",_status));
          _minimizer.fitter()->Config().SetParamsSettings(parSettings);
@@ -886,6 +924,17 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          }
          if (_status != 0 && status == 0 && printLevel >= -1) {
             Warning("fitTo", "%s hesse status is %d", fitName.Data(), _status);
+         }
+      }
+
+      // call minos if requested on any parameters
+      if (status == 0 && minos) {
+         if (std::unique_ptr<RooAbsCollection> mpars(floatPars->selectByAttrib("minuitMinos", true)); !mpars->empty()) {
+            if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
+               fff->fState = "Minos";
+            }
+            auto _status = _minimizer.minos(*mpars);
+            statusHistory.push_back(std::pair("Minos",_status));
          }
       }
 
@@ -900,6 +949,10 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
       // userPars wont have been added to the RooFitResult by RooMinimizer
       const_cast<RooArgList &>(out->constPars()).addClone(fUserPars, true);
+
+      if(!std::isnan(dCovar)) {
+         const_cast<RooArgList &>(out->constPars()).addClone(RooRealVar(".dCovar","dCovar from minimization",dCovar), true);
+      }
 
       if (boundaryCheck) {
          // check if any of the parameters are at their limits (potentially a problem with fit)
@@ -984,11 +1037,12 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       // value
       out->setMinNLL(_nll->getVal());
 
-      // ensure no asymm errors on any pars
+      // ensure no asymm errors on any pars unless had minuitMinos
       for (auto o : out->floatParsFinal()) {
-         if (auto v = dynamic_cast<RooRealVar *>(o); v)
+         if (auto v = dynamic_cast<RooRealVar *>(o); v && !v->getAttribute("minuitMinos"))
             v->removeAsymError();
       }
+
 
       // minimizer may have slightly altered the fitConfig (e.g. unavailable minimizer etc) so update for that ...
       if (fitConfig.MinimizerOptions().MinimizerType() != actualFirstMinimizer) {
