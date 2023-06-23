@@ -514,15 +514,33 @@ void xRooNode::Browse(TBrowser *b)
    }
 
    browse();
-   if (empty()) {
+
+    // for top-level pdfs default to having the .vars browsable too
+    if (get<RooAbsPdf>() && fFolder=="!models" && !_IsShowVars_()) {
+        fBrowsables.push_back(std::make_shared<xRooNode>(vars()));
+    }
+
+    if(auto _fr = get<RooFitResult>(); _fr && fBrowsables.empty()) {
+        // have some common drawing options
+        fBrowsables.push_back(std::make_shared<xRooNode>(".Draw(\"pull\")",nullptr,*this));
+        fBrowsables.push_back(std::make_shared<xRooNode>(".Draw(\"corrcolztext\")",nullptr,*this));
+        if(std::unique_ptr<RooAbsCollection>(_fr->floatParsFinal().selectByAttrib("poi",true))->size()==1) {
+           fBrowsables.push_back(std::make_shared<xRooNode>(".Draw(\"impact\")",nullptr,*this));
+        }
+    }
+
+   if (empty() && fBrowsables.empty()) {
       try {
          if (auto s = get<TStyle>()) {
             s->SetFillAttributes();
             if (auto ed = dynamic_cast<TGedEditor *>(TVirtualPadEditor::GetPadEditor())) {
                ed->SetModel(gPad, s, kButton1Down, true);
             }
-         } else
-            Draw(b->GetDrawOption());
+         } else if(TString(GetName()).BeginsWith(".Draw(\"") && fParent) {
+             fParent->Draw(TString(TString(GetName())(7,strlen(GetName())-9)) + b->GetDrawOption());
+         } else {
+             Draw(b->GetDrawOption());
+         }
       } catch (const std::exception &e) {
          new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot()
          , "Exception", e.what(),
@@ -620,7 +638,7 @@ void xRooNode::Browse(TBrowser *b)
             ->Connect("Checked(TObject *, Bool_t)", ClassName(), v.get(), "Checked(TObject *, Bool_t)");
       }
       if (_fr) {
-         if(_fr->status()) { // snapshots or bad fits
+         if(_fr->status() || _fr->covQual()!=3) { // snapshots or bad fits
             v->GetTreeItem(b)->SetColor((_fr->numStatusHistory() || _fr->floatParsFinal().empty()) ? kRed : kBlue);
          } else if(_fr->numStatusHistory()==0) { // partial fit result ..
             v->GetTreeItem(b)->SetColor(kGray);
@@ -649,10 +667,7 @@ void xRooNode::Browse(TBrowser *b)
       // v.fBrowsers.insert(b);
    }
 
-   // for top-level pdfs default to having the .vars browsable too
-   if (get<RooAbsPdf>() && fFolder=="!models" && !_IsShowVars_()) {
-      fBrowsables.push_back(std::make_shared<xRooNode>(vars()));
-   }
+
 
    // for pdfs, check for datasets too and add to list
    /*if (get<RooAbsPdf>()) {
@@ -718,7 +733,7 @@ bool xRooNode::IsFolder() const
 {
    if (strlen(GetName()) > 0 && GetName()[0] == '!')
       return true;
-   if (strlen(GetName()) > 0 && GetName()[0] == '.')
+   if (strlen(GetName()) > 0 && GetName()[0] == '.' && !(TString(GetName()).BeginsWith(".Draw(\"")))
       return true;
    if (empty())
       const_cast<xRooNode *>(this)->browse();
@@ -2201,8 +2216,21 @@ void xRooNode::Print(Option_t *opt) const
    }
    if(doCapture) {
       capture.reset(); // no captureStr has the string to display
+      // inject line breaks to avoid msgbox being too wide
+      size_t lastBreak = 0;
+      std::string captureStrWithBreaks;
+      for(size_t i=0; i<captureStr.size(); i++) {
+         captureStrWithBreaks += captureStr[i];
+         if(captureStr[i]=='\n') {
+            lastBreak = i;
+         }
+         if(i-lastBreak > 150) {
+            captureStrWithBreaks += '\n';
+            lastBreak = i;
+         }
+      }
       const TGWindow* w = (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot();
-         new TGMsgBox(gClient->GetRoot(), w, GetName(),captureStr.c_str());
+         new TGMsgBox(gClient->GetRoot(), w, GetName(),captureStrWithBreaks.c_str());//,nullptr,kMBDismiss,nullptr,kVerticalFrame,kTextLeft|kTextCenterY);
    }
 }
 
@@ -2780,6 +2808,7 @@ xRooNode xRooNode::Replace(const xRooNode& node) {
 
    std::set<RooAbsArg *> cl;
    for (auto &arg : p5->clients()) {
+      if(arg == new_p) continue; // do not replace in self ... although redirectServers will prevent that anyway
       cl.insert(arg);
    }
 
@@ -3275,10 +3304,13 @@ void xRooNode::_fit_(const char *constParValues)
       const TGWindow* w = (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot();
       if (fr->status() != 0) {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished with Bad Status Code",
-                      TString::Format("%s\nData = %s\nFit Status Code = %d\n-------------%s", fr->GetName(), dsetName.Data(),fr->status(),statusCodes.Data()), kMBIconExclamation, kMBOk);
+                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n-------------%s", fr->GetName(), dsetName.Data(),fr->status(),fr->covQual(),statusCodes.Data()), kMBIconExclamation, kMBOk);
+      } else if (fr->covQual() != 3 && _nll.fitConfig()->ParabErrors()) {
+         new TGMsgBox(gClient->GetRoot(), w, "Fit Finished with Bad Covariance Quality",
+                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n-------------%s", fr->GetName(), dsetName.Data(),fr->status(),fr->covQual(),statusCodes.Data()), kMBIconExclamation, kMBOk);
       } else {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished Successfully",
-                      TString::Format("%s\nData = %s\nFit Status Code = %d\n-------------%s", fr->GetName(), dsetName.Data(),fr->status(),statusCodes.Data()));
+                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n-------------%s", fr->GetName(), dsetName.Data(),fr->status(),fr->covQual(),statusCodes.Data()));
       }
    } catch (const std::exception &e) {
       new TGMsgBox(gClient->GetRoot(), (gROOT->GetListOfBrowsers()->At(0)) ? dynamic_cast<TGWindow*>(static_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp()) : gClient->GetRoot()
@@ -3868,8 +3900,8 @@ xRooNode xRooNode::constraints() const
       auto v = dynamic_cast<RooAbsReal *>(p->get());
       if (!v)
          continue;
-      if (v->getAttribute("Constant"))
-         continue; // skip constants ?
+      if (v->getAttribute("Constant") && v != get<RooAbsReal>())
+         continue; // skip constants unless we are getting the constraints of a parameter itself
       if (v->getAttribute("obs"))
          continue; // skip observables ... constraints constrain pars not obs
       getConstraint(*this, *v, get<RooAbsPdf>());
@@ -6551,6 +6583,15 @@ public:
             double cenVal = rrv.getVal() ;
             double errVal = sqrt(V(ivar,ivar)) ;
 
+            // this next thing happens if the par has errors but the covariance matrix is empty
+            // this only happens if the fit was dodgy, so perhaps best to not even try to recover from this
+            // screwup ... hence I've commented out this fixup here and will let the errors be nan
+//            if(errVal==0) {
+//               Warning("getPropagatedError","Missing variance for %s",rrv.GetName());
+//               errVal = rrv.getError();
+//               V(ivar,ivar) = errVal*errVal;
+//            }
+
             // Make Plus variation
             rrv.setVal(cenVal+errVal) ;
             plusVar.push_back(getVal(nset_in)) ;
@@ -7791,7 +7832,7 @@ void xRooNode::Draw(Option_t *opt)
    sOpt.ReplaceAll("same", "");
    bool hasGoff = sOpt.Contains("goff");
    sOpt.ReplaceAll("goff", "");
-   bool hasFR = sOpt.Contains("pull");
+   bool hasFR = sOpt.Contains("pull") && !get<RooFitResult>();
    sOpt.ReplaceAll("pull", "");
    bool hasText = sOpt.Contains("text");
    bool hasErrorOpt = sOpt.Contains("e");
@@ -8329,7 +8370,7 @@ void xRooNode::Draw(Option_t *opt)
       graph->SetMaximum(4);
       graph->SetMinimum(-4);
 
-      bool doHorizontal = sOpt.Contains("h");
+      bool doHorizontal = (!sOpt.Contains("impact") && sOpt.Contains("v")) || (sOpt.Contains("impact") && !sOpt.Contains("h"));
 
 
       std::vector<std::pair<double,std::string>> covariances;
@@ -8408,6 +8449,8 @@ void xRooNode::Draw(Option_t *opt)
       hist->SetStats(false);
       hist->SetDirectory(nullptr);
       hist->SetBit(kCanDelete);
+      auto histCopy = hist->Clone(".axis");
+      histCopy->SetBit(kCanDelete);
       auto _axis = (doHorizontal ? hist->GetYaxis() : hist->GetXaxis());
 
 
@@ -8467,10 +8510,10 @@ void xRooNode::Draw(Option_t *opt)
             auto pullBox = new TGraphErrors;
             pullBox->SetName(TString::Format("%dsigmaBand", ii));
             pullBox->SetBit(kCanDelete);
-            pullBox->SetPoint(0, -0.5, 0);
-            pullBox->SetPoint(1, _axis->GetNbins() - 0.5 - nUnconstrained, 0);
-            pullBox->SetPointError(0, 0, ii);
-            pullBox->SetPointError(1, 0, ii);
+            pullBox->SetPoint(0, (doHorizontal) ? -ii : -0.5, (doHorizontal) ? -0.5 : 0);
+            pullBox->SetPoint(1, (doHorizontal) ? ii : (_axis->GetNbins() - 0.5 - nUnconstrained), (doHorizontal) ? -0.5 : 0);
+            pullBox->SetPointError(0, 0, (doHorizontal)? (_axis->GetNbins() - nUnconstrained) : ii);
+            pullBox->SetPointError(1, 0, (doHorizontal)? (_axis->GetNbins() - nUnconstrained) : ii);
             pullBox->SetFillColor((ii == 2) ? kYellow : kGreen);
             hist->GetListOfFunctions()->Add(pullBox, "3");//pullBox->Draw("3");
          }
@@ -8494,8 +8537,32 @@ void xRooNode::Draw(Option_t *opt)
             pullLine->SetEditable(false);
             hist->GetListOfFunctions()->Add(pullLine, "l");//pullLine->Draw("l");
          }
-      } else {
 
+         // and draw a pave with fr status info
+         TPaveText* pave = new TPaveText(gPad->GetLeftMargin(), 1. - gPad->GetTopMargin(), 1. - gPad->GetRightMargin(), 0.98, "NDCNB");
+         pave->SetFillStyle(0);pave->SetBorderSize(0);pave->SetMargin(0.);
+         pave->SetName("status");pave->SetTextAlign(31);
+         pave->AddText(TString::Format("minNLL: %g  edm: %g",fr->minNll(),fr->edm()));
+         std::string covQualTxt;
+         switch(fr->covQual()) {
+             case -1: covQualTxt = "Unknown"; break;
+             case 0: covQualTxt = "Not calculated"; break;
+             case 1: covQualTxt = "Approximate"; break;
+             case 2: covQualTxt = "Forced Positive-Definite"; break;
+             case 3: covQualTxt = "Accurate"; break;
+         }
+         pave->AddText(TString::Format("Cov. Quality: %d (%s)",fr->covQual(),covQualTxt.c_str()))->SetTextColor((fr->covQual()==3) ? kBlack : kRed);
+
+          std::string statusCodes;
+          for(unsigned int i=0;i<fr->numStatusHistory();i++) {
+              statusCodes += TString::Format(" %s = %d",fr->statusLabelHistory(i),fr->statusCodeHistory(i));
+          }
+         pave->AddText(statusCodes.c_str())->SetTextColor(fr->status()==0 ? kBlack : kRed);
+
+         hist->GetListOfFunctions()->Add(pave);
+
+      } else {
+         gPad->SetTicks(0,0); // ensure mirrored ticks aren't drawn in this pad
          TGaxis *axis = new TGaxis(_axis->GetXmin(),-4,
                                    _axis->GetXmin(), 4,-1.2*maxImpact,1.2*maxImpact,510,"-");
          axis->SetTextFont(_axis->GetTitleFont());
@@ -8507,14 +8574,14 @@ void xRooNode::Draw(Option_t *opt)
 
          // create impact bar charts
          for(int tt = 0; tt < 2; tt++) {
-            auto impact = static_cast<TH1 *>(graph->GetHistogram()->Clone(TString::Format("impactUp%s",tt==0?"prefit":"postfit")));
+            auto impact = static_cast<TH1 *>(graph->GetHistogram()->Clone(TString::Format("%s_impact+",tt==0?"prefit":"postfit")));
             impact->GetYaxis()->SetTitle(TString::Format("#Delta%s/#sigma", poiName.c_str()));
             impact->SetBarWidth(0.9);
             impact->SetBarOffset(0.05);
             impact->SetLineColor(kBlack);
             impact->SetFillColor(kAzure - 4);
             impact->SetFillStyle(tt==0 ? 3013 : 1001);
-            auto impact2 = static_cast<TH1 *>(impact->Clone(TString::Format("impactDown%s",tt==0?"prefit":"postfit")));
+            auto impact2 = static_cast<TH1 *>(impact->Clone(TString::Format("%s_impact-",tt==0?"prefit":"postfit")));
             impact2->SetFillColor(kCyan);
             for (int ii = 1; ii <= pNamesHist->GetNbinsX(); ii++) {
                for (auto &c: covariances) {
@@ -8525,8 +8592,8 @@ void xRooNode::Draw(Option_t *opt)
                   impact2->SetBinContent(ii, (tt==0&&!vv_init->hasError()) ? 0. : c.first * vv->getError() / vv->getErrorLo() * (tt==0 ? (vv_init->getErrorLo()/vv->getErrorLo()) : 1.));
                }
             }
-            hist->GetListOfFunctions()->Add(impact, (doHorizontal) ? "hbarsamemin0" : "bsame");
-            hist->GetListOfFunctions()->Add(impact2, (doHorizontal) ? "hbarsamemin0" : "bsame");
+            hist->GetListOfFunctions()->Add(impact, (doHorizontal) ? "hbarsamemin0" : "bsamey+");
+            hist->GetListOfFunctions()->Add(impact2, (doHorizontal) ? "hbarsamemin0" : "bsamey+");
          }
          // add three lines
          for(int ii=-1;ii<=1;ii++) {
@@ -8541,24 +8608,23 @@ void xRooNode::Draw(Option_t *opt)
          }
           hist->GetListOfFunctions()->Add(axis); // draw axis last
 
-          TLegend* leg1 = new TLegend(0.02,0.78,0.27,1.0);
+          TLegend* leg1 = new TLegend(0.02,doHorizontal ? 0.78 : 0.02,0.27,doHorizontal ? 1.0 : 0.24);
           leg1->SetFillStyle(0);leg1->SetBorderSize(0);leg1->SetMargin(0.25);leg1->SetNColumns(2);
           //leg1.SetTextFont(gStyle->GetTextFont());
           //leg1.SetTextSize(gStyle->GetTextSize());
-         leg1->AddEntry((TObject*)nullptr,"Pre-fit impact:","");leg1->AddEntry((TObject*)nullptr,"","");
-          leg1->AddEntry(hist->FindObject("impactUpprefit"),"#theta = #hat{#theta}+#Delta#theta","f");
-          leg1->AddEntry(hist->FindObject("impactDownprefit"),"#theta = #hat{#theta}-#Delta#theta","f");
-          leg1->AddEntry((TObject*)nullptr,"Post-fit impact:","");
-          leg1->AddEntry((TObject*)nullptr,"","");
-          leg1->AddEntry(hist->FindObject("impactUppostfit"),"#theta = #hat{#theta}+#Delta#theta","f");
-          leg1->AddEntry(hist->FindObject("impactDownpostfit"),"#theta = #hat{#theta}-#Delta#theta","f");
+         leg1->AddEntry((TObject*)nullptr,"Hessian Pre-fit","");leg1->AddEntry((TObject*)nullptr,"Impact:","");
+          leg1->AddEntry(hist->FindObject("prefit_impact+"),"#theta = #hat{#theta}+#Delta#theta","f");
+          leg1->AddEntry(hist->FindObject("prefit_impact-"),"#theta = #hat{#theta}-#Delta#theta","f");
+          leg1->AddEntry((TObject*)nullptr,"Hessian Post-fit","");
+          leg1->AddEntry((TObject*)nullptr,"Impact:","");
+          leg1->AddEntry(hist->FindObject("postfit_impact+"),"#theta = #hat{#theta}+#Delta#theta","f");
+          leg1->AddEntry(hist->FindObject("postfit_impact-"),"#theta = #hat{#theta}-#Delta#theta","f");
 
           hist->GetListOfFunctions()->Add(leg1);
 
 
       }
-      auto minMax = graphMinMax(graph);
-      adjustYRange(minMax.first, minMax.second);
+
 
       graph->SetEditable(false);
       pNamesHist->SetLineWidth(0);pNamesHist->SetMarkerSize(0);
@@ -8575,10 +8641,10 @@ void xRooNode::Draw(Option_t *opt)
             if (f->InheritsFrom("TH1")) {
                //f->Draw("hbarsamemin0");
             } else if (auto g2 = dynamic_cast<TGraphErrors *>(f)) {
-               for (int p = 0; p < g2->GetN(); p++) {
+               /*for (int p = 0; p < g2->GetN(); p++) {
                   g2->SetPoint(p, g2->GetPointY(p), g2->GetPointX(p));
-                  g2->SetPointError(p, g2->GetErrorY(p), g2->GetErrorX(p));
-               }
+                  g2->SetPointError(p, g2->GetErrorY(p), _axis->GetNbins());
+               }*/
                //g2->Draw("3");
             } else if (auto g = dynamic_cast<TGraph *>(f)) {
                for (int p = 0; p < g->GetN(); p++) {
@@ -8597,8 +8663,9 @@ void xRooNode::Draw(Option_t *opt)
 
       graph->SetName("pulls");
       hist->GetListOfFunctions()->Add(graph,"z0p");
-
-      hist->Draw((sOpt.Contains("impact") && !doHorizontal)?"y+":"");
+      hist->GetListOfFunctions()->Add(histCopy->Clone(".axis"),(sOpt.Contains("impact") && !doHorizontal)?"axissamey+":"axissame");
+      if(!hasSame) histCopy->Draw((sOpt.Contains("impact") && !doHorizontal)?"axisy+":"axis"); // draws the axis, called ".axis" for easy access
+      hist->Draw("same");
 //
 //      if(sOpt.Contains("impact")) {
 //         // make main object the histogram
