@@ -12,10 +12,10 @@
 
 #include "RVersion.h"
 
-#define private public
-#include "Minuit2/Minuit2Minimizer.h"
-#undef private
-#include "Minuit2/FunctionMinimum.h"
+//#define private public
+//#include "Minuit2/Minuit2Minimizer.h"
+//#undef private
+//#include "Minuit2/FunctionMinimum.h"
 
 
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
@@ -881,9 +881,9 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       // So only in Strategy=0 can you skip hesse (even if SetParabErrors false).
 
       double dCovar = std::numeric_limits<double>::quiet_NaN();
-      if(auto _minuit2 = dynamic_cast<ROOT::Minuit2::Minuit2Minimizer*>(_minimizer.fitter()->GetMinimizer()); _minuit2 && _minuit2->fMinimum) {
-         dCovar = _minuit2->fMinimum->Error().Dcovar();
-      }
+      //if(auto _minuit2 = dynamic_cast<ROOT::Minuit2::Minuit2Minimizer*>(_minimizer.fitter()->GetMinimizer()); _minuit2 && _minuit2->fMinimum) {
+      //   dCovar = _minuit2->fMinimum->Error().Dcovar();
+      //}
 
       if (hesse && _minimizer.fitter()->Result().IsValid()) { // only do hesse if was a valid min
          // Note: minima where the covariance was made posdef are deemed 'valid' ...
