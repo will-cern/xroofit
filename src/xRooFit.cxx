@@ -888,14 +888,20 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       if (hesse && _minimizer.fitter()->Result().IsValid()) { // only do hesse if was a valid min
          // Note: minima where the covariance was made posdef are deemed 'valid' ...
 
-         // remove limits on pars before calculation
+         // remove limits on pars before calculation - CURRENTLY HAS NO EFFECT, minuit still holds the state as transformed
          // interesting note: error on pars before hesse can be significantly
          // smaller than after hesse ... what is the pre-hesse error corresponding to? - corresponds to approximation
          // of covariance matrix calculated with iterative method
-         auto parSettings = _minimizer.fitter()->Config().ParamsSettings();
+         /*auto parSettings = _minimizer.fitter()->Config().ParamsSettings();
          for (auto &ss : _minimizer.fitter()->Config().ParamsSettings()) {
             ss.RemoveLimits();
          }
+
+         for(auto f : *floatPars) {
+            auto v = dynamic_cast<RooRealVar*>(f);
+            if(v->hasRange(nullptr)) v->setRange("backup",v->getMin(),v->getMax());
+            v->removeRange();
+         }*/
 
          //std::cout << "nIterations = " << _minimizer.fitter()->GetMinimizer()->NIterations() << std::endl;
          //std::cout << "covQual before hesse = " << _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() << std::endl;
@@ -907,16 +913,30 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
          //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? -
          // and also becomes WRONG :-S
+
+         //auto _status = (_minimizer.fitter()->CalculateHessErrors()) ? _minimizer.fitter()->Result().Status() : -1;
          auto _status = _minimizer.hesse(); // note: I have seen that you can get 'full covariance quality' without
                                             // running hesse ... is that expected?
-
         // note: hesse status will be -1 if hesse failed (no covariance matrix)
         // otherwise the status appears to be whatever was the status before
         // note that hesse succeeds even if the cov matrix it calculates is forced pos def. Failure is only
         // if it cannot calculate a cov matrix at all.
 
+         /*for(auto f : *floatPars) {
+            auto v = dynamic_cast<RooRealVar*>(f);
+            if(v->hasRange("backup")) {
+               v->setRange(v->getMin(),v->getMax());
+               v->removeRange("backup");
+            }
+         }
+         _minimizer.fitter()->Config().SetParamsSettings(parSettings);*/
+
+         /*for (auto &ss : _minimizer.fitter()->Config().ParamsSettings()) {
+            if( ss.HasLowerLimit() || ss.HasUpperLimit() ) std::cout << ss.Name() << " limit restored " << ss.LowerLimit() << " - " << ss.UpperLimit() << std::endl;
+         }*/
+
         statusHistory.push_back(std::pair("Hesse",_status));
-         _minimizer.fitter()->Config().SetParamsSettings(parSettings);
+
 
          if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff && fff->fInterrupt) {
             delete _nll;
@@ -1159,6 +1179,7 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
          if (val_guess < 0 && par->getMin() > val_guess)
             par->setMin(2 * val_guess);
          par->setVal(val_guess);
+         //std::cout << "Guessing " << val_guess << std::endl;
          auto result = xRooFit::minimize(nll, myFitConfig);
          if (!result) {
             status = 1;
@@ -1172,7 +1193,7 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
          if (tmu <= 0) {
             // found an alternative or improved minima
             std::cout << "Warning: Alternative best-fit of " << par->GetName() << " @ " << val_guess << " vs "
-                      << val_best << std::endl;
+                      << val_best << " (delta=" << tmu/2. << ")" << std::endl;
             double new_guess = val_guess + (val_guess - val_best);
             val_best = val_guess;
             val_guess = new_guess;
@@ -1255,10 +1276,11 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
    double lo = par_hat->getErrorLo();
    double hi = par_hat->getErrorHi();
    if (std::isnan(hi)) {
-      hi = findValue(val_best + val_err, 1);
+      hi = findValue(val_best + val_err, 1) + val_best - par_hat->getVal(); // put error wrt par_hat value, even if found better min
+      if(hi > val_err) val_err = hi; // in case val_err was severe underestimate, don't want to waste time being too 'near' min
    }
    if (std::isnan(lo)) {
-      lo = -findValue(val_best - val_err, -1);
+      lo = -findValue(val_best - val_err, -1) + val_best - par_hat->getVal(); // put error wrt par_hat value, even if found better min
    }
    dynamic_cast<RooRealVar *>(ufit.floatParsFinal().find(parName))->setAsymError(lo, hi);
    par_hat->setError(val_err);
