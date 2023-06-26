@@ -148,9 +148,9 @@ public:
    public:
       xRooNodeIterator(std::vector<std::shared_ptr<xRooNode>>::const_iterator itr) : std::vector<std::shared_ptr<xRooNode>>::const_iterator(itr) { }
       std::shared_ptr<xRooNode> const & operator* () const {
-         auto& out = std::vector<std::shared_ptr<xRooNode>>::const_iterator::operator*();
+         auto&& out = std::vector<std::shared_ptr<xRooNode>>::const_iterator::operator*();
          if (out->get() && out->empty()) out->browse();
-         return out;
+         return std::move(out);
       }
       bool operator!= (xRooNodeIterator const& b) const {
          const std::vector<std::shared_ptr<xRooNode>>::const_iterator& aa = (*this);
