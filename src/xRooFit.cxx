@@ -485,6 +485,10 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig()
    extraOpts->SetValue("TrackProgress", 30);               // seconds between output to log of evaluation progress
    extraOpts->SetValue("xRooFitVersion", GIT_COMMIT_HASH); // not really options but here for logging purposes
    // extraOpts->SetValue("ROOTVersion",ROOT_VERSION_CODE); - not needed as should by part of the ROOT TFile definition
+
+   //extraOpts->SetValue("HessianStepTolerance",0.);
+   //extraOpts->SetValue("HessianG2Tolerance",0.);
+
    return sDefaultFitConfig;
 }
 
@@ -730,6 +734,16 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       auto logger = (logSize > 0) ? std::make_unique<cout_redirect>(logs, logSize) : nullptr;
       RooMinimizer _minimizer(*_nll);
       _minimizer.fitter()->Config() = fitConfig;
+//      if(fitConfig.MinimizerOptions().ExtraOptions()) {
+//         //for loading hesse options
+//         double a;
+//         if(fitConfig.MinimizerOptions().ExtraOptions()->GetValue("HessianStepTolerance",a)) {
+//            ROOT::Math::MinimizerOptions::Default("Minuit2").SetValue("HessianStepTolerance",a);
+//         }
+//         if(fitConfig.MinimizerOptions().ExtraOptions()->GetValue("HessianG2Tolerance",a)) {
+//            ROOT::Math::MinimizerOptions::Default("Minuit2").SetValue("HessianG2Tolerance",a);
+//         }
+//      }
 
       bool autoMaxCalls = (_minimizer.fitter()->Config().MinimizerOptions().MaxFunctionCalls() == 0);
       if (autoMaxCalls) {
@@ -905,10 +919,12 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
          //std::cout << "nIterations = " << _minimizer.fitter()->GetMinimizer()->NIterations() << std::endl;
          //std::cout << "covQual before hesse = " << _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() << std::endl;
-         _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(2); // uses most precise hesse settings (step sizes and g2 tolerances)
+         _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(3); // uses most precise hesse settings (step sizes and g2 tolerances)
+         //const_cast<ROOT::Math::IOptions*>(_minimizer.fitter()->Config().MinimizerOptions().ExtraOptions())->SetValue("HessianStepTolerance",0.1);
+         //const_cast<ROOT::Math::IOptions*>(_minimizer.fitter()->Config().MinimizerOptions().ExtraOptions())->SetValue("HessianG2Tolerance",0.02);
 
          if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
-            fff->fState = "Hesse";
+            fff->fState = "Hesse3";
          }
 
          //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? -
@@ -935,7 +951,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
             if( ss.HasLowerLimit() || ss.HasUpperLimit() ) std::cout << ss.Name() << " limit restored " << ss.LowerLimit() << " - " << ss.UpperLimit() << std::endl;
          }*/
 
-        statusHistory.push_back(std::pair("Hesse",_status));
+        statusHistory.push_back(std::pair("Hesse3",_status));
 
 
          if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff && fff->fInterrupt) {
@@ -1157,6 +1173,7 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
 
    double val_best = par_hat->getVal();
    double val_err = (par_hat->hasError() ? par_hat->getError() : -1);
+   double orig_err = val_err;
    double nll_min = ufit.minNll();
 
    int status = 0;
@@ -1283,7 +1300,7 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
       lo = -findValue(val_best - val_err, -1) + val_best - par_hat->getVal(); // put error wrt par_hat value, even if found better min
    }
    dynamic_cast<RooRealVar *>(ufit.floatParsFinal().find(parName))->setAsymError(lo, hi);
-   par_hat->setError(val_err);
+   par_hat->setError(orig_err);
 
    fitConfig.SetParabErrors(pErrs);
    fitConfig.SetMinosErrors(mErrs);
