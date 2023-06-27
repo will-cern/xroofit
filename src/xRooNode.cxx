@@ -8239,6 +8239,11 @@ void xRooNode::Draw(Option_t *opt)
          auto _v = dynamic_cast<RooRealVar *>(p);
          if (!_v)
             continue;
+
+         if (std::isnan(_v->getErrorHi()) || std::isnan(_v->getErrorLo())) {
+            Warning("Draw","%s error is invalid",_v->GetName());
+         }
+
          // need to get constraint mean and error parameters ....
          // look for normal gaussian and poisson cases
          double prefitError = 0;
@@ -8588,8 +8593,8 @@ void xRooNode::Draw(Option_t *opt)
                   if (c.second != pNamesHist->GetXaxis()->GetBinLabel(ii)) continue;
                   auto vv = dynamic_cast<RooRealVar *>(fr->floatParsFinal().find(c.second.c_str()));
                   auto vv_init = dynamic_cast<RooRealVar *>(fr->floatParsInit().find(c.second.c_str()));
-                  impact->SetBinContent(ii, (tt==0&&!vv_init->hasError()) ? 0. : c.first * vv->getError() / vv->getErrorHi() * (tt==0 ? (vv_init->getErrorHi()/vv->getErrorHi()) : 1.));
-                  impact2->SetBinContent(ii, (tt==0&&!vv_init->hasError()) ? 0. : c.first * vv->getError() / vv->getErrorLo() * (tt==0 ? (vv_init->getErrorLo()/vv->getErrorLo()) : 1.));
+                  impact->SetBinContent(ii, ((tt==0&&!vv_init->hasError())||!vv->hasError()) ? 0. : c.first * vv->getError() / vv->getErrorHi() * (tt==0 ? (vv_init->getErrorHi()/vv->getErrorHi()) : 1.));
+                  impact2->SetBinContent(ii, ((tt==0&&!vv_init->hasError())||!vv->hasError()) ? 0. : c.first * vv->getError() / vv->getErrorLo() * (tt==0 ? (vv_init->getErrorLo()/vv->getErrorLo()) : 1.));
                }
             }
             hist->GetListOfFunctions()->Add(impact, (doHorizontal) ? "hbarsamemin0" : "bsamey+");
@@ -8640,13 +8645,13 @@ void xRooNode::Draw(Option_t *opt)
          for (auto f: *hist->GetListOfFunctions()) {
             if (f->InheritsFrom("TH1")) {
                //f->Draw("hbarsamemin0");
-            } else if (auto g2 = dynamic_cast<TGraphErrors *>(f)) {
-               /*for (int p = 0; p < g2->GetN(); p++) {
+            } /*else if (auto g2 = dynamic_cast<TGraphErrors *>(f)) {
+               for (int p = 0; p < g2->GetN(); p++) {
                   g2->SetPoint(p, g2->GetPointY(p), g2->GetPointX(p));
                   g2->SetPointError(p, g2->GetErrorY(p), _axis->GetNbins());
-               }*/
+               }
                //g2->Draw("3");
-            } else if (auto g = dynamic_cast<TGraph *>(f)) {
+            } */else if (auto g = dynamic_cast<TGraph *>(f)) {
                for (int p = 0; p < g->GetN(); p++) {
                   g->SetPoint(p, g->GetPointY(p), g->GetPointX(p));
                }
@@ -8663,7 +8668,7 @@ void xRooNode::Draw(Option_t *opt)
 
       graph->SetName("pulls");
       hist->GetListOfFunctions()->Add(graph,"z0p");
-      hist->GetListOfFunctions()->Add(histCopy->Clone(".axis"),(sOpt.Contains("impact") && !doHorizontal)?"axissamey+":"axissame");
+      //hist->GetListOfFunctions()->Add(histCopy->Clone(".axis"),(sOpt.Contains("impact") && !doHorizontal)?"axissamey+":"axissame"); // doesn't display right when zoom the axis
       if(!hasSame) histCopy->Draw((sOpt.Contains("impact") && !doHorizontal)?"axisy+":"axis"); // draws the axis, called ".axis" for easy access
       hist->Draw("same");
 //
@@ -8677,7 +8682,7 @@ void xRooNode::Draw(Option_t *opt)
 //      } else {
 //         graph->Draw(sOpt.Contains("impact") ? "az0py+" : "az0p");
 //      }
-      //hist->Draw("axissame"); // overlay axis again -- important is last so can remove if don't pad->Update before reclear
+      hist->Draw((sOpt.Contains("impact") && !doHorizontal)?"axissamey+":"axissame"); // overlay axis again -- important is last so can remove if don't pad->Update before reclear
       gPad->Modified();
       oldPad->cd();
       // gPad->Update();
