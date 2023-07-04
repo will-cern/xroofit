@@ -2827,6 +2827,9 @@ xRooNode xRooNode::Replace(const xRooNode& node) {
 
    new_p->setAttribute(Form("ORIGNAME:%s", p5->GetName())); // used in redirectServers to say what this replaces
    for (auto arg : cl) {
+      // if RooFormulaVar need to ensure the internal formula has been "constructed" otherwise will try to construct
+      // it from the original expression that may have old parameter in it.
+      if(auto p = dynamic_cast<RooFormulaVar*>(arg)) p->ok(); // triggers creation of RooFormula
       arg->redirectServers(RooArgSet(*new_p), false, true);
    }
    return node;
@@ -8454,7 +8457,8 @@ void xRooNode::Draw(Option_t *opt)
       hist->SetStats(false);
       hist->SetDirectory(nullptr);
       hist->SetBit(kCanDelete);
-      auto histCopy = hist->Clone(".axis");
+      auto histCopy = dynamic_cast<TH1*>(hist->Clone(".axis"));
+      histCopy->SetDirectory(0);
       histCopy->SetBit(kCanDelete);
       auto _axis = (doHorizontal ? hist->GetYaxis() : hist->GetXaxis());
 
@@ -8580,6 +8584,7 @@ void xRooNode::Draw(Option_t *opt)
          // create impact bar charts
          for(int tt = 0; tt < 2; tt++) {
             auto impact = static_cast<TH1 *>(graph->GetHistogram()->Clone(TString::Format("%s_impact+",tt==0?"prefit":"postfit")));
+            impact->SetDirectory(0);
             impact->GetYaxis()->SetTitle(TString::Format("#Delta%s/#sigma", poiName.c_str()));
             impact->SetBarWidth(0.9);
             impact->SetBarOffset(0.05);
@@ -8587,6 +8592,7 @@ void xRooNode::Draw(Option_t *opt)
             impact->SetFillColor(kAzure - 4);
             impact->SetFillStyle(tt==0 ? 3013 : 1001);
             auto impact2 = static_cast<TH1 *>(impact->Clone(TString::Format("%s_impact-",tt==0?"prefit":"postfit")));
+            impact2->SetDirectory(0);
             impact2->SetFillColor(kCyan);
             for (int ii = 1; ii <= pNamesHist->GetNbinsX(); ii++) {
                for (auto &c: covariances) {
@@ -8682,7 +8688,9 @@ void xRooNode::Draw(Option_t *opt)
 //      } else {
 //         graph->Draw(sOpt.Contains("impact") ? "az0py+" : "az0p");
 //      }
-      hist->Draw((sOpt.Contains("impact") && !doHorizontal)?"axissamey+":"axissame"); // overlay axis again -- important is last so can remove if don't pad->Update before reclear
+      auto hh = dynamic_cast<TH1*>(histCopy->Clone(".axiscopy"));
+      hh->SetDirectory(0);
+      hh->SetBit(kCanDelete); hh->Draw((sOpt.Contains("impact") && !doHorizontal)?"axissamey+":"axissame"); // overlay axis again -- important is last so can remove if don't pad->Update before reclear
       gPad->Modified();
       oldPad->cd();
       // gPad->Update();
@@ -9032,6 +9040,7 @@ void xRooNode::Draw(Option_t *opt)
       h->SetMarkerStyle(0);
       errHist = dynamic_cast<TH1 *>(h->Clone(Form("%s_err", h->GetName())));
       errHist->SetBit(kCanDelete);
+      errHist->SetDirectory(0);
       h->SetFillStyle(0);
       for (int i = 1; i <= h->GetNbinsX(); i++) {
          h->SetBinError(i, 0);
@@ -9047,7 +9056,8 @@ void xRooNode::Draw(Option_t *opt)
       dOpt = "TEXT";
       auto node = new xRooNode(*this);
       auto _hist = (errHist) ? errHist : h;
-      auto hCopy = (errHist) ? nullptr : h->Clone();
+      auto hCopy = (errHist) ? nullptr : dynamic_cast<TH1*>(h->Clone());
+      if(hCopy) hCopy->SetDirectory(0);
       _hist->GetListOfFunctions()->Add(node);
       _hist->GetListOfFunctions()->Add(new TExec(
          ".update",
@@ -9365,6 +9375,7 @@ void xRooNode::Draw(Option_t *opt)
       ratioPad->SetRightMargin(gPad->GetRightMargin());
       ratioPad->cd();
       TH1 *ratioHist = dynamic_cast<TH1 *>((errHist) ? errHist->Clone("auxHist") : h->Clone("auxHist"));
+      ratioHist->SetDirectory(0);
       ratioHist->SetTitle((errHist) ? errHist->GetName()
                                     : h->GetName()); // abuse the title string to hold the name of the main hist
 
@@ -9403,6 +9414,7 @@ void xRooNode::Draw(Option_t *opt)
       ratioHist->SetBit(kCanDelete);
       if (errHist) {
          auto _h = dynamic_cast<TH1 *>(ratioHist->Clone("auxHist_clone"));
+         _h->SetDirectory(0);
          _h->SetFillColor(0);
          ratioHist->GetListOfFunctions()->Add(_h,"histsame");
          //_h->Draw("histsame");
@@ -9425,6 +9437,7 @@ void xRooNode::Draw(Option_t *opt)
 
          if (auto hnom = dynamic_cast<TH1 *>(gPad->GetPrimitive(histName)); hnom) {
             h = dynamic_cast<TH1 *>(h->Clone(h->GetName()));
+            h->SetDirectory(0);
             h->SetBit(kCanDelete);
             for (int i = 1; i <= hnom->GetNbinsX(); i++) {
                double val = h->GetBinContent(i);
