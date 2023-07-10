@@ -279,27 +279,27 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
    if (sType.Contains("cls")) {
       if(empty() && relUncert == std::numeric_limits<double>::infinity()) {
          // use default uncertainty precision of 10%
-         Info("scan","Using default precision of 10%% for auto-scan");
+         ::Info("xRooHypoSpace::scan","Using default precision of 10%% for auto-scan");
          relUncert = 0.1;
       }
       for (auto a : axes()) {
          if (!a->hasRange("physical")) {
-            Info("limits", "No physical range set for %s, setting to [0,inf]", p->GetName());
+            ::Info("xRooHypoSpace::limits", "No physical range set for %s, setting to [0,inf]", p->GetName());
             dynamic_cast<RooRealVar *>(a)->setRange("physical", 0, std::numeric_limits<double>::infinity());
          }
          if (!a->getStringAttribute("altVal") || !strlen(p->getStringAttribute("altVal"))) {
-            Info("limits", "No altVal set for %s, setting to 0", a->GetName());
+            ::Info("xRooHypoSpace::limits", "No altVal set for %s, setting to 0", a->GetName());
             a->setStringAttribute("altVal", "0");
          }
          // ensure range straddles altVal
          double altVal = TString(a->getStringAttribute("altVal")).Atof();
          auto v = dynamic_cast<RooRealVar *>(a);
          if (v->getMin() >= altVal) {
-            Info("scan", "range of POI does not straddle alt value, adjusting minimum to %g", altVal - 1e-5);
+            ::Info("xRooHypoSpace::scan", "range of POI does not straddle alt value, adjusting minimum to %g", altVal - 1e-5);
             v->setMin(altVal - 1e-5);
          }
          if (v->getMax() <= altVal) {
-            Info("scan", "range of POI does not straddle alt value, adjusting maximum to %g", altVal + 1e-5);
+            ::Info("xRooHypoSpace::scan", "range of POI does not straddle alt value, adjusting maximum to %g", altVal + 1e-5);
             v->setMax(altVal + 1e-5);
          }
          for (auto &[pdf, nll] : fNlls) {
@@ -319,7 +319,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
       // take from parameter
       low = p->getMin("scan");
       high = p->getMax("scan");
-      Info("scan","Using %s range: %g - %g",p->GetName(),low,high);
+      ::Info("xRooHypoSpace::scan","Using %s range: %g - %g",p->GetName(),low,high);
    }
 
    bool doObs = false;
@@ -390,13 +390,15 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
       // add the required points and then compute the required value
       if(nPoints==1) {
          AddPoint(TString::Format("%s=%g",poi().first()->GetName(),(high+low)/2.));
+         graphs(sType); // triggers computation
       } else {
          double step = (high - low) / (nPoints - 1);
          for (size_t i = 0; i < nPoints; i++) {
             AddPoint(TString::Format("%s=%g", poi().first()->GetName(), low + step * i));
+            graphs(sType); // triggers computation
          }
       }
-      graphs(sType); // triggers computation
+
    }
 
    if(origDir) origDir->cd();
@@ -407,10 +409,6 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
 
 std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limits(const char *opt,const std::vector<double>& nSigmas, double relUncert)
 {
-   bool doObs = false;
-   for(auto nSigma : nSigmas) {
-      if(std::isnan(nSigma)) { doObs = true; break; }
-   }
 
    if(fNlls.empty()) {
       // this happens when loaded hypoSpace from a hypoSpaceInverterResult
@@ -422,7 +420,6 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
 
    std::map<std::string, std::pair<double,double>> out;
    for(auto nSigma : nSigmas) {
-      if(std::isnan(nSigma) && !doObs) continue;
       auto lim = limit(opt,nSigma);
       if (lim.second < 0)
          lim.second = -lim.second; // make errors positive for this method
@@ -539,6 +536,7 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
       }
    }
 
+   ::Info("xRooHypoSpace::AddPoint", "Added new point @ %s", coords);
    return emplace_back(out);
 }
 
@@ -798,10 +796,10 @@ void xRooNLLVar::xRooHypoSpace::LoadFits(const char *apath)
       }
    };
    processDir(dir);
-   Info("xRooHypoSpace", "%s - Loaded %d fits", apath, nFits);
+   ::Info("xRooHypoSpace::xRooHypoSpace", "%s - Loaded %d fits", apath, nFits);
 
    if (allpois.size() == 1) {
-      Info("xRooHypoSpace", "Detected POI: %s", allpois.begin()->c_str());
+      ::Info("xRooHypoSpace::xRooHypoSpace", "Detected POI: %s", allpois.begin()->c_str());
 
       auto nll = std::make_shared<xRooNLLVar>(nullptr, nullptr);
       auto dummyNll = std::make_shared<RooRealVar>(apath, "Dummy NLL", std::numeric_limits<double>::quiet_NaN());
@@ -1005,12 +1003,13 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
             // draw readonly version of the graph
             auto gra = graph(sOpt + " readOnly");
             if (gra && gra->GetN()) {
+               if(!gPad && gROOT->GetSelectedPad()) gROOT->GetSelectedPad()->cd();
                if(gPad) gPad->Clear();
                gra->DrawClone(expBand ? "AF" : "ALP")->SetBit(kCanDelete);
                gSystem->ProcessEvents();
             }
          } else {
-            Info("graph", "Completed %lu/%lu points for %s", nDone, size(), sOpt.Data());
+            ::Info("xRooHypoSpace::graph", "Completed %lu/%lu points for %s", nDone, size(), sOpt.Data());
          }
          s.Start();
       } else {
@@ -1083,6 +1082,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
 
    if(visualize) {
       // draw result
+      if(!gPad && gROOT->GetSelectedPad()) gROOT->GetSelectedPad()->cd();
       if(gPad) gPad->Clear();
       out->DrawClone(expBand ? "AF" : "ALP")->SetBit(kCanDelete);
       gSystem->ProcessEvents();
@@ -1092,9 +1092,12 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
 }
 
 std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) {
-   TString sOpt(opt);
+   TString sOpt(opt);sOpt.ToLower();
    std::shared_ptr<TMultiGraph> out;
    if (sOpt.Contains("pcls") || sOpt.Contains("pnull") || sOpt.Contains("ts")) {
+
+      bool visualize = sOpt.Contains("visualize");
+      sOpt.ReplaceAll("visualize","");
 
       auto exp2 = graph(sOpt + " exp2");
       auto exp1 = graph(sOpt + " exp1");
@@ -1138,7 +1141,7 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
          out->GetHistogram()->GetXaxis()->SetTitle(exp->GetHistogram()->GetXaxis()->GetTitle());
          out->GetHistogram()->GetYaxis()->SetTitle(exp->GetHistogram()->GetYaxis()->GetTitle());
       }
-      auto leg = new TLegend(1. - gStyle->GetPadRightMargin() - 0.3, 1. - gStyle->GetPadTopMargin() - 0.3,
+      auto leg = new TLegend(1. - gStyle->GetPadRightMargin() - 0.3, 1. - gStyle->GetPadTopMargin() - 0.35,
                              1. - gStyle->GetPadRightMargin() - 0.05, 1. - gStyle->GetPadTopMargin() - 0.05);
       leg->SetName("legend");
       leg->SetBit(kCanDelete);
@@ -1183,7 +1186,8 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
       }
       if(testedPoints) out->Add(testedPoints,"P");
 
-      if(sOpt.Contains("visualize")) {
+      if(visualize) {
+         if(!gPad && gROOT->GetSelectedPad()) gROOT->GetSelectedPad()->cd();
          if(gPad) gPad->Clear();
          auto gra2 = static_cast<TMultiGraph*>(out->DrawClone("A"));
          gra2->SetBit(kCanDelete);
@@ -1350,7 +1354,7 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::findlimit(const char *opt
          double another_estimate = point->mu_hat().getVal() + rough_sigma_mu*ROOT::Math::gaussian_quantile(0.95,1);
          //if (another_estimate < nextPoint) {
             nextPoint = another_estimate;
-            Info("findlimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
+            ::Info("xRooHypoSpace::findlimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
          //}
       }
 
@@ -1396,7 +1400,7 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::findlimit(const char *opt
          double another_estimate = point->mu_hat().getVal() + rough_sigma_mu*ROOT::Math::gaussian_quantile(0.95,1);
          //if (another_estimate < nextPoint) {
          nextPoint = std::max(nextPoint,another_estimate);
-         Info("findlimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
+         ::Info("xRooHypoSpace::findlimit","Guessing %g based on rough sigma_mu = %g",nextPoint,rough_sigma_mu);
          //}
       }
       nextPoint += nextPoint*relUncert*0.99; // ensure we step over location
@@ -1419,7 +1423,7 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::findlimit(const char *opt
    // got here need a new point .... evaluate the estimated lim location +/- the relUncert (signed error takes care of
    // direction)
 
-   Info("findlimit", "%s -- Testing new point @ %s=%g (delta=%g)", sOpt.Data(), v->GetName(), nextPoint,lim.second);
+   ::Info("xRooHypoSpace::findlimit", "%s -- Testing new point @ %s=%g (delta=%g)", sOpt.Data(), v->GetName(), nextPoint,lim.second);
    if (maxTries == 0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
       return lim;
    }
@@ -1539,7 +1543,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
 
          out->SetMarkerStyle(4);
          out->Draw("AP");
-         auto leg = new TLegend(1. - gPad->GetRightMargin() - 0.3, 1. - gPad->GetTopMargin() - 0.3,
+         auto leg = new TLegend(1. - gPad->GetRightMargin() - 0.3, 1. - gPad->GetTopMargin() - 0.35,
                                 1. - gPad->GetRightMargin() - 0.05, 1. - gPad->GetTopMargin() - 0.05);
          leg->SetName("legend");
          leg->AddEntry(out, "Uncomputed", "P");
@@ -1583,6 +1587,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
 
    if (sOpt.Contains("pcls") || sOpt.Contains("pnull") || sOpt.Contains("ts")) {
       auto gra = graphs(sOpt + " readonly");
+      if(!gPad && gROOT->GetSelectedPad()) gROOT->GetSelectedPad()->cd();
       if (!sOpt.Contains("same") && gPad) {
          gPad->Clear();
       }
