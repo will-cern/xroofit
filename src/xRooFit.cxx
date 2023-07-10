@@ -478,7 +478,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig()
    auto extraOpts = const_cast<ROOT::Math::IOptions *>(fitConfig.MinimizerOptions().ExtraOptions());
    extraOpts->SetValue("OptimizeConst", 2); // if 0 will disable constant term optimization and cache-and-track of the
                                             // NLL. 1 = just caching, 2 = cache and track
-   extraOpts->SetValue("StrategySequence", "0s01s12s2m");
+   extraOpts->SetValue("StrategySequence", "0s01s12s2s3m");
    extraOpts->SetValue("LogSize", 0); // length of log to capture and save
    extraOpts->SetValue("BoundaryCheck",
                        0.); // if non-zero, warn if any post-fit value is close to boundary (e.g. 0.01 = within 1%)
@@ -795,6 +795,10 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       if (minim == "Minuit2") {
          if (strategy==-1) sIdx=0;
          else sIdx = m_strategy.Index('0' + strategy);
+         if(sIdx==-1) {
+            Warning("minimize","Strategy %d not specified in StrategySequence %s ... defaulting to start of sequence",strategy,m_strategy.Data());
+            sIdx = 0;
+         }
       }
       else if (minim == "Minuit")
          sIdx = m_strategy.Index('m');
