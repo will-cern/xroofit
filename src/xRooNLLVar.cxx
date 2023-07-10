@@ -127,6 +127,8 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf,
          if (!fGlobs || !fGlobs->equals(*gl)) {
             throw std::runtime_error("GlobalObservables mismatch");
          }
+      } else if(strcmp(opts.At(i)->GetName(),"Hesse")==0) {
+            fitConfig()->SetParabErrors(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0)); // controls hesse
       } else {
          if (strcmp(opts.At(i)->GetName(), "Optimize") == 0) {
             // this flag will trigger constOptimizeTestStatistic to be called on the nll in createNLL method
