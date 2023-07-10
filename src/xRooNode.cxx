@@ -324,21 +324,26 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
       // now check if any pars don't have errors defined (not same as error=0) ... if so, use the first pdf (if there is
       // one) to try setting values from
       if (!_ws->allPdfs().empty()) {
-         std::vector<RooRealVar *> noErrorPars;
-         for (auto &p : pars()) {
+         std::set<RooRealVar *> noErrorPars;
+         std::string parNames;
+         for (auto &p : np()) { // infer errors on all floating non-poi parameters
             auto v = p->get<RooRealVar>();
             if (!v)
                continue;
-            if (!v->hasError())
-               noErrorPars.push_back(v);
+            if (!v->hasError()) {
+               noErrorPars.insert(v);
+               if(!parNames.empty()) parNames += ",";
+               parNames += v->GetName();
+            }
          }
          if (!noErrorPars.empty()) {
+            Warning("xRooNode","Inferring initial errors of %lu parameters (give all nuisance parameters an error to avoid this msg)",noErrorPars.size());
             // get the first top-level pdf
             browse();
             for (auto &a : *this) {
                if (a->fFolder == "!models") {
                   try {
-                     auto fr = a->fitResult("prefit");
+                     auto fr = a->floats().reduced(parNames).fitResult("prefit");
                      if (auto _fr = fr.get<RooFitResult>(); _fr) {
                         for (auto &v : noErrorPars) {
                            if (auto arg = dynamic_cast<RooRealVar *>(_fr->floatParsFinal().find(v->GetName()));
@@ -3855,6 +3860,8 @@ RooWorkspace *xRooNode::ws() const
    return nullptr;
 }
 
+
+
 xRooNode xRooNode::constraints() const
 {
 
@@ -4949,6 +4956,14 @@ xRooNode xRooNode::vars() const
 {
    xRooNode out(".vars", std::make_shared<RooArgList>(), *this);
    out.get<RooArgList>()->setName((GetPath() + ".vars").c_str());
+   if (auto coll = get<RooAbsCollection>(); coll) {
+      for(auto& x : *this) {
+         for(auto& y : x->vars()) {
+            out.push_back(y);
+         }
+      }
+      return out;
+   }
    if (auto p = get<RooAbsArg>(); p) {
       // also need to get all constPars so use leafNodeServerList .. will include self if is fundamental, which is what
       // we want
@@ -5364,6 +5379,10 @@ xRooNode xRooNode::coefs() const
             ->emplace_back(
                std::make_shared<xRooNode>(".sumOfCoefs", coefSum, out)); // added to keep the sum alive! with the node
       }
+      if(!coefs.empty()) {out.browse();}
+      return out;
+   } else if(coefs.size()==1) {
+      xRooNode out(".coefs",std::shared_ptr<RooAbsArg>( coefs.at(0), [](RooAbsArg*){} ),*this);
       if(!coefs.empty()) {out.browse();}
       return out;
    } else {
@@ -6110,7 +6129,7 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
       // before giving up, if this is a workspace we can proceed if we only have one model
       if (get<RooWorkspace>()) {
          std::shared_ptr<xRooNode> mainModel;
-         for(auto& c : *this) {
+         for(auto& c : const_cast<xRooNode*>(this)->browse()) {
             if (c->get<RooAbsPdf>()) {
                if (!mainModel) {
                   mainModel = c;
