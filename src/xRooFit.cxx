@@ -478,7 +478,11 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig()
    auto extraOpts = const_cast<ROOT::Math::IOptions *>(fitConfig.MinimizerOptions().ExtraOptions());
    extraOpts->SetValue("OptimizeConst", 2); // if 0 will disable constant term optimization and cache-and-track of the
                                             // NLL. 1 = just caching, 2 = cache and track
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 29, 00)
    extraOpts->SetValue("StrategySequence", "0s01s12s2s3m");
+#else
+   extraOpts->SetValue("StrategySequence", "0s01s12s2m");
+#endif
    extraOpts->SetValue("LogSize", 0); // length of log to capture and save
    extraOpts->SetValue("BoundaryCheck",
                        0.); // if non-zero, warn if any post-fit value is close to boundary (e.g. 0.01 = within 1%)
@@ -923,12 +927,16 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
          //std::cout << "nIterations = " << _minimizer.fitter()->GetMinimizer()->NIterations() << std::endl;
          //std::cout << "covQual before hesse = " << _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() << std::endl;
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 29, 00)
          _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(3); // uses most precise hesse settings (step sizes and g2 tolerances)
+#else
+         _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(2); // uses most precise hesse settings (step sizes and g2 tolerances)
+#endif
          //const_cast<ROOT::Math::IOptions*>(_minimizer.fitter()->Config().MinimizerOptions().ExtraOptions())->SetValue("HessianStepTolerance",0.1);
          //const_cast<ROOT::Math::IOptions*>(_minimizer.fitter()->Config().MinimizerOptions().ExtraOptions())->SetValue("HessianG2Tolerance",0.02);
 
          if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
-            fff->fState = "Hesse3";
+            fff->fState = TString::Format("Hesse%d",_minimizer.fitter()->Config().MinimizerOptions().Strategy());
          }
 
          //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? -
@@ -955,7 +963,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
             if( ss.HasLowerLimit() || ss.HasUpperLimit() ) std::cout << ss.Name() << " limit restored " << ss.LowerLimit() << " - " << ss.UpperLimit() << std::endl;
          }*/
 
-        statusHistory.push_back(std::pair("Hesse3",_status));
+        statusHistory.push_back(std::pair<std::string,int>(TString::Format("Hesse%d",_minimizer.fitter()->Config().MinimizerOptions().Strategy()),_status));
 
 
          if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff && fff->fInterrupt) {
