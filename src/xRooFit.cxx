@@ -554,6 +554,32 @@ public:
       }
       return out;
    }
+
+    void computeBatch(cudaStream_t* st, double* output, size_t size, RooFit::Detail::DataMap const& map) const override {
+       if (fInterrupt) {
+          throw std::runtime_error("user interrupt");
+       }
+       fFunc->computeBatch(st,output,size,map);
+       for(size_t i=0;i<size;i++) {
+          double out = output[i];
+          if (prevMin == std::numeric_limits<double>::infinity())
+             prevMin = out;
+          if (!std::isnan(out))
+             minVal = std::min(minVal, out);
+       }
+       counter+=size;
+       if (s.RealTime() > fInterval) {
+          s.Reset();
+          std::cerr << (counter) << ") " << TDatime().AsString();
+          if(!fState.empty()) std::cerr << " : " << fState;
+          std::cerr << " : " << minVal << " Delta = " << (minVal - prevMin) << std::endl;
+          prevMin = minVal;
+       } else {
+          s.Continue();
+       }
+       return;
+   }
+
     std::string fState;
 
 private:
