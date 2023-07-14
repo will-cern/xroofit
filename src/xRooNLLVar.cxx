@@ -129,6 +129,8 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf,
          }
       } else if(strcmp(opts.At(i)->GetName(),"Hesse")==0) {
             fitConfig()->SetParabErrors(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0)); // controls hesse
+      } else if(strcmp(opts.At(i)->GetName(),"Strategy")==0) {
+         fitConfig()->MinimizerOptions().SetStrategy(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
       } else {
          if (strcmp(opts.At(i)->GetName(), "Optimize") == 0) {
             // this flag will trigger constOptimizeTestStatistic to be called on the nll in createNLL method
@@ -292,7 +294,7 @@ void xRooNLLVar::reinitialize()
       cout_redirect c(fFuncCreationLog);
       // need to find all RooRealSumPdf nodes and mark them binned or unbinned as required
       RooArgSet s;
-      fPdf->treeNodeServerList(&s, nullptr, true, false);
+      fPdf->treeNodeServerList(&s, nullptr, true, false); s.add(*fPdf.get()); // ensure include self in case fitting a RooRealSumPdf
       bool isBinned = false;
       bool hasBinned = false; // if no binned option then 'auto bin' ...
       if (auto a = dynamic_cast<RooCmdArg *>(fOpts->find("Binned")); a) {
@@ -558,8 +560,7 @@ ROOT::Math::IOptions *xRooNLLVar::fitConfigOptions()
    return nullptr;
 }
 
-double xRooNLLVar::getEntryVal(size_t entry)
-{
+double xRooNLLVar::getEntryVal(size_t entry) const {
    auto _data = data();
    if (!_data)
       return 0;
@@ -571,6 +572,75 @@ double xRooNLLVar::getEntryVal(size_t entry)
    // -_data->weight()*s->getPdf(s->indexCat().getLabel())->getLogVal(_data->get());
    return -_data->weight() * _pdf->getLogVal(_data->get());
 }
+
+double xRooNLLVar::getEntryBinWidth(size_t entry) const {
+
+   auto _data = data();
+   if (!_data)
+      return 0;
+   if (size_t(_data->numEntries()) <= entry)
+      return 0;
+   auto _pdf = pdf().get();
+   *std::unique_ptr<RooAbsCollection>(_pdf->getObservables(_data->get())) = *_data->get(entry); // only set robs
+   if (auto s = dynamic_cast<RooSimultaneous *>(_pdf); s) {
+      _pdf = s->getPdf(s->indexCat().getCurrentLabel());
+   }
+   std::unique_ptr<RooAbsCollection> _robs(_pdf->getObservables(_data->get()));
+   double volume = 1.;
+   for(auto o : *_robs) {
+
+      if(auto a = dynamic_cast<RooAbsRealLValue*>(o); a) {
+         std::unique_ptr<std::list<double>> bins(_pdf->binBoundaries(*a,-std::numeric_limits<double>::infinity(),std::numeric_limits<double>::infinity()));
+         if(bins) {
+            double lowEdge = -std::numeric_limits<double>::infinity();
+            for(auto b : *bins) {
+               if(b > a->getVal()) { volume *= (b - lowEdge); break; }
+               lowEdge = b;
+            }
+         }
+      }
+   }
+
+   return volume;
+
+}
+
+double xRooNLLVar::saturatedNllTerm() const {
+
+   // Use this term to create a goodness-of-fit metric, which is approx chi2 distributed with numEntries (data) d.o.f:
+   // prob = TMath::Prob( 2.*(nll.nllTerm()->getVal() - nll.saturatedNllTerm()), nll.data()->numEntries() )
+
+
+   auto _data = data();
+   if (!_data)
+      return 0;
+
+   bool isBinned = false;
+   if (auto a = dynamic_cast<RooCmdArg *>(fOpts->find("Binned")); a) {
+      isBinned = a->getInt(0);
+   }
+
+
+   // for binned case each entry is: -(-N + Nlog(N) - TMath::LnGamma(N+1))
+   // for unbinned case each entry is: -(N*log(N/(sumN*binW))) = -N*logN + N*log(sumN) + N*log(binW)
+   // but unbinned gets extendedTerm = sumN - sumN*log(sumN)
+   // so resulting sum is just sumN - sum[ N*logN - N*log(binW) ]
+   // which is the same as the binned case without the LnGamma part and with the extra sum[N*log(binW)] part
+
+   double out = _data->sumEntries();
+   for(int i=0;i<_data->numEntries();i++) {
+      _data->get(i);
+      double w = _data->weight();
+      out -= w * std::log(w);
+      if(isBinned) out += TMath::LnGamma(w + 1);
+      else out += w*std::log(getEntryBinWidth(i));
+   }
+
+   out += simTerm();
+
+   return out;
+}
+
 
 std::shared_ptr<RooArgSet> xRooNLLVar::pars(bool stripGlobalObs)
 {
@@ -904,11 +974,15 @@ double xRooNLLVar::simTerm() const
 double xRooNLLVar::binnedDataTerm() const
 {
    // this is only relevant if BinnedLikelihood active
+   // = sum[ N_i! ] since LnGamma(N_i+1) ~= N_i!
+   // need to also subtract off sum[ N_i*log(width_i) ] in order to have formula: binnedLL = unbinnedLL + binnedDataTerm
+   // note this is 0 if all the bin widths are 1
    double out = 0;
    for (int i = 0; i < fData->numEntries(); i++) {
       fData->get(i);
-      out += TMath::LnGamma(fData->weight() + 1);
+      out += TMath::LnGamma(fData->weight() + 1) - fData->weight()*std::log(getEntryBinWidth(i));
    }
+
    return out;
 }
 

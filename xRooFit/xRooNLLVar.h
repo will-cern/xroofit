@@ -380,10 +380,13 @@ public:
    RooNLLVar *nllTerm() const;
    RooConstraintSum *constraintTerm() const;
 
-   double getEntryVal(size_t entry); // get the Nll value for a specific entry
+   double getEntryVal(size_t entry) const; // get the Nll value for a specific entry
    double extendedTerm() const;
    double simTerm() const;
    double binnedDataTerm() const;
+   double getEntryBinWidth(size_t entry) const;
+
+   double saturatedNllTerm() const;
 
    // change the dataset - will check globs are the same
    Bool_t setData(const std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> &_data);
