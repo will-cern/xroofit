@@ -956,7 +956,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
          out->SetNameTitle("obs_ts", TString::Format("Observed;%s;%s", _axes.at(0)->GetTitle(),(empty() ? "" : front().tsTitle(true).Data())));
    } else {
       out->SetNameTitle(TString::Format("exp%d_p%s", int(nSigma), sCL), title);
-      out->SetMarkerStyle(0);out->SetMarkerSize(0.5);
+      out->SetMarkerStyle(0);out->SetMarkerSize(0);
       out->SetLineStyle(2 + int(nSigma));
       if (expBand && nSigma) {
          out->SetFillColor((nSigma == 2) ? kYellow : kGreen);
