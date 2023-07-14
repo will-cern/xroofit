@@ -544,11 +544,13 @@ public:
          minVal = std::min(minVal, out);
       counter++;
       if (s.RealTime() > fInterval) {
+         double evalRate = (counter - prevCounter) / s.RealTime();
          s.Reset();
-         std::cerr << (counter) << ") " << TDatime().AsString();
+         std::cerr << (counter) << ") (" << evalRate << "Hz) " << TDatime().AsString();
          if(!fState.empty()) std::cerr << " : " << fState;
          std::cerr << " : " << minVal << " Delta = " << (minVal - prevMin) << std::endl;
          prevMin = minVal;
+         prevCounter = counter;
       } else {
          s.Continue();
       }
@@ -562,6 +564,7 @@ private:
    mutable int counter = 0;
    mutable double minVal = std::numeric_limits<double>::infinity();
    mutable double prevMin = std::numeric_limits<double>::infinity();
+   mutable int prevCounter = 0;
    mutable int fInterval = 0; // time in seconds before next report
    mutable TStopwatch s;
 
