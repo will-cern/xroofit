@@ -5567,7 +5567,45 @@ xRooNode xRooNode::datasets() const
       if (get<RooAbsPdf>() || (!get() && fParent && fParent->get<RooAbsPdf>())) { // second condition handles 'bins' nodes of pdf, which have null ptr
          // only add datasets that have observables that cover all our observables
          RooArgSet _obs(obs().argList());
-         _obs.add(coords(false).argList(), true); // include coord observables too, and current xaxis if there's one
+         //_obs.add(coords(true).argList(), true); // include coord observables too, and current xaxis if there's one - added in loop below
+
+         TString cut;RooArgSet cutobs;
+         for (auto _c : coords()) { // coords() moves vars to their respective coordinates too
+            if (auto _cat = _c->get<RooAbsCategoryLValue>(); _cat) {
+               if (cut != "")
+                  cut += " && ";
+               cut += TString::Format("%s==%d", _cat->GetName(), _cat->getCurrentIndex());
+               _obs.add(*_cat,true); // note: if we ever changed coords to return clones, would need to keep coords alive
+               cutobs.add(*_cat);
+            } else if(auto _rv = _c->get<RooAbsRealLValue>(); _rv) {
+               // todo: check coordRange is a single range rather than multirange
+               if (cut != "")
+                  cut += " && ";
+               cut += TString::Format("%s>=%f&&%s<%f", _rv->GetName(),_rv->getMin(_rv->getStringAttribute("coordRange")),_rv->GetName(),_rv->getMax(_rv->getStringAttribute("coordRange")));
+               _obs.add(*_rv,true); // note: if we ever changed coords to return clones, would need to keep coords alive
+               cutobs.add(*_rv);
+            } else {
+               throw std::runtime_error("datasets(): Unsupported coordinate type");
+            }
+         }
+         if(auto s = get<RooSimultaneous>()) {
+            // check if we have a pdf for every category ... if not then add to cut
+            bool hasMissing = false;
+            TString extraCut = "";
+            for(auto cat : s->indexCat()) {
+               if(!s->getPdf(cat.first)) { hasMissing=true; }
+               else {
+                  if(extraCut != "") extraCut += " && ";
+                  extraCut += TString::Format("%s==%d", s->indexCat().GetName(), cat.second);
+               }
+            }
+            if(hasMissing) {
+               if(cut != "") cut += " && ";
+               cut += extraCut;
+               cutobs.add(s->indexCat());
+            }
+         }
+
          if (auto ax = GetXaxis(); ax && dynamic_cast<RooAbsArg *>(ax->GetParent())->getAttribute("obs")) {
             auto a = dynamic_cast<RooAbsArg *>(ax->GetParent());
             _obs.add(*a, true);
@@ -5576,7 +5614,15 @@ xRooNode xRooNode::datasets() const
          for (auto &d : _wsNode.datasets()) {
             if (std::unique_ptr<RooAbsCollection>(d->obs().argList().selectCommon(_obs))->size() == _obs.size()) {
                // all obs present .. include
-               out.emplace_back(std::make_shared<xRooNode>(d->fComp, *this));
+
+               if(cut != "") {
+                  RooFormulaVar cutFormula("cut1", cut, cutobs); // doing this to avoid complaints about unused vars
+                  out.emplace_back(std::make_shared<xRooNode>(std::shared_ptr<RooAbsData>(d->get<RooAbsData>()->reduce(cutFormula)),*this));
+                  if(d->get()->TestBit(1<<20)) out.back()->get()->SetBit(1<<20);
+               } else {
+                  out.emplace_back(std::make_shared<xRooNode>(d->fComp, *this));
+               }
+
             }
          }
       } /*else if(auto p = get<RooFitResult>(); p) {
@@ -6570,7 +6616,7 @@ public:
             if(rrvFitRes->namePtr() == namePtr()) return rrvFitRes->getError();
 
             // Strip out parameters with zero error
-            if (rrvFitRes->getError() <= std::abs(rrvFitRes->getVal()) * std::numeric_limits<double>::epsilon()) continue;
+            if (!rrvFitRes->hasError() || rrvFitRes->getError() <= std::abs(rrvFitRes->getVal()) * std::numeric_limits<double>::epsilon()) continue;
 
             // Ignore parameters in the fit result that this RooAbsReal doesn't depend on
             if(!rrvInAbsReal) continue;
@@ -6587,6 +6633,7 @@ public:
 
             paramList.add(*rrvInAbsReal);
          }
+         if(paramList.empty()) return 0.;
 
          std::vector<double> plusVar;
          std::vector<double> minusVar;
@@ -7232,6 +7279,15 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                fr->setCovQual(covQualBackup);
                const_cast<RooArgList &>(fr->floatParsFinal()).remove(*_p, true); // NOTE: I think this might be a memory leak, should delete _p after removal
             }
+         }
+         // finally check at least one float has errors defined (might not be cause if in prefit state)
+         bool hasErrors = false;
+         for(auto pp : fr->floatParsFinal()) {
+             if(dynamic_cast<RooRealVar*>(pp)->hasError()) { hasErrors=true; break; }
+         }
+         if(!hasErrors) {
+             errors = false;
+             delete fr;
          }
       }
 
