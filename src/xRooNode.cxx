@@ -150,6 +150,7 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "TGaxis.h"
 //#include <thread>
 //#include <future>
+#include "RooNaNPacker.h"
 
 
 BEGIN_XROOFIT_NAMESPACE
@@ -4644,7 +4645,7 @@ xRooNode &xRooNode::browse()
          addedChildren += appendChildren(factors());
       // include coefs if any
       auto _coefs = coefs();
-      if (!_coefs.empty()) {
+      if (_coefs.get()) {
          if (_coefs.size() == 1 && _coefs.get<RooAddition>()) {
             if (strcmp(_coefs.at(0)->GetName(), "1") != 0 &&
                 strcmp(_coefs.at(0)->GetName(), "ONE") != 0) { // don't add the "1"
@@ -5905,7 +5906,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
 
       // ensure coefs are included if there are any
       auto _coefs = coefs();
-      if(!_coefs.empty()) {
+      if(_coefs.get()) {
          return xRooNode(RooProduct("tmp","tmp",RooArgList(*get<RooAbsArg>(),*_coefs.get<RooAbsReal>()))).fitResult(opt);
       }
 
@@ -6067,7 +6068,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
 
    // ensure coefs are included if there are any
    auto _coefs = coefs();
-   if(!_coefs.empty()) {
+   if(_coefs.get()) {
       return xRooNode(RooProduct("tmp","tmp",RooArgList(*get<RooAbsArg>(),*_coefs.get<RooAbsReal>()))).fitResult(opt);
    }
 
@@ -6403,6 +6404,11 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
          }
          for (auto &c : funcs)
             out.Remove(*c);
+         if(!funcs.empty()) {
+             if(auto _pdf = out.get<RooRealSumPdf>(); _pdf) {
+                 _pdf->setFloor(false); // remove floor if removed some functions, which allows evaluation of negative valued components
+             }
+         }
          out.browse();
          return out;
       } else if (auto fr = get<RooFitResult>()) {
@@ -6563,10 +6569,10 @@ public:
       : RooAbsPdf(Form("exp_%s", f.GetName())), fFunc("func", "func", this, f), fCoef("coef", "coef", this),
         fExpPdf("expPdf","expPdf",this)
    {
-      // don't treat pdf as extended if it has a coefficient! RooAddPdf doesn't extend them unless no coefs for any (and all are extendable)
+      // don't treat pdf as extended if it has a coefficient and is RooAddPdf: RooAddPdf doesn't extend them unless no coefs for any (and all are extendable)
       if (coef) { fCoef.setArg(*coef); }
-      else if (expPdf && expPdf->canBeExtended()) { fExpPdf.setArg(*expPdf); }
-      else if(auto _p = dynamic_cast<RooAbsPdf*>(&f); _p && _p->canBeExtended()) {
+      if (expPdf && expPdf->canBeExtended() && !(coef && dynamic_cast<RooAddPdf*>(expPdf))) { fExpPdf.setArg(*expPdf); }
+      else if(auto _p = dynamic_cast<RooAbsPdf*>(&f); _p && _p->canBeExtended() && !(coef && dynamic_cast<RooAddPdf*>(_p))) {
          fExpPdf.setArg(f); // using self for expectation
       }
       fExpectedEventsMode = expEvMode;
@@ -6665,9 +6671,15 @@ public:
             rrv.setVal(cenVal+errVal) ;
             plusVar.push_back(getVal(nset_in)) ;
 
+            if(std::isnan(plusVar.back()) && RooNaNPacker::isNaNWithPayload(plusVar.back())) { plusVar.back() = -RooNaNPacker::unpackNaN(plusVar.back()); }
+
             // Make Minus variation
             rrv.setVal(cenVal-errVal) ;
             minusVar.push_back(getVal(nset_in)) ;
+
+             if(std::isnan(minusVar.back()) && RooNaNPacker::isNaNWithPayload(minusVar.back())) { minusVar.back() = -RooNaNPacker::unpackNaN(minusVar.back()); }
+
+             //std::cout << plusVar.back() << " and " << minusVar.back() << std::endl;
 
             rrv.setVal(cenVal) ;
          }
@@ -7201,14 +7213,17 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       h->GetXaxis()->SetTitle(vv->GetTitle());
    auto p = dynamic_cast<RooAbsPdf *>(rar);
 
+
+
+
    // possible speed improvement:
 //   if(auto spdf = dynamic_cast<RooRealSumPdf*>(p); spdf && spdf->canBeExtended()) {
 //      p = nullptr; // faster to evaluate sumpdf as a function not a pdf
 //   }
 
+    if (empty && !errors) { return h; }
 
-
-   if (!empty) {
+   //if (!empty) {
 
       auto _coefs = coefs();
 
@@ -7218,7 +7233,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          if (_fr.get<RooFitResult>()) {
             fr = static_cast<RooFitResult*>(_fr.get<RooFitResult>()->Clone());
          } else {
-            auto frn = (_coefs.empty() ? *this: xRooNode(RooProduct("tmp", "tmp", RooArgList(*rar, *_coefs.get<RooAbsReal>())))).fitResult();
+            auto frn = (!_coefs.get() ? *this: xRooNode(RooProduct("tmp", "tmp", RooArgList(*rar, *_coefs.get<RooAbsReal>())))).fitResult();
             if (strlen(_fr.GetName())) frn = frn.reduced(_fr.GetName());
             fr = dynamic_cast<RooFitResult *>(frn->Clone());
          }
@@ -7298,6 +7313,19 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       if (binEnd == 0)
          binEnd = h->GetNbinsX();
 
+
+       bool needBinWidth = false;
+       // may have MULTIPLE coefficients for the same pdf!
+
+       if (x && (p || _coefs.get() || rar->getAttribute("density"))) {
+           // pdfs of samples embedded in a sumpdf (aka have a coef) will convert their density value to a content
+           needBinWidth = true;
+       }
+
+       if(auto spdf = dynamic_cast<RooRealSumPdf*>(p); spdf && spdf->canBeExtended() && !spdf->getFloor()) {
+           //p = nullptr; // if pdf has no floor, will evaluate it as a function to allow it to be negative - evaluation should also be faster (no integral)
+       }
+
       // check if we need to do any projecting of other observables
       RooAbsReal *oldrar = nullptr;
       auto _obs = obs();
@@ -7344,23 +7372,20 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             if(hasRange) p->setNormRange("coordRange"); // should get cleared when we sterilize
          } else {
             if (hasRange) {
+                // commented out passing of normset so that getVal of non-pdf is always a 'raw' value (needed for raw eval of RooRealSumPdf)
                rar =
-                  rar->createIntegral(*_obs.get<RooArgList>(), RooFit::NormSet(normSet), RooFit::Range("coordRange"));
+                  rar->createIntegral(*_obs.get<RooArgList>(), /*RooFit::NormSet(normSet),*/ RooFit::Range("coordRange"));
             } else {
-               rar = rar->createIntegral(*_obs.get<RooArgList>(), RooFit::NormSet(normSet));
+               rar = rar->createIntegral(*_obs.get<RooArgList>()/*, RooFit::NormSet(normSet)*/);
             }
          }
       }
 
-      bool needBinWidth = false;
-      // may have MULTIPLE coefficients for the same pdf!
 
-      if ((p || !_coefs.empty() || rar->getAttribute("density") || (oldrar && oldrar->getAttribute("density"))) && x) {
-         // pdfs of samples embedded in a sumpdf (aka have a coef) will convert their density value to a content
-         needBinWidth = true;
-      }
 
-      bool scaleExpected = (p && p->canBeExtended() && _coefs.empty());
+
+
+      bool scaleExpected = (p && p->canBeExtended() && !_coefs.get());
       // Note about above: if pdf has coeficients then its embedded in a RooAddPdf that has coefs defined ...
       // in this case we should *not* scale by expected, since the coefs become the scaling instead
 
@@ -7379,18 +7404,24 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             v->setBin(i - 1);
          if (x && !x->inRange("coordRange"))
             continue;
-         double r = /*(p && p->selfNormalized())*/ rar->getVal(normSet);
-         if (r && !_coefs.empty()) {
-            r *= _coefs.get<RooAbsReal>()->getVal(normSet);
+
+         double r = 0;
+         if(!empty) {
+             r = /*(p && p->selfNormalized())*/ rar->getVal(p ? &normSet : nullptr);
+
+             if (std::isnan(r) && RooNaNPacker::isNaNWithPayload(r)) { r = -RooNaNPacker::unpackNaN(r); }
+             if (r && _coefs.get()) {
+                 r *= _coefs.get<RooAbsReal>()->getVal(normSet);
+             }
+             if (needBinWidth) {
+                 r *= h->GetBinWidth(i);
+             }
+             if (scaleExpected) {
+                 // std::cout << r << " exp = " << p->expectedEvents(normSet) << " for normRange " << (p->normRange() ? p->normRange() : "null") << std::endl;
+                 // p->Print();rar->Print();
+                 r *= (p->expectedEvents(normSet));
+             } // do in here in case dependency on var
          }
-         if (needBinWidth) {
-            r *= h->GetBinWidth(i);
-         }
-         if (scaleExpected) {
-            // std::cout << r << " exp = " << p->expectedEvents(normSet) << " for normRange " << (p->normRange() ? p->normRange() : "null") << std::endl;
-            // p->Print();rar->Print();
-            r *= (p->expectedEvents(normSet));
-         } // do in here in case dependency on var
          h->SetBinContent(i, r);
 
          if (errors) {
@@ -7406,7 +7437,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 #endif
             } else {
                res = RooProduct("errorEval", "errorEval",
-                                RooArgList(*rar, _coefs.empty() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>()))
+                                RooArgList(*rar, !_coefs.get() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>()))
                         .getPropagatedError(*fr, normSet);
             }
             if (needBinWidth) {
@@ -7471,7 +7502,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       if (errors) {
          delete fr;
       }
-   }
+   //}
    return h;
 }
 
@@ -9708,6 +9739,7 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
       // prefer to use expectedEvents for integrals of RooAbsPdf e.g. for RooProdPdf wont include constraint terms
       if (rangeName)
          p->setNormRange(rangeName);
+      RooAbsReal::EvalErrorContext _tmp(RooAbsReal::Ignore);
       out *= p->expectedEvents(*_obs.get<RooArgList>());
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       // improved normSet invalidity checking, so assuming no longer need this in 6.28 onwards
@@ -9720,7 +9752,7 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
       // only integrate over observables we actually depend on
       auto f = std::shared_ptr<RooAbsReal>(p2->createIntegral(*std::unique_ptr<RooArgSet>(p2->getObservables(*_obs.get<RooArgList>())),
                                                               rangeName)); // did use x here before using obs
-      RooProduct pr("int_x_coef","int_x_coef",RooArgList(*f,_coefs.empty() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>()));
+      RooProduct pr("int_x_coef","int_x_coef",RooArgList(*f,!_coefs.get() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>()));
       out *= f->getVal();
       err = xRooNode(pr, *this).GetBinError(-1, fr);
       sterilize(); // needed so that we can forget properly about the integral we just created (and are deleting)
@@ -9753,6 +9785,12 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
 
 std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooNode &_fr) const
 {
+    // note: so far this method is inconsistent with the BuildHistogram in ways:
+    // no projection over other variables
+    // July2023: made RooRealSumPdf evaluate as a function if doesn't have a floor
+    // but this method will still evaluate it as a pdf (uses PdfWrapper)
+    // but can get away with it while added NaN recovery to getSimplePropagatedError to pickup raw values
+
    if (fBinNumber != -1) {
       if (binStart != binEnd || !fParent) {
          throw std::runtime_error(TString::Format("%s is a bin - only has one value", GetName()));
@@ -9775,7 +9813,7 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
 
    if (!fr) {
       // need to ensure coefs, if any, are included in fit result retrieval so all pars are loaded
-      auto frn = (_coefs.empty() ? *this : xRooNode(RooProduct("tmp","tmp",RooArgList(*o,*_coefs.get<RooAbsReal>())))).fitResult();
+      auto frn = (!_coefs.get() ? *this : xRooNode(RooProduct("tmp","tmp",RooArgList(*o,*_coefs.get<RooAbsReal>())))).fitResult();
       if (strlen(_fr.GetName())) frn = frn.reduced(_fr.GetName());
 
       // use name to reduce the fit result, if one given
@@ -9869,7 +9907,7 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
 //         if (auto c = _coefs.get<RooAbsReal>(); c) {
 //            res *= c->getVal(normSet);
 //         }
-         res = RooProduct("errorEval","errorEval",RooArgList(*o,_coefs.empty() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>())).getPropagatedError(*fr,normSet);
+         res = RooProduct("errorEval","errorEval",RooArgList(*o,!_coefs.get() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>())).getPropagatedError(*fr,normSet);
       }
       if (doBinWidth) {
          res *= ax->GetBinWidth(bin);
