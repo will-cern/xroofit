@@ -5594,7 +5594,7 @@ xRooNode xRooNode::datasets() const
             bool hasMissing = false;
             TString extraCut = "";
             for(auto cat : s->indexCat()) {
-               if(!s->getPdf(cat.first)) { hasMissing=true; }
+               if(!s->getPdf(cat.first.c_str())) { hasMissing=true; }
                else {
                   if(extraCut != "") extraCut += " && ";
                   extraCut += TString::Format("%s==%d", s->indexCat().GetName(), cat.second);
@@ -8488,7 +8488,7 @@ void xRooNode::Draw(Option_t *opt)
 
 
       std::vector<std::pair<double,std::string>> covariances;
-      double poiError = 0; std::string poiName; double maxImpact = 0;
+      /*double poiError = 0;*/ std::string poiName; double maxImpact = 0;
       if(sOpt.Contains("impact")) {
         std::unique_ptr<RooAbsCollection> poi( fr->floatParsFinal().selectByAttrib("poi",true) );
         if(poi->empty()) {
@@ -9739,7 +9739,9 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
       // prefer to use expectedEvents for integrals of RooAbsPdf e.g. for RooProdPdf wont include constraint terms
       if (rangeName)
          p->setNormRange(rangeName);
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,27,00)
       RooAbsReal::EvalErrorContext _tmp(RooAbsReal::Ignore);
+#endif
       out *= p->expectedEvents(*_obs.get<RooArgList>());
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       // improved normSet invalidity checking, so assuming no longer need this in 6.28 onwards
