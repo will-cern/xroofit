@@ -1009,7 +1009,7 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(const char *opt/*
                gSystem->ProcessEvents();
             }
          } else {
-            ::Info("xRooHypoSpace::graph", "Completed %lu/%lu points for %s", nDone, size(), sOpt.Data());
+            ::Info("xRooHypoSpace::graph", "Completed %d/%d points for %s", int(nDone), int(size()), sOpt.Data());
          }
          s.Start();
       } else {

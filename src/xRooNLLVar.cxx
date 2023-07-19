@@ -1828,7 +1828,7 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
          lastTime = s.RealTime();
          if (s.RealTime() > 10) {
             std::cout << "\r"
-                      << TString::Format("Generated %lu/%zu %s hypothesis toys [%.2f toys/s]", (alt ? altToysAdded:toysAdded), nnToys,
+                      << TString::Format("Generated %d/%d %s hypothesis toys [%.2f toys/s]", int(alt ? altToysAdded:toysAdded), int(nnToys),
                                          alt ? "alt" : "null", double(altToysAdded+toysAdded - lasti) / s.RealTime());
             if(!std::isnan(target)) {
                std::cout << " [current=" << currVal.first << "+/-" << currVal.second << " target=" << target << " nSigma=" << target_nSigma << "]";
@@ -2151,9 +2151,9 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       //            }
       //        }
       if(fPOIName()) title += TString::Format("%s' = %g", fPOIName(), (isAlt) ? fAltVal() : fNullVal());
-      title += TString::Format(" , N_{toys}=%lu", (isAlt) ? altToys.size() : nullToys.size());
+      title += TString::Format(" , N_{toys}=%d", int((isAlt) ? altToys.size() : nullToys.size()));
       if (nBadOrZero > 0)
-         title += TString::Format(" (N_{bad/0}=%lu)", nBadOrZero);
+         title += TString::Format(" (N_{bad/0}=%d)", int(nBadOrZero));
       title += ";";
       title += tsTitle();
       title += TString::Format(";Probability Mass");

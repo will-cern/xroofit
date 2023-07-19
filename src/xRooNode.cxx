@@ -340,7 +340,7 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
             }
          }
          if (!noErrorPars.empty()) {
-            Warning("xRooNode","Inferring initial errors of %lu parameters (give all nuisance parameters an error to avoid this msg)",noErrorPars.size());
+            Warning("xRooNode","Inferring initial errors of %d parameters (give all nuisance parameters an error to avoid this msg)",int(noErrorPars.size()));
             // get the first top-level pdf
             browse();
             for (auto &a : *this) {
