@@ -8516,7 +8516,7 @@ void xRooNode::Draw(Option_t *opt)
         maxImpact = (doHorizontal) ? covariances.back().first : covariances.front().first; // note: max impact is likely to be self variance
         for(auto& c : covariances) {
            if(c.second == poi->first()->GetName()) {
-              poiError = sqrt(c.first);
+              //poiError = sqrt(c.first);
               continue; // skip self
            }
            c.first *= 4./(maxImpact*1.2);
