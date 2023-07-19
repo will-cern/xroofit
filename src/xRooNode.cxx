@@ -151,7 +151,7 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 //#include <thread>
 //#include <future>
 
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 29, 00)
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
 #include "RooNaNPacker.h"
 #endif
 
@@ -6676,8 +6676,8 @@ public:
             // Make Minus variation
             rrv.setVal(cenVal-errVal) ;
             minusVar.push_back(getVal(nset_in)) ;
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 29, 00)
-            // can try to recover nans ... this stopped being possible in 6.29 onwards because NaNPacker made private
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
+            // can try to recover nans ... this stopped being possible in 6.27 onwards because NaNPacker made private
              if(std::isnan(plusVar.back()) && RooNaNPacker::isNaNWithPayload(plusVar.back())) { plusVar.back() = -RooNaNPacker::unpackNaN(plusVar.back()); }
              if(std::isnan(minusVar.back()) && RooNaNPacker::isNaNWithPayload(minusVar.back())) { minusVar.back() = -RooNaNPacker::unpackNaN(minusVar.back()); }
 #endif
@@ -7410,7 +7410,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          double r = 0;
          if(!empty) {
              r = /*(p && p->selfNormalized())*/ rar->getVal(p ? &normSet : nullptr);
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 29, 00)
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
              if (std::isnan(r) && RooNaNPacker::isNaNWithPayload(r)) { r = -RooNaNPacker::unpackNaN(r); }
 #endif
              if (r && _coefs.get()) {
