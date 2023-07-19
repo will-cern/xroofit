@@ -150,8 +150,10 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "TGaxis.h"
 //#include <thread>
 //#include <future>
-#include "RooNaNPacker.h"
 
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 29, 00)
+#include "RooNaNPacker.h"
+#endif
 
 BEGIN_XROOFIT_NAMESPACE
 
@@ -6671,14 +6673,14 @@ public:
             rrv.setVal(cenVal+errVal) ;
             plusVar.push_back(getVal(nset_in)) ;
 
-            if(std::isnan(plusVar.back()) && RooNaNPacker::isNaNWithPayload(plusVar.back())) { plusVar.back() = -RooNaNPacker::unpackNaN(plusVar.back()); }
-
             // Make Minus variation
             rrv.setVal(cenVal-errVal) ;
             minusVar.push_back(getVal(nset_in)) ;
-
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 29, 00)
+            // can try to recover nans ... this stopped being possible in 6.29 onwards because NaNPacker made private
+             if(std::isnan(plusVar.back()) && RooNaNPacker::isNaNWithPayload(plusVar.back())) { plusVar.back() = -RooNaNPacker::unpackNaN(plusVar.back()); }
              if(std::isnan(minusVar.back()) && RooNaNPacker::isNaNWithPayload(minusVar.back())) { minusVar.back() = -RooNaNPacker::unpackNaN(minusVar.back()); }
-
+#endif
              //std::cout << plusVar.back() << " and " << minusVar.back() << std::endl;
 
             rrv.setVal(cenVal) ;
@@ -7408,8 +7410,9 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          double r = 0;
          if(!empty) {
              r = /*(p && p->selfNormalized())*/ rar->getVal(p ? &normSet : nullptr);
-
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 29, 00)
              if (std::isnan(r) && RooNaNPacker::isNaNWithPayload(r)) { r = -RooNaNPacker::unpackNaN(r); }
+#endif
              if (r && _coefs.get()) {
                  r *= _coefs.get<RooAbsReal>()->getVal(normSet);
              }
