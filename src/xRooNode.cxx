@@ -7323,7 +7323,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
        }
 
        if(auto spdf = dynamic_cast<RooRealSumPdf*>(p); spdf && spdf->canBeExtended() && !spdf->getFloor()) {
-           //p = nullptr; // if pdf has no floor, will evaluate it as a function to allow it to be negative - evaluation should also be faster (no integral)
+           p = nullptr; // if pdf has no floor, will evaluate it as a function to allow it to be negative - evaluation should also be faster (no integral)
        }
 
       // check if we need to do any projecting of other observables
