@@ -8446,14 +8446,19 @@ void xRooNode::Draw(Option_t *opt)
          // look for normal gaussian and poisson cases
          double prefitError = 0;
          double prefitVal = 0;
+         double customScale = 0;
          if (auto ip = dynamic_cast<RooRealVar *>(fr->floatParsInit().find(p->GetName()))) { // handles if no prefit available
             prefitError=ip->getError();
             prefitVal = ip->getVal();
          };
 
          std::shared_ptr<xRooNode> pConstr;
-         if (fParent && fParent->getObject<RooRealVar>(p->GetName())) {
-            auto _constr = xRooNode(fParent->getObject<RooRealVar>(p->GetName()), *this).constraints();
+         if (fParent && fParent->getObject<RooRealVar>(p->GetName()))  {
+            auto _vv = fParent->getObject<RooRealVar>(p->GetName());
+            if (_vv->hasRange("pullScale")) {
+               customScale = (_vv->getMax("pullScale") - _vv->getMin("pullScale"))/2.;
+            }
+            auto _constr = xRooNode(_vv, *this).constraints();
             for (auto &c : _constr) {
                if (c->get<RooPoisson>() || c->get<RooGaussian>()) {
                    // require parameter to be a direct server of the constraint pdf to count if its a gaussian
@@ -8490,14 +8495,14 @@ void xRooNode::Draw(Option_t *opt)
                      continue;
                   if (xName == _d->get()->GetName())
                      continue;
-                  prefitError = _d->get<RooAbsReal>()->getVal();
+                  if(_d->get<RooAbsReal>()->getVal()) prefitError = _d->get<RooAbsReal>()->getVal();
                }
                // prefitVal will be the global observable value, need to divide that by tau
                prefitVal /= prefitError;
                // prefiterror will be tau ... need 1/sqrt(tau) for error
                prefitError = 1. / sqrt(prefitError);
             } else if (auto _g = pConstr->get<RooGaussian>(); _g) {
-               prefitError = (pConstr->find(".sigma")) ? pConstr->find(".sigma")->get<RooAbsReal>()->getVal() : 0;
+               prefitError = (pConstr->find(".sigma")) ? pConstr->find(".sigma")->get<RooAbsReal>()->getVal() : prefitError;
                prefitVal =
                   (pConstr->find(".x")) ? pConstr->find(".x")->get<RooAbsReal>()->getVal() : 0; // usually the globs
                if (pConstr->find(".x") &&
@@ -8507,8 +8512,7 @@ void xRooNode::Draw(Option_t *opt)
                }
             }
 
-            if (prefitError == 0)
-               prefitError = dynamic_cast<RooRealVar *>(fr->floatParsInit().find(p->GetName()))->getError();
+            if(customScale) prefitError = customScale;
             if (prefitError == 0) {
                Warning("Draw", "failed to determine prefit error of %s, using post-fit error", p->GetName());
                prefitError = _v->getError();
@@ -8521,6 +8525,7 @@ void xRooNode::Draw(Option_t *opt)
             offset[p->GetName()] = prefitVal;
          } else if (!fParent) {
             // no parent to determine constraints from ... prefitError=0 will be the unconstrained ones
+            if(customScale) prefitError = customScale;
             if (prefitError == 0) {
                // uses range of var
                prefitError = (std::max({_v->getMax() - _v->getVal(), _v->getVal() - _v->getMin(), 4.}) / 4);
@@ -8539,6 +8544,7 @@ void xRooNode::Draw(Option_t *opt)
 
          } else {
             // unconstrained (or at least couldn't determine constraint) ... use par range if no prefit error
+            if(customScale) prefitError = customScale;
             if (prefitError == 0) {
                prefitError = (std::max({_v->getMax() - _v->getVal(), _v->getVal() - _v->getMin(), 4.}) / 4);
             }
