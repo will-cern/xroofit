@@ -905,9 +905,9 @@ TAxis *xRooNode::GetXaxis() const
    // if xvar has become set equal to an arg and this is a pdf, we will allow a do-over
    if (!x) {
       // need to choose from dependent fundamentals, in following order:
-      // parentX, obs, globs, vars, args
+      // parentX (if not a glob), robs, globs, vars, args
 
-      if (_parentX && (o->dependsOn(*dynamic_cast<RooAbsArg *>(_parentX->GetParent())) || vars().size() == 0)) {
+      if (_parentX && !dynamic_cast<RooAbsArg*>(_parentX->GetParent())->getAttribute("global") && (o->dependsOn(*dynamic_cast<RooAbsArg *>(_parentX->GetParent())) || vars().size() == 0)) {
          x = dynamic_cast<RooAbsLValue *>(_parentX->GetParent());
       } else if (auto _obs = obs(); !_obs.empty()) {
          for (auto &v : _obs) {
@@ -1510,9 +1510,45 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
    }
 
    if (auto p = get<RooAbsData>(); p) {
+      if (auto bb = getBrowsable(".sourceds")) bb->Add(child,opt);
+       if(auto _data = child.get<RooDataSet>()) {
+          auto ds = dynamic_cast<RooDataSet*>(p);
+           if(!ds) {
+               throw std::runtime_error("Can only add datasets to a dataset");
+           }
+
+           // append any missing globs, and check any existing globs have matching values
+           RooArgList globsToAdd;
+           auto _globs = globs();
+           for(auto& glob : child.globs()) {
+              if(auto g = _globs.find(glob->GetName()); !g) {
+                 globsToAdd.addClone(*glob->get<RooAbsArg>());
+              } else if(g->GetContent() != glob->GetContent()) {
+                 Warning("Add","Global observable %s=%g in dataset mismatches child value %g ... ignoring child",g->GetName(),g->GetContent(),glob->GetContent());
+              }
+           }
+           // add any existing globs to list then set the list
+          if (auto _dglobs = p->getGlobalObservables()) {
+             globsToAdd.addClone(*_dglobs);
+          } else {
+             for(auto g : _globs) globsToAdd.addClone(*g->get<RooAbsArg>());
+          }
+          p->setGlobalObservables(globsToAdd);
+
+
+           // append any missing observables to our dataset, then append the dataset
+
+           for(auto col : *_data->get()) {
+               if(!p->get()->contains(*col)) {
+                   ds->addColumn(*col);
+               }
+           }
+           ds->append(*_data);
+           return *this;
+       }
       auto _h = child.get<TH1>();
       if (!_h) {
-         throw std::runtime_error("Can only add histogram to data");
+         throw std::runtime_error("Can only add histogram or dataset to data");
       }
       auto _pdf = parentPdf();
       if (!_pdf)
@@ -1538,8 +1574,36 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          }
       }
 
+       // before adding, ensure range is good to cover
+       for (auto &o : obs) {
+           if (auto v = dynamic_cast<RooRealVar *>(o); v) {
+               if (auto dv = dynamic_cast<RooRealVar *>(p->get()->find(v->GetName())); dv) {
+                   if (v->getMin() < dv->getMin())
+                       dv->setMin(v->getMin());
+                   if (v->getMax() > dv->getMax())
+                       dv->setMax(v->getMax());
+               }
+           } else if (auto c = dynamic_cast<RooCategory *>(o); c) {
+               if (auto dc = dynamic_cast<RooCategory *>(p->get()->find(c->GetName())); dc) {
+                   if (!dc->hasLabel(c->getCurrentLabel())) {
+                       dc->defineType(c->getCurrentLabel(), c->getCurrentIndex());
+                   }
+               }
+           }
+       }
+
       for (int i = 1; i <= _h->GetNbinsX(); i++) {
-         dynamic_cast<RooAbsRealLValue *>(_ax->GetParent())->setVal(_h->GetBinCenter(i));
+         if(auto cat = dynamic_cast<RooAbsCategoryLValue*>(_ax->GetParent())) {
+            if(!_h->GetXaxis()->GetBinLabel(i)) {
+               throw std::runtime_error(TString::Format("Categorical observable %s requires bin labels",_ax->GetParent()->GetName()));
+            } else if(!cat->hasLabel(_h->GetXaxis()->GetBinLabel(i))) {
+               throw std::runtime_error(TString::Format("Categorical observable %s does not have label %s",_ax->GetParent()->GetName(),_h->GetXaxis()->GetBinLabel(i)));
+            } else {
+               cat->setLabel(_h->GetXaxis()->GetBinLabel(i));
+            }
+         } else {
+            dynamic_cast<RooAbsRealLValue *>(_ax->GetParent())->setVal(_h->GetBinCenter(i));
+         }
          p->add(obs, _h->GetBinContent(i));
       }
 
@@ -1555,26 +1619,27 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             throw std::runtime_error("Something went wrong with pdf acquisition");
          }
 
-         if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue *>(_ax->GetParent())) {
+         if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()) && _pdf->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
             auto _p = _pdf;
+
             if (auto _boundaries = std::unique_ptr<std::list<double>>(_p->binBoundaries(
-                       *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), -std::numeric_limits<double>::infinity(),
-                       std::numeric_limits<double>::infinity()));
-                    !_boundaries && _ax->GetNbins() > 0 && _p->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
+                          *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), -std::numeric_limits<double>::infinity(),
+                          std::numeric_limits<double>::infinity())); !_boundaries && _ax->GetNbins() > 0) {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 24, 00)
-               Warning("Add", "Adding unbinned pdf %s to binned %s - will wrap with RooBinSamplingPdf(...)",
-                       _p->GetName(), GetName());
-               _p = acquireNew<RooBinSamplingPdf>(TString::Format("%s_binned", _p->GetName()), _p->GetTitle(),
-                                                  *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), *_p);
-               _p->setStringAttribute("alias", std::dynamic_pointer_cast<RooAbsArg>(out)->getStringAttribute("alias"));
-               if (!_p->getStringAttribute("alias"))
-                  _p->setStringAttribute("alias", out->GetName());
+                  Warning("Add", "Adding unbinned pdf %s to binned %s - will wrap with RooBinSamplingPdf(...)",
+                          _p->GetName(), GetName());
+                  _p = acquireNew<RooBinSamplingPdf>(TString::Format("%s_binned", _p->GetName()), _p->GetTitle(),
+                                                     *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), *_p);
+                  _p->setStringAttribute("alias", std::dynamic_pointer_cast<RooAbsArg>(out)->getStringAttribute("alias"));
+                  if (!_p->getStringAttribute("alias"))
+                     _p->setStringAttribute("alias", out->GetName());
 #else
-               throw std::runtime_error(
+                  throw std::runtime_error(
                   "unsupported addition of unbinned pdf to binned model - please upgrade to at least ROOT 6.24");
 #endif
-               _pdf = _p;
+                  _pdf = _p;
             }
+
          }
 
          if(!(_pdf->canBeExtended() && p->coefList().empty())) {
@@ -1632,7 +1697,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          std::shared_ptr<RooAbsArg> _func;
          // a null node .. so create either a new RooProduct or RooHistFunc if has observables (or no deps but has
          // x-axis)
-         auto _obs = obs();
+         auto _obs = robs();
          if (!_obs.empty() || GetXaxis()) {
             if (_obs.empty()) {
                // using X axis to construct hist
@@ -1665,7 +1730,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
                   TString::Format("%s;%s", dynamic_cast<TObject *>(_x)->GetName(), binningName.Data()));
                // technically convertForAcquisition has already acquired so no need to re-acquire but should be harmless
                _func = std::dynamic_pointer_cast<RooAbsArg>(acquire(xRooNode(*h).convertForAcquisition(*this)));
-               Info("Add", "Created densityhisto factor %s for %s", _func->GetName(), p->GetName());
+               Info("Add", "Created densityhisto factor %s (xaxis=%s) for %s", _func->GetName(), _obs.at(0)->GetName(), p->GetName());
             } else {
                throw std::runtime_error("Unsupported creation of new component in SumPdf for this many obs");
             }
@@ -1711,12 +1776,11 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          newName += "_components";
          Warning("Add","converting samples to components");
 
-         if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue *>(_ax->GetParent())) {
+         if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()) && _p->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
 
             if (auto _boundaries = std::unique_ptr<std::list<double>>(_p->binBoundaries(
                        *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), -std::numeric_limits<double>::infinity(),
-                       std::numeric_limits<double>::infinity()));
-                    !_boundaries && _ax->GetNbins() > 0 && _p->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
+                       std::numeric_limits<double>::infinity())); !_boundaries && _ax->GetNbins() > 0 ) {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 24, 00)
                Warning("Add", "Adding unbinned pdf %s to binned %s - will wrap with RooBinSamplingPdf(...)",
                        _p->GetName(), GetName());
@@ -1749,12 +1813,12 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          // the sumPdf and *this* pdf inside that pdf
          // only exception is the binSamplingPdf below to integrate unbinned functions across bins
 
-         if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue *>(_ax->GetParent())) {
+         if (auto _ax = GetXaxis(); _ax && dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()) && _f->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
 
             if (auto _boundaries = std::unique_ptr<std::list<double>>(_f->binBoundaries(
                    *dynamic_cast<RooAbsRealLValue *>(_ax->GetParent()), -std::numeric_limits<double>::infinity(),
                    std::numeric_limits<double>::infinity()));
-                !_boundaries && _ax->GetNbins() > 0 && _f->dependsOn(*static_cast<RooAbsArg*>(_ax->GetParent()))) {
+                !_boundaries && _ax->GetNbins() > 0 ) {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 24, 00)
                Warning("Add", "Adding unbinned function %s to binned %s - will wrap with RooRealSumPdf(RooBinSamplingPdf(...))",
                        _f->GetName(), GetName());
@@ -1793,6 +1857,9 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             }
          }
          sterilize();
+         // clear children for reload and update shared axis
+         clear(); fXAxis.reset(); p->setStringAttribute("xvar",nullptr);
+         browse();
          return _out;
       }
    } else if (auto p2 = get<RooProdPdf>(); p2) {
@@ -1853,6 +1920,8 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             return xRooNode(*_backup, *this).Add(child);
          } else if (!tooMany) {
             auto out = this->operator[]("samples")->Add(child);
+            // clear our x-axis to re-evaluate
+            fXAxis.reset(); p2->setStringAttribute("xvar",nullptr);
             return out;
          }
       }
@@ -3588,6 +3657,7 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
          }
          if(_ax) dynamic_cast<RooAbsLValue *>(_ax->GetParent())->setBin(bin - 1, _ax->GetName());
          _data->add(obs, value);
+         if (auto bb = getBrowsable(".sourceds")) return bb->SetBinContent(bin,value,par,parVal); // apply to source ds if we have one
          return true;
 
       } else if (get<RooDataHist>()) {
@@ -3870,14 +3940,18 @@ xRooNode xRooNode::constraints() const
 
    xRooNode out(".constraints", nullptr, *this);
 
-   std::function<RooAbsPdf *(const xRooNode &n, RooAbsArg &par, RooAbsPdf *ignore)> getConstraint;
-   getConstraint = [&](const xRooNode &n, RooAbsArg &par, RooAbsPdf *ignore) {
+   std::function<RooAbsPdf *(const xRooNode &n, RooAbsArg &par, std::set<RooAbsPdf*> ignore)> getConstraint;
+   getConstraint = [&](const xRooNode &n, RooAbsArg &par, std::set<RooAbsPdf*> ignore) {
+       if(auto _pdf = n.get<RooAbsPdf>()) {
+          if(ignore.count(_pdf)) return (RooAbsPdf*)nullptr;
+          ignore.insert(_pdf);
+       }
       auto o = n.get<RooProdPdf>();
       if (!o) {
          if (n.get<RooSimultaneous>()) {
             // check all channels for a constraint if is simultaneous
             for (auto &c : n.bins()) {
-               if (auto oo = getConstraint(*c.get(), par, nullptr); oo) {
+               if (auto oo = getConstraint(*c.get(), par, ignore); oo) {
                   return oo;
                }
             }
@@ -3888,7 +3962,7 @@ xRooNode xRooNode::constraints() const
          }else if (auto _ws = n.get<RooWorkspace>(); _ws) {
             // reached a workspace, check for any pdf depending on parameter that isnt the ignore
             for (auto p : _ws->allPdfs()) {
-               if (p == ignore)
+               if (ignore.count(static_cast<RooAbsPdf*>(p)))
                   continue;
                if (p->dependsOn(par)) {
                   out.emplace_back(std::make_shared<xRooNode>(par.GetName(), *p, *this));
@@ -3897,10 +3971,10 @@ xRooNode xRooNode::constraints() const
          }
          if (!n.fParent)
             return (RooAbsPdf *)nullptr;
-         return getConstraint(*n.fParent.get(), par, n.get<RooAbsPdf>());
+         return getConstraint(*n.fParent.get(), par, ignore);
       }
       for (auto p : o->pdfList()) {
-         if (p == ignore)
+         if (ignore.count(static_cast<RooAbsPdf*>(p)))
             continue;
          if (p->dependsOn(par)) {
             out.emplace_back(std::make_shared<xRooNode>(par.GetName(), *p, *this));
@@ -3917,7 +3991,7 @@ xRooNode xRooNode::constraints() const
          continue; // skip constants unless we are getting the constraints of a parameter itself
       if (v->getAttribute("obs"))
          continue; // skip observables ... constraints constrain pars not obs
-      getConstraint(*this, *v, get<RooAbsPdf>());
+      getConstraint(*this, *v, {get<RooAbsPdf>()});
       /*if (auto c = ; c) {
           out.emplace_back(std::make_shared<Node2>(p->GetName(), *c, *this));
       }*/
@@ -5621,7 +5695,11 @@ xRooNode xRooNode::datasets() const
                if(cut != "") {
                   RooFormulaVar cutFormula("cut1", cut, cutobs); // doing this to avoid complaints about unused vars
                   out.emplace_back(std::make_shared<xRooNode>(std::shared_ptr<RooAbsData>(d->get<RooAbsData>()->reduce(cutFormula)),*this));
+                  // put a subset of the globs in the returned dataset too
+                  out.back()->get<RooAbsData>()->setGlobalObservables(*globs().get<RooArgList>());
                   if(d->get()->TestBit(1<<20)) out.back()->get()->SetBit(1<<20);
+                  // need to attach the original dataset so that things like SetBinContent can interact with it
+                  out.back()->fBrowsables.emplace_back(std::make_shared<xRooNode>(".sourceds",d->fComp,*this));
                } else {
                   out.emplace_back(std::make_shared<xRooNode>(d->fComp, *this));
                }
@@ -5640,6 +5718,11 @@ xRooNode xRooNode::datasets() const
    }
 
    return out;
+}
+
+std::shared_ptr<xRooNode> xRooNode::getBrowsable(const char* name) const {
+   for(auto b : fBrowsables) if(b && strcmp(b->GetName(),name)==0) return b;
+   return nullptr;
 }
 
 TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fromPad) const
@@ -7129,6 +7212,9 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       if(binStart != -1 || binEnd != -1) { // allow v to stay nullptr if doing integral (binStart=binEnd=-1)
          if (auto _ax = GetXaxis())
             v = dynamic_cast<RooAbsLValue *>(_ax->GetParent());
+      } else {
+          // don't need to integrate if doing a self-histogram
+          v = dynamic_cast<RooRealVar *>(rar);
       }
       if (v)
          vv = dynamic_cast<TObject *>(v);
@@ -8815,8 +8901,10 @@ void xRooNode::Draw(Option_t *opt)
             if (!_pad)
                continue; // channel was hidden?
             auto ds = c->datasets().find(GetName());
-            if (!ds)
+            if (!ds) {
+               std::cout << " no ds " << GetName() << std::endl;
                continue;
+            }
             auto tmp = gPad;
             _pad->cd();
             ds->Draw(opt);
@@ -8851,6 +8939,12 @@ void xRooNode::Draw(Option_t *opt)
 
       dataGraph->SetBit(kCanDelete); // will be be deleted when pad is cleared
       dataGraph->SetMarkerSize(dataGraph->GetMarkerSize()*gPad->GetWNDC()); // scale marker sizes to pad size
+
+      if (s && !s->get<RooAbsPdf>()->canBeExtended()) {
+          // normalize dataGraph to 1
+          double tot = 0; for(int i=0;i<dataGraph->GetN();i++) tot += dataGraph->GetPointY(i);
+          dataGraph->Scale(1./tot);
+      }
 
       if (!hasSame) {
          clearPad();
@@ -9605,7 +9699,7 @@ void xRooNode::Draw(Option_t *opt)
    }*/
 
    // now draw selected datasets on top if this was a pdf
-   if (auto _pdf = get<RooAbsPdf>(); !hasSame && _pdf && (_pdf->canBeExtended() || robs().empty()) && coefs().empty()) {
+   if (auto _pdf = get<RooAbsPdf>(); !hasSame && _pdf /*&& (_pdf->canBeExtended() || robs().empty())*/ && coefs().empty()) {
       auto _dsets = datasets();
       // bool _drawn=false;
       for (auto &d : _dsets) {

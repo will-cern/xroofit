@@ -431,6 +431,8 @@ public:
    std::vector<std::shared_ptr<xRooNode>> fBrowsables;   // will appear in the browser tree but are not actual children
    std::function<xRooNode(xRooNode *)> fBrowseOperation; // a way to specify a custom browsing operation
 
+   std::shared_ptr<xRooNode> getBrowsable(const char* name) const;
+
    ClassDefOverride(xRooNode, 0)
 };
 
