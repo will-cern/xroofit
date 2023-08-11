@@ -610,10 +610,13 @@ double xRooNLLVar::saturatedNllTerm() const {
    // Use this term to create a goodness-of-fit metric, which is approx chi2 distributed with numEntries (data) d.o.f:
    // prob = TMath::Prob( 2.*(nll.nllTerm()->getVal() - nll.saturatedNllTerm()), nll.data()->numEntries() )
 
+   // note that need to construct nll with explicit Binned(1 or 0) option otherwise will pick up nll eval
+   // from attributes in model already, so many get binned nllTerm eval when thinking not binned because didnt specify Binned(1)
+
 
    auto _data = data();
    if (!_data)
-      return 0;
+      return std::numeric_limits<double>::quiet_NaN();
 
    bool isBinned = false;
    if (auto a = dynamic_cast<RooCmdArg *>(fOpts->find("Binned")); a) {
