@@ -573,7 +573,7 @@ public:
             for(i =0; i < std::min(3,int(parDeltas.size()));i++) {
                if(parDeltas.at(i).first==0) break;
                if(i!=0) std::cerr << ",";
-               std::cerr << parDeltas.at(i).second << "=" << minPars.getRealValue(parDeltas.at(i).second.c_str());
+               std::cerr << parDeltas.at(i).second << (parDeltas.at(i).first>=0 ? "+":"-") << "=" << std::abs(parDeltas.at(i).first) << "(" << minPars.getRealValue(parDeltas.at(i).second.c_str()) << ")";
             }
             if(i< int(parDeltas.size()) && parDeltas.at(i).first!=0) std::cerr << " ...";
          }
