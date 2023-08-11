@@ -576,6 +576,7 @@ public:
                std::cerr << parDeltas.at(i).second << (parDeltas.at(i).first>=0 ? "+":"-") << "=" << std::abs(parDeltas.at(i).first) << "(" << minPars.getRealValue(parDeltas.at(i).second.c_str()) << ")";
             }
             if(i< int(parDeltas.size()) && parDeltas.at(i).first!=0) std::cerr << " ...";
+            prevPars.assignValueOnly(minPars);
          }
          std::cerr << std::endl;
          prevMin = minVal;
