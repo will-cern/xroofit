@@ -518,6 +518,7 @@ public:
       s.Start();
       oldHandlerr = signal(SIGINT, interruptHandler);
       me = this;
+      vars.reset( std::unique_ptr<RooAbsCollection>(f.getVariables())->selectByAttrib("Constant",false) );
    }
    virtual ~ProgressMonitor()
    {
@@ -530,25 +531,53 @@ public:
    ProgressMonitor(const ProgressMonitor &other, const char *name = 0)
       : RooAbsReal(other, name), fFunc("func", this, other.fFunc), fInterval(other.fInterval)
    {
+
    }
    virtual TObject *clone(const char *newname) const override { return new ProgressMonitor(*this, newname); }
 
    double evaluate() const override
    {
-      if (fInterrupt)
-         return std::numeric_limits<double>::quiet_NaN();
+      if (fInterrupt) {
+          throw std::runtime_error("Keyboard interrupt");
+          return std::numeric_limits<double>::quiet_NaN();
+      }
       double out = fFunc;
-      if (prevMin == std::numeric_limits<double>::infinity())
-         prevMin = out;
-      if (!std::isnan(out))
-         minVal = std::min(minVal, out);
+      if (prevMin == std::numeric_limits<double>::infinity()) {
+          prevMin = out;
+          prevPars.addClone( *vars );
+      }
+      if (!std::isnan(out)) {
+          if(out < minVal) {
+              if(minPars.empty()) minPars.addClone(*vars);
+              minPars = *vars;
+          }
+          minVal = std::min(minVal, out);
+      }
       counter++;
       if (s.RealTime() > fInterval) {
          double evalRate = (counter - prevCounter) / s.RealTime();
          s.Reset();
          std::cerr << (counter) << ") (" << evalRate << "Hz) " << TDatime().AsString();
          if(!fState.empty()) std::cerr << " : " << fState;
-         std::cerr << " : " << minVal << " Delta = " << (minVal - prevMin) << std::endl;
+         std::cerr << " : " << minVal << " Delta = " << (minVal - prevMin);
+         if(minVal < prevMin) {
+            std::cerr << " : ";
+            // compare minPars and prevPars, print biggest deltas
+            std::vector<std::pair<double,std::string>> parDeltas;
+            parDeltas.reserve(minPars.size());
+            for(auto p : minPars) {
+                parDeltas.emplace_back(std::pair<double,std::string>(dynamic_cast<RooRealVar*>(p)->getVal()-prevPars.getRealValue(p->GetName()),p->GetName()));
+            }
+            std::sort(parDeltas.begin(),parDeltas.end(),[](auto &left, auto &right) { return std::abs(left.first) > std::abs(right.first); });
+            int i;
+            for(i =0; i < std::min(3,int(parDeltas.size()));i++) {
+               if(parDeltas.at(i).first==0) break;
+               if(i!=0) std::cerr << ",";
+               std::cerr << parDeltas.at(i).second << "=" << minPars.getRealValue(parDeltas.at(i).second.c_str());
+            }
+            if(i< int(parDeltas.size()) && parDeltas.at(i).first!=0) std::cerr << " ...";
+         }
+         std::cerr << std::endl;
          prevMin = minVal;
          prevCounter = counter;
       } else {
@@ -564,9 +593,12 @@ private:
    mutable int counter = 0;
    mutable double minVal = std::numeric_limits<double>::infinity();
    mutable double prevMin = std::numeric_limits<double>::infinity();
+   mutable RooArgList minPars;
+   mutable RooArgList prevPars;
    mutable int prevCounter = 0;
    mutable int fInterval = 0; // time in seconds before next report
    mutable TStopwatch s;
+   std::shared_ptr<RooAbsCollection> vars;
 
 };
 bool ProgressMonitor::fInterrupt = false;
@@ -829,7 +861,11 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
             fff->fState = minim + algo + std::to_string(_minimizer.fitter()->Config().MinimizerOptions().Strategy());
          }
-         status = _minimizer.minimize(minim, algo);
+         try {
+             status = _minimizer.minimize(minim, algo);
+         } catch (const std::exception &e) {
+            std::cerr << "Exception while minimizing: " << e.what() << std::endl;
+         }
          if (first && actualFirstMinimizer != _minimizer.fitter()->Config().MinimizerType())
             actualFirstMinimizer = _minimizer.fitter()->Config().MinimizerType();
          first = false;
