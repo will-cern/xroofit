@@ -482,6 +482,7 @@ void xRooNode::Browse(TBrowser *b)
          gEnv->SetValue("X11.Sync", "no");
          gEnv->SetValue("X11.FindBestVisual", "no");
          gEnv->SetValue("Browser.Name", "TRootBrowser"); // forces classic root browser (in 6.26 onwards)
+         gEnv->SetValue("Canvas.Name", "TRootCanvas");
          b2 = new TBrowser("nodeBrowser", this, "RooFit Browser");
          blockBrowse = false;
       } else if (strcmp(b2->GetName(), "nodeBrowser") == 0) {

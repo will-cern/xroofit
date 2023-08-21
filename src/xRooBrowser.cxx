@@ -106,6 +106,7 @@ xRooBrowser::xRooBrowser()
         gEnv->SetValue("X11.Sync", "no");
         gEnv->SetValue("X11.FindBestVisual", "no");
         gEnv->SetValue("Browser.Name", "TRootBrowser"); // forces classic root browser (in 6.26 onwards)
+        gEnv->SetValue("Canvas.Name", "TRootCanvas");
         return new xRooNode("!Workspaces");
      }())
 {
