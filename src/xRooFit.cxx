@@ -1128,7 +1128,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
       // ensure no asymm errors on any pars unless had minuitMinos
       for (auto o : out->floatParsFinal()) {
-         if (auto v = dynamic_cast<RooRealVar *>(o); v && !v->getAttribute("minos") && !v->getAttribute("xminos"))
+         if (auto v = dynamic_cast<RooRealVar *>(o); v && !v->getAttribute("minos") && !v->getAttribute("xminos") && !v->getAttribute("xMinos"))
             v->removeAsymError();
       }
 
@@ -1144,13 +1144,15 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
       // call minos if requested on any parameters
       if (status == 0 && minos) {
-         std::unique_ptr<RooAbsCollection> pars(floatPars->selectByAttrib("xminos", true));
-         for (auto p : *pars) {
-            Info("minimize","Computing xminos error for %s",p->GetName());
-            xRooFit::minos(nll, *out, p->GetName(), myFitConfig);
+         for(auto label : {"xminos","xMinos"}) {
+            std::unique_ptr<RooAbsCollection> pars(floatPars->selectByAttrib(label, true));
+            for (auto p: *pars) {
+               Info("minimize", "Computing xminos error for %s", p->GetName());
+               xRooFit::minos(nll, *out, p->GetName(), myFitConfig);
+            }
+            if (!pars->empty())
+               *floatPars = out->floatParsFinal(); // put values back to best fit
          }
-         if (!pars->empty())
-            *floatPars = out->floatParsFinal(); // put values back to best fit
       }
 
       if (restore) {
@@ -1363,7 +1365,7 @@ int xRooFit::minos(RooAbsReal &nll, const RooFitResult &ufit, const char *parNam
    for (unsigned int i = 0; i < ufit.numStatusHistory(); i++) {
       statusHistory.emplace_back(ufit.statusLabelHistory(i), ufit.statusCodeHistory(i));
    }
-   statusHistory.emplace_back(TString::Format("xMINOS_%s", parName), status);
+   statusHistory.emplace_back(TString::Format("xMinos:%s", parName), status);
    const_cast<RooFitResult &>(ufit).setStatusHistory(statusHistory);
    const_cast<RooFitResult &>(ufit).setStatus(ufit.status() + status);
 
