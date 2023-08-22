@@ -118,7 +118,7 @@ public:
       // calculate error on poi conditional on the given NPs being held constant at their post-fit values
       // The conditional error is often presented as the difference in quadrature to the total error i.e.
       // error contribution due to conditional NPs = sqrt( pow(totError,2) - pow(condError,2) )
-      double conditionalError(const char* poi, const char* nps, bool up=true, bool covApprox=false);
+      double conditionalError(const char* poi, const char* nps, bool up=true, bool approx=false);
 
 
            // rank all the np based on impact ... will use the covariance approximation if full impact not available
