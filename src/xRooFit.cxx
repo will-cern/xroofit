@@ -1018,7 +1018,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
       // call minos if requested on any parameters
       if (status == 0 && minos) {
-         if (std::unique_ptr<RooAbsCollection> mpars(floatPars->selectByAttrib("minuitMinos", true)); !mpars->empty()) {
+         if (std::unique_ptr<RooAbsCollection> mpars(floatPars->selectByAttrib("minos", true)); !mpars->empty()) {
             if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
                fff->fState = "Minos";
             }
@@ -1128,7 +1128,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
       // ensure no asymm errors on any pars unless had minuitMinos
       for (auto o : out->floatParsFinal()) {
-         if (auto v = dynamic_cast<RooRealVar *>(o); v && !v->getAttribute("minuitMinos"))
+         if (auto v = dynamic_cast<RooRealVar *>(o); v && !v->getAttribute("minos") && !v->getAttribute("xminos"))
             v->removeAsymError();
       }
 
@@ -1144,9 +1144,9 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
       // call minos if requested on any parameters
       if (status == 0 && minos) {
-         std::unique_ptr<RooAbsCollection> pars(floatPars->selectByAttrib("minos", true));
+         std::unique_ptr<RooAbsCollection> pars(floatPars->selectByAttrib("xminos", true));
          for (auto p : *pars) {
-            Info("minimize","Computing minos error for %s",p->GetName());
+            Info("minimize","Computing xminos error for %s",p->GetName());
             xRooFit::minos(nll, *out, p->GetName(), myFitConfig);
          }
          if (!pars->empty())
