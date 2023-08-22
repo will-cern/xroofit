@@ -104,7 +104,8 @@ public:
       RooArgList poi() { return get() ? RooArgList(*std::unique_ptr<RooAbsCollection>(get()->floatParsFinal().selectByAttrib("poi",true))) : RooArgList(); }
 
       // generate a conditional fit using the given poi set to the given values
-      xRooFitResult cfit(const char* poiValues);
+      // alias is used to store the fit result in the map under a different name
+      xRooFitResult cfit(const char* poiValues, const char* alias = nullptr);
       // generate the conditional fit required for an impact calculation
       xRooFitResult ifit(const char* np, bool up, bool prefit=false);
       // calculate the impact on poi due to np. if approx is true, will use the covariance approximation instead
@@ -113,7 +114,14 @@ public:
          auto _poi = poi(); if(_poi.size()!=1) throw std::runtime_error("xRooFitResult::impact: not one POI");
          return impact(poi().contentsString().c_str(),np,up,prefit,approx);
       }
-      // rank all the np based on impact ... will use the covariance approximation if full impact not available
+
+      // calculate error on poi conditional on the given NPs being held constant at their post-fit values
+      // The conditional error is often presented as the difference in quadrature to the total error i.e.
+      // error contribution due to conditional NPs = sqrt( pow(totError,2) - pow(condError,2) )
+      double conditionalError(const char* poi, const char* nps, bool up=true, bool covApprox=false);
+
+
+           // rank all the np based on impact ... will use the covariance approximation if full impact not available
       // the approxThreshold sets the level below which the approximation will be returned
       // e.g. set it to 0 to not do approximation
       RooArgList ranknp(const char* poi, bool up=true, bool prefit=false, double approxThreshold=std::numeric_limits<double>::infinity());
@@ -126,6 +134,9 @@ public:
 
       std::shared_ptr<xRooNode> fNode;
       std::shared_ptr<xRooNLLVar> fNll;
+
+      std::shared_ptr<std::map<std::string,xRooFitResult>> fCfits;
+
    };
 
    xRooFitResult minimize(const std::shared_ptr<ROOT::Fit::FitConfig> & = nullptr);

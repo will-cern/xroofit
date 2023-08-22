@@ -81,10 +81,52 @@
 
 #include "TROOT.h"
 #include "TKey.h"
+#include "TRegexp.h"
 
 BEGIN_XROOFIT_NAMESPACE
 
 std::set<int> xRooNLLVar::xRooHypoPoint::allowedStatusCodes = {0};
+
+class AutoRestorer {
+  public:
+    AutoRestorer(const RooAbsCollection &s, xRooNLLVar *nll = nullptr) : fSnap(s.snapshot()), fNll(nll)
+    {
+        fPars.add(s);
+        if (fNll) {
+            // if (!fNll->kReuseNLL) fOldNll = *fNll;
+            fOldData = fNll->getData();
+            fOldName = fNll->get()->GetName();
+            fOldTitle = fNll->get()->getStringAttribute("fitresultTitle");
+        }
+    }
+    ~AutoRestorer()
+    {
+        ((RooAbsCollection &)fPars) = *fSnap;
+        if (fNll) {
+            // commented out code was attempt to speed up things avoid unnecessarily reinitializing things over and over
+            //            if (!fNll->kReuseNLL) {
+            //                // can be faster just by putting back in old nll
+            //                fNll->std::shared_ptr<RooAbsReal>::operator=(fOldNll);
+            //                fNll->fData = fOldData.first;
+            //                fNll->fGlobs = fOldData.second;
+            //            } else {
+            //                fNll->setData(fOldData);
+            //                fNll->get()->SetName(fOldName);
+            //                fNll->get()->setStringAttribute("fitresultTitle", (fOldTitle == "") ? nullptr : fOldTitle);
+            //            }
+            fNll->fGlobs = fOldData.second; // will mean globs matching checks are skipped in setData
+            fNll->setData(fOldData);
+            fNll->get()->SetName(fOldName);
+            fNll->get()->setStringAttribute("fitresultTitle", (fOldTitle == "") ? nullptr : fOldTitle);
+        }
+    }
+    RooArgSet fPars;
+    std::unique_ptr<RooAbsCollection> fSnap;
+    xRooNLLVar *fNll = nullptr;
+    // std::shared_ptr<RooAbsReal> fOldNll;
+    std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> fOldData;
+    TString fOldName, fOldTitle;
+};
 
 xRooNLLVar::~xRooNLLVar() {}
 
@@ -389,7 +431,8 @@ xRooNLLVar::generate(bool expected, int seed)
 }
 
 xRooNLLVar::xRooFitResult::xRooFitResult(const std::shared_ptr<xRooNode> &in, const std::shared_ptr<xRooNLLVar>& nll)
-   : std::shared_ptr<const RooFitResult>(std::dynamic_pointer_cast<const RooFitResult>(in->fComp)), fNode(in), fNll(nll)
+   : std::shared_ptr<const RooFitResult>(std::dynamic_pointer_cast<const RooFitResult>(in->fComp)), fNode(in), fNll(nll),
+   fCfits(std::make_shared<std::map<std::string,xRooFitResult>>())
 {
 }
 const RooFitResult *xRooNLLVar::xRooFitResult::operator->() const
@@ -408,15 +451,33 @@ void xRooNLLVar::xRooFitResult::Draw(Option_t *opt)
 }
 
 
-xRooNLLVar::xRooFitResult xRooNLLVar::xRooFitResult::cfit(const char* poiValues) {
+xRooNLLVar::xRooFitResult xRooNLLVar::xRooFitResult::cfit(const char* poiValues, const char* alias) {
 
    // create a hypoPoint with ufit equal to this fit
    // and poi equal to given poi
    if (!fNll) throw std::runtime_error("xRooFitResult::cfit: Cannot create cfit without nll");
 
+   // see if fit already done
+   if(alias) {
+      if(auto res = fCfits->find(alias); res != fCfits->end()) {
+         return res->second;
+      }
+   }
+   if(auto res = fCfits->find(poiValues); res != fCfits->end()) {
+      return res->second;
+   }
+
+   AutoRestorer s(*fNll->fFuncVars);
+   *fNll->fFuncVars = get()->floatParsFinal();
+   fNll->fFuncVars->assignValueOnly(get()->constPars());
+   std::unique_ptr<RooAbsCollection>(fNll->fFuncVars->selectCommon(get()->floatParsFinal()))->setAttribAll("Constant",false);
+   std::unique_ptr<RooAbsCollection>(fNll->fFuncVars->selectCommon(get()->constPars()))->setAttribAll("Constant",true);
+
    auto hp = fNll->hypoPoint(poiValues,std::numeric_limits<double>::quiet_NaN(),xRooFit::Asymptotics::Unknown);
    hp.fUfit = *this;
-   return xRooNLLVar::xRooFitResult(std::make_shared<xRooNode>(hp.cfit_null(),fNode->fParent),fNll);
+   auto out = xRooNLLVar::xRooFitResult(std::make_shared<xRooNode>(hp.cfit_null(),fNode->fParent),fNll);
+   fCfits->insert(std::pair((alias) ? alias : poiValues,out));
+   return out;
 }
 xRooNLLVar::xRooFitResult xRooNLLVar::xRooFitResult::ifit(const char* np, bool up, bool prefit) {
    RooRealVar* npVar = dynamic_cast<RooRealVar*>((prefit ? get()->floatParsInit() : get()->floatParsFinal()).find(np));
@@ -442,6 +503,48 @@ double xRooNLLVar::xRooFitResult::impact(const char* poi, const char* np, bool u
       return get()->covarianceMatrix()(iPoi,iNp)/(up ? npVar->getErrorHi() : npVar->getErrorLo());
    }
    return std::numeric_limits<double>::quiet_NaN();
+}
+
+double xRooNLLVar::xRooFitResult::conditionalError(const char* poi, const char* nps, bool up, bool covApprox) {
+   // run a fit with given NPs held constant, return quadrature difference
+
+   TString npNames;
+   RooArgList vars;
+   RooAbsArg* poiVar = nullptr;
+   for(auto p : get()->floatParsFinal()) {
+      if(strcmp(p->GetName(),poi)==0) {
+         vars.add(*p);
+         poiVar = p; continue;
+      }
+      TStringToken pattern(nps, ",");
+      while (pattern.NextToken()) {
+         TString s(pattern);
+         if(TString(p->GetName()).Contains(TRegexp(s, true)) || p->getAttribute(s)) {
+            if(npNames.Length()) npNames += ",";
+            npNames += p->GetName();
+         } else {
+            vars.add(*p); // keeping in reduced cov matrix
+         }
+      }
+   }
+   if(!poiVar) {
+      throw std::runtime_error(TString::Format("Could not find poi: %s",poi));
+   }
+   if(npNames == "") {
+      fNode->Warning("conditionalError","No parameters selected by: %s", nps);
+      return (up) ? static_cast<RooRealVar*>(poiVar)->getErrorHi() : static_cast<RooRealVar*>(poiVar)->getErrorLo();
+   }
+
+   if(covApprox) {
+      int idx = vars.index(poi);
+      return sqrt ( get()->conditionalCovarianceMatrix(vars)(idx,idx) );
+   }
+
+   auto _cfit = cfit(npNames.Data(), nps);
+
+   auto _poi = _cfit->floatParsFinal().find(poi);
+
+   return (up) ? static_cast<RooRealVar*>(_poi)->getErrorHi() : static_cast<RooRealVar*>(_poi)->getErrorLo();
 }
 
 RooArgList xRooNLLVar::xRooFitResult::ranknp(const char* poi, bool up, bool prefit, double approxThreshold) {
@@ -505,46 +608,7 @@ xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::
    return xRooFitResult(std::make_shared<xRooNode>(out, fPdf),std::make_shared<xRooNLLVar>(*this));
 }
 
-class AutoRestorer {
-public:
-   AutoRestorer(const RooAbsCollection &s, xRooNLLVar *nll = nullptr) : fSnap(s.snapshot()), fNll(nll)
-   {
-      fPars.add(s);
-      if (fNll) {
-         // if (!fNll->kReuseNLL) fOldNll = *fNll;
-         fOldData = fNll->getData();
-         fOldName = fNll->get()->GetName();
-         fOldTitle = fNll->get()->getStringAttribute("fitresultTitle");
-      }
-   }
-   ~AutoRestorer()
-   {
-      ((RooAbsCollection &)fPars) = *fSnap;
-      if (fNll) {
-         // commented out code was attempt to speed up things avoid unnecessarily reinitializing things over and over
-         //            if (!fNll->kReuseNLL) {
-         //                // can be faster just by putting back in old nll
-         //                fNll->std::shared_ptr<RooAbsReal>::operator=(fOldNll);
-         //                fNll->fData = fOldData.first;
-         //                fNll->fGlobs = fOldData.second;
-         //            } else {
-         //                fNll->setData(fOldData);
-         //                fNll->get()->SetName(fOldName);
-         //                fNll->get()->setStringAttribute("fitresultTitle", (fOldTitle == "") ? nullptr : fOldTitle);
-         //            }
-         fNll->fGlobs = fOldData.second; // will mean globs matching checks are skipped in setData
-         fNll->setData(fOldData);
-         fNll->get()->SetName(fOldName);
-         fNll->get()->setStringAttribute("fitresultTitle", (fOldTitle == "") ? nullptr : fOldTitle);
-      }
-   }
-   RooArgSet fPars;
-   std::unique_ptr<RooAbsCollection> fSnap;
-   xRooNLLVar *fNll = nullptr;
-   // std::shared_ptr<RooAbsReal> fOldNll;
-   std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> fOldData;
-   TString fOldName, fOldTitle;
-};
+
 
 std::shared_ptr<ROOT::Fit::FitConfig> xRooNLLVar::fitConfig()
 {
@@ -1966,14 +2030,18 @@ xRooNLLVar::hypoPoint(const char *poiValues, double alt_value, const xRooFit::As
    TString poiNames;
    while(pattern.NextToken()) {
       TString s= pattern.Data();
+      TString cName = s;
+      double val = std::numeric_limits<double>::quiet_NaN();
       auto i = s.Index("=");
-      if (i==-1) throw std::runtime_error("poiValues must contain value");
-      TString cName = s(0,i);
-      TString cVal = s(i+1,s.Length());
-      if (!cVal.IsFloat()) throw std::runtime_error("poiValues must contain value");
+      if (i!=-1) {
+          cName = s(0, i);
+          TString cVal = s(i + 1, s.Length());
+          if (!cVal.IsFloat()) throw std::runtime_error("poiValues must contain value");
+          val = cVal.Atof();
+      }
       auto v = dynamic_cast<RooRealVar*>(fFuncVars->find(cName));
       if (!v) throw std::runtime_error("Cannot find poi");
-      v->setVal(cVal.Atof());
+      if(!std::isnan(val)) v->setVal(val);
       v->setConstant(); // because will select constants as coords
       if(poiNames!="") {poiNames += ","; }
       poiNames += cName;
