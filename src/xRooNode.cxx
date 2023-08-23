@@ -8459,11 +8459,15 @@ void xRooNode::Draw(Option_t *opt)
          // for display of errors will go to one extra dp ...
          roundedVal.second *= .1;
 
-         // do breakdown by removing parameters in blocks according to groups
-         RooArgList pars(fr->floatParsFinal()); // pars to not condition on
-         double variance = pow(dynamic_cast<RooRealVar*>(poi)->getError(),2);
+         // do breakdown by removing parameters in blocks according to groups and seeing impact on variance
+         // this will give the correct sum but will be order-dependent if there are correlations between
+         // groups. therefore we will stick with group-by-group
+         //RooArgList pars(fr->floatParsFinal()); // pars to not condition on
+         //double variance = pow(dynamic_cast<RooRealVar*>(poi)->getError(),2);
          int i=0;
          for(auto group : groups) {
+             RooArgList pars(fr->floatParsFinal()); // pars to not condition on
+             double variance = pow(dynamic_cast<RooRealVar*>(poi)->getError(),2);
             for(auto p : fr->floatParsFinal()) {
                if (p==poi) continue;
                else if( (p->getStringAttribute("group") && group==p->getStringAttribute("group")) ||
@@ -8488,10 +8492,11 @@ void xRooNode::Draw(Option_t *opt)
                }
             }
             pie->SetEntryFillColor(i,TColor::GetColorPalette(TColor::GetNumberOfColors()*i/pie->GetEntries()));
-            variance = reducedVar;
+            //variance = reducedVar;
             i++;
          }
-         // remaining variance is statistical
+         // remaining variance is statistical=
+         double variance = fr->conditionalCovarianceMatrix(*poi)(0,0);
           auto r = xRooFit::matchPrecision(std::pair(sqrt(variance),roundedVal.second)); // r.first will be the rounded error
           pie->SetEntryVal(i,variance); pie->SetEntryLabel(i,TString::Format("stat: %g",r.first));
          pie->SetEntryFillColor(i,TColor::GetColorPalette(TColor::GetNumberOfColors()*i/pie->GetEntries()));
