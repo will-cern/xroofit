@@ -519,7 +519,7 @@ double xRooNLLVar::xRooFitResult::conditionalError(const char* poi, const char* 
       TStringToken pattern(nps, ",");
       while (pattern.NextToken()) {
          TString s(pattern);
-         if(TString(p->GetName()).Contains(TRegexp(s, true)) || p->getAttribute(s)) {
+         if((p->getStringAttribute("group") && s==p->getStringAttribute("group")) || TString(p->GetName()).Contains(TRegexp(s, true)) || p->getAttribute(s)) {
             if(npNames.Length()) npNames += ",";
             npNames += p->GetName();
          } else {
