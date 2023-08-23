@@ -517,14 +517,18 @@ double xRooNLLVar::xRooFitResult::conditionalError(const char* poi, const char* 
          poiVar = p; continue;
       }
       TStringToken pattern(nps, ",");
+      bool matches=false;
       while (pattern.NextToken()) {
          TString s(pattern);
          if((p->getStringAttribute("group") && s==p->getStringAttribute("group")) || TString(p->GetName()).Contains(TRegexp(s, true)) || p->getAttribute(s)) {
-            if(npNames.Length()) npNames += ",";
-            npNames += p->GetName();
-         } else {
-            vars.add(*p); // keeping in reduced cov matrix
+            matches=true; break;
          }
+      }
+      if(matches) {
+         if(npNames.Length()) npNames += ",";
+         npNames += p->GetName();
+      } else {
+         vars.add(*p); // keeping in reduced cov matrix
       }
    }
    if(!poiVar) {
