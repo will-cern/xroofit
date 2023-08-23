@@ -198,37 +198,6 @@ int xRooNLLVar::xRooHypoSpace::AddPoints(const char *parName, size_t nPoints, do
    return nPoints;
 }
 
-double round_to_digits(double value, int digits)
-{
-   if (value == 0.0)
-      return 0.0;
-   double factor = pow(10.0, digits - ceil(log10(std::abs(value))));
-   return std::round(value * factor) / factor;
-};
-double round_to_decimal(double value, int decimal_places)
-{
-   const double multiplier = std::pow(10.0, decimal_places);
-   return std::round(value * multiplier) / multiplier;
-}
-
-// rounds error to 1 or 2 sig fig and round value to match that precision
-std::pair<double, double> matchPrecision(const std::pair<double, double> &in)
-{
-   auto out = in;
-   if (!std::isinf(out.second)) {
-      auto tmp = out.second;
-      out.second = round_to_digits(out.second, 2);
-      int expo = (out.second == 0) ? 0 : (int)std::floor(std::log10(std::abs(out.second)));
-      if (TString::Format("%e", out.second)(0) != '1') {
-         out.second = round_to_digits(tmp, 1);
-         out.first = (expo >= 0) ? round(out.first) : round_to_decimal(out.first, -expo);
-      } else if (out.second != 0) {
-         out.first = (expo >= 0) ? round(out.first) : round_to_decimal(out.first, -expo + 1);
-      }
-   }
-   return out;
-}
-
 xRooNLLVar::xRooHypoPoint& xRooNLLVar::xRooHypoSpace::AddPoint(double value) {
    if(axes().empty()) {
       // set the first poi as the axis variable to scan
@@ -423,7 +392,7 @@ std::map<std::string, std::pair<double, double>> xRooNLLVar::xRooHypoSpace::limi
       auto lim = limit(opt,nSigma);
       if (lim.second < 0)
          lim.second = -lim.second; // make errors positive for this method
-      out[std::isnan(nSigma) ? "obs" : TString::Format("%d", int(nSigma)).Data()] = matchPrecision(lim);
+      out[std::isnan(nSigma) ? "obs" : TString::Format("%d", int(nSigma)).Data()] = xRooFit::matchPrecision(lim);
    }
    return out;
 }
@@ -1160,27 +1129,27 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char* opt) 
       if (sOpt.Contains("pcls")) {
          // add current limit estimates to legend
          if (exp2 && exp2->GetN() > 1) {
-            auto l = matchPrecision(GetLimit(*graph(sOpt + "exp-2")));
+            auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp-2")));
             leg->AddEntry((TObject *) nullptr, TString::Format("-2#sigma: %g +/- %g", l.first, l.second), "");
          }
          if (exp1 && exp1->GetN() > 1) {
-            auto l = matchPrecision(GetLimit(*graph(sOpt + "exp-1")));
+            auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp-1")));
             leg->AddEntry((TObject *) nullptr, TString::Format("-1#sigma: %g +/- %g", l.first, l.second), "");
          }
          if (exp && exp->GetN() > 1) {
-            auto l = matchPrecision(GetLimit(*exp));
+            auto l = xRooFit::matchPrecision(GetLimit(*exp));
             leg->AddEntry((TObject *) nullptr, TString::Format("0#sigma: %g +/- %g", l.first, l.second), "");
          }
          if (exp1 && exp1->GetN() > 1) {
-            auto l = matchPrecision(GetLimit(*graph(sOpt + "exp+1")));
+            auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp+1")));
             leg->AddEntry((TObject *) nullptr, TString::Format("+1#sigma: %g +/- %g", l.first, l.second), "");
          }
          if (exp2 && exp2->GetN() > 1) {
-            auto l = matchPrecision(GetLimit(*graph(sOpt + "exp+2")));
+            auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp+2")));
             leg->AddEntry((TObject *) nullptr, TString::Format("+2#sigma: %g +/- %g", l.first, l.second), "");
          }
          if (obs && obs->GetN() > 1) {
-            auto l = matchPrecision(GetLimit(*obs));
+            auto l = xRooFit::matchPrecision(GetLimit(*obs));
             leg->AddEntry((TObject *) nullptr, TString::Format("Observed: %g +/- %g", l.first, l.second), "");
          }
       }

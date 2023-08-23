@@ -1718,4 +1718,35 @@ xRooFit::hypoTest(RooWorkspace &w, int nToysNull, int /*nToysAlt*/, const xRooFi
    return out;
 }
 
+double round_to_digits(double value, int digits)
+{
+   if (value == 0.0)
+      return 0.0;
+   double factor = pow(10.0, digits - ceil(log10(std::abs(value))));
+   return std::round(value * factor) / factor;
+};
+double round_to_decimal(double value, int decimal_places)
+{
+   const double multiplier = std::pow(10.0, decimal_places);
+   return std::round(value * multiplier) / multiplier;
+}
+
+// rounds error to 1 or 2 sig fig and round value to match that precision
+std::pair<double, double> xRooFit::matchPrecision(const std::pair<double, double> &in)
+{
+   auto out = in;
+   if (!std::isinf(out.second)) {
+      auto tmp = out.second;
+      out.second = round_to_digits(out.second, 2);
+      int expo = (out.second == 0) ? 0 : (int)std::floor(std::log10(std::abs(out.second)));
+      if (TString::Format("%e", out.second)(0) != '1') {
+         out.second = round_to_digits(tmp, 1);
+         out.first = (expo >= 0) ? round(out.first) : round_to_decimal(out.first, -expo);
+      } else if (out.second != 0) {
+         out.first = (expo >= 0) ? round(out.first) : round_to_decimal(out.first, -expo + 1);
+      }
+   }
+   return out;
+}
+
 END_XROOFIT_NAMESPACE

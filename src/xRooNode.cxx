@@ -148,6 +148,7 @@ auto GETLISTTREE(TGFileBrowser * b) { return b->GetListTree(); }
 #include "RooProjectedPdf.h"
 #include "TMemFile.h"
 #include "TGaxis.h"
+#include "TPie.h"
 //#include <thread>
 //#include <future>
 
@@ -8423,6 +8424,82 @@ void xRooNode::Draw(Option_t *opt)
          return;
       }
 
+      if (sOpt.Contains("brakdown")) { // e will have been removed above
+
+         // breakdown is quadrature difference between total error and conditional error
+         // group by 'group' attribute
+
+         std::string poiName;
+         if(sOpt.Contains("brakdown:")) {
+            poiName = sOpt(sOpt.Index("brakdown:")+9,sOpt.Length());
+         } else {
+            std::unique_ptr<RooAbsCollection> _poi( fr->floatParsFinal().selectByAttrib("poi",true) );
+            if(_poi->empty()) {
+               throw std::runtime_error("No floating poi in the fit");
+            } else if(_poi->size()!=1) {
+               throw std::runtime_error("Multiple poi in the fit");
+            }
+            poiName = _poi->first()->GetName();
+         }
+         RooRealVar* poi = dynamic_cast<RooRealVar*>(fr->floatParsFinal().find(poiName.c_str()));
+         if(!poi) {
+            throw std::runtime_error(TString::Format("Cannot find parameter %s",poiName.c_str()));
+         }
+         std::set<std::string> groups;
+         for(auto p : fr->floatParsFinal()) {
+            if( p == poi ) continue;
+            else if (p->getStringAttribute("group")) groups.insert(p->getStringAttribute("group"));
+            else groups.insert(p->GetTitle());
+         }
+
+         auto roundedVal = xRooFit::matchPrecision(std::pair(poi->getVal(),poi->getError()));
+
+         TPie* pie = new TPie(TString::Format("breakdown:%s",poi->GetName()),TString::Format("%s: %g #pm %g",poi->GetTitle(),roundedVal.first,roundedVal.second),groups.size()+1);
+
+         // for display of errors will go to one extra dp ...
+         roundedVal.second *= .1;
+
+         // do breakdown by removing parameters in blocks according to groups
+         RooArgList pars(fr->floatParsFinal()); // pars to not condition on
+         double variance = pow(dynamic_cast<RooRealVar*>(poi)->getError(),2);
+         int i=0;
+         for(auto group : groups) {
+            for(auto p : fr->floatParsFinal()) {
+               if (p==poi) continue;
+               else if( (p->getStringAttribute("group") && group==p->getStringAttribute("group")) ||
+                  (!p->getStringAttribute("group") && group==p->GetTitle()) ) {
+                  // conditioning on this parameter ... remove from pars list
+                  pars.remove(*p);
+               }
+            }
+            int idx = pars.index(poiName.c_str());
+            double reducedVar = fr->conditionalCovarianceMatrix(pars)(idx,idx);
+            if(reducedVar > variance) {
+               Warning("Draw","breakdown group %s variance bigger than preceeding?",group.c_str());
+               pie->SetEntryVal(i,0);
+               pie->SetEntryLabel(i,TString::Format("%s: NaN",group.c_str()));
+            } else {
+               pie->SetEntryVal(i,variance-reducedVar);
+               auto r = xRooFit::matchPrecision(std::pair(sqrt(variance-reducedVar),roundedVal.second)); // r.first will be the rounded error
+               if(r.first>0) {
+                   pie->SetEntryLabel(i, TString::Format("%s: %g", group.c_str(), r.first));
+               } else {
+                   pie->SetEntryLabel(i,group.c_str()); // suppress labels for negligible errors.
+               }
+            }
+            pie->SetEntryFillColor(i,TColor::GetColorPalette(TColor::GetNumberOfColors()*i/pie->GetEntries()));
+            variance = reducedVar;
+            i++;
+         }
+         // remaining variance is statistical
+          auto r = xRooFit::matchPrecision(std::pair(sqrt(variance),roundedVal.second)); // r.first will be the rounded error
+          pie->SetEntryVal(i,variance); pie->SetEntryLabel(i,TString::Format("stat: %g",r.first));
+         pie->SetEntryFillColor(i,TColor::GetColorPalette(TColor::GetNumberOfColors()*i/pie->GetEntries()));
+         pie->SetBit(kCanDelete);pie->SetRadius(0.17);pie->SetTextSize(gStyle->GetTitleYSize());
+         pie->Draw("NOL");
+         return;
+      }
+
       // plot pull or impact
       TGraphAsymmErrors *out = new TGraphAsymmErrors;
       out->SetName(TString::Format("%s_pull", fr->GetName()));
@@ -8586,14 +8663,22 @@ void xRooNode::Draw(Option_t *opt)
       std::vector<std::pair<double,std::string>> covariances;
       /*double poiError = 0;*/ std::string poiName; double maxImpact = 0;
       if(sOpt.Contains("impact")) {
-        std::unique_ptr<RooAbsCollection> poi( fr->floatParsFinal().selectByAttrib("poi",true) );
-        if(poi->empty()) {
-            throw std::runtime_error("No floating poi in the fit");
-        } else if(poi->size()!=1) {
-            throw std::runtime_error("Multiple poi in the fit");
-        }
-        poiName = poi->first()->GetName();
-        size_t poiIdx = fr->floatParsFinal().index(*poi->first());
+         if(sOpt.Contains("impact:")) {
+            poiName = sOpt(sOpt.Index("impact:")+7,sOpt.Length());
+         } else {
+            std::unique_ptr<RooAbsCollection> _poi( fr->floatParsFinal().selectByAttrib("poi",true) );
+            if(_poi->empty()) {
+               throw std::runtime_error("No floating poi in the fit");
+            } else if(_poi->size()!=1) {
+               throw std::runtime_error("Multiple poi in the fit");
+            }
+            poiName = _poi->first()->GetName();
+         }
+         RooAbsArg* poi = fr->floatParsFinal().find(poiName.c_str());
+         if(!poi) {
+            throw std::runtime_error(TString::Format("Cannot find parameter %s",poiName.c_str()));
+         }
+        size_t poiIdx = fr->floatParsFinal().index(*poi);
         // put parameters in order of impact on the poi
 
           // impact is regression coefficient * npError
@@ -8611,7 +8696,7 @@ void xRooNode::Draw(Option_t *opt)
         std::vector<TString> sortedLabels;
         maxImpact = (doHorizontal) ? covariances.back().first : covariances.front().first; // note: max impact is likely to be self variance
         for(auto& c : covariances) {
-           if(c.second == poi->first()->GetName()) {
+           if(c.second == poi->GetName()) {
               //poiError = sqrt(c.first);
               continue; // skip self
            }

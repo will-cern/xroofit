@@ -62,6 +62,9 @@ public:
    static RooCmdArg ReuseNLL(bool flag); // if should try to reuse the NLL object when it changes dataset
    static constexpr double OBS = std::numeric_limits<double>::quiet_NaN();
 
+   // Helper function for matching precision of a value and its error
+   static std::pair<double, double> matchPrecision(const std::pair<double, double> &in);
+
    // Static methods that work with the 'first class' object types:
    //    Pdfs: RooAbsPdf
    //    Datasets: std::pair<RooAbsData,const RooAbsCollection>
