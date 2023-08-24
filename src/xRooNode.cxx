@@ -8752,7 +8752,7 @@ void xRooNode::Draw(Option_t *opt)
       auto histCopy = dynamic_cast<TH1*>(hist->Clone(".axis"));
       histCopy->SetDirectory(0);
       histCopy->SetBit(kCanDelete);
-      auto _axis = (doHorizontal ? hist->GetYaxis() : hist->GetXaxis());
+      auto _axis = (doHorizontal ? histCopy->GetYaxis() : histCopy->GetXaxis());
 
 
 /*
@@ -8864,14 +8864,49 @@ void xRooNode::Draw(Option_t *opt)
 
       } else {
          gPad->SetTicks(0,0); // ensure mirrored ticks aren't drawn in this pad
+
+
+
+         if(doHorizontal) {
+            // ensure canvas height big enough
+            if(int(gPad->GetCanvas()->GetWh()) <  pNamesHist->GetNbinsX()*15) {
+               gPad->GetCanvas()->SetCanvasSize(gPad->GetCanvas()->GetWw(),pNamesHist->GetNbinsX()*15);
+            }
+         }
+
+          double factor = 475./gPad->GetCanvas()->GetWh(); // Wh is the full canvas height, not window height
+         gPad->SetTopMargin(gStyle->GetPadTopMargin()*factor); // fixed margin height
+         gPad->SetBottomMargin(gStyle->GetPadBottomMargin()*factor); // fixed margin height
+
+
          TGaxis *axis = new TGaxis(_axis->GetXmin(),-4,
-                                   _axis->GetXmin(), 4,-1.2*maxImpact,1.2*maxImpact,510,"-");
+                                   _axis->GetXmin(), 4,-1.2*maxImpact,1.2*maxImpact,510,"-S");
          axis->SetTextFont(_axis->GetTitleFont());
          axis->SetLabelFont(_axis->GetLabelFont());
-         axis->SetLabelSize(_axis->GetLabelSize());
-         axis->SetTextSize(graph->GetHistogram()->GetTitleSize());
+         axis->SetTextSize((axis->GetTextFont()%10>2) ? (10/factor) : ( (gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10/factor))/(gPad->GetY2()-gPad->GetY1())));
          axis->SetTitle(TString::Format("#Delta %s",fr->floatParsFinal().find(poiName.c_str())->GetTitle()));
+         axis->SetTickSize(axis->GetTickSize()*factor);
 
+
+
+         if(doHorizontal) {
+            axis->SetLabelSize((axis->GetLabelFont()%10>2) ? (10/factor) : ( (gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10/factor))/(gPad->GetY2()-gPad->GetY1())) );
+            //axis->SetTextSize(axis->GetTextSize()*factor);
+            axis->SetTitleSize((axis->GetTextFont()%10>2) ? (10/factor) : ( (gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10/factor))/(gPad->GetY2()-gPad->GetY1())));
+            axis->SetTitleOffset(axis->GetTitleOffset()*factor);
+            //axis->SetLabelOffset(axis->GetLabelOffset()*factor);
+            _axis->SetLabelSize((_axis->GetLabelFont()%10>2) ? (10/factor) : ( (gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10/factor))/(gPad->GetY2()-gPad->GetY1())));
+            histCopy->GetXaxis()->SetTickLength(histCopy->GetXaxis()->GetTickLength()*factor);
+            hist->GetXaxis()->SetTickLength(hist->GetXaxis()->GetTickLength()*factor);
+             histCopy->GetYaxis()->SetTickLength(histCopy->GetYaxis()->GetTickLength()*factor);
+             hist->GetYaxis()->SetTickLength(hist->GetYaxis()->GetTickLength()*factor);
+             histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset()*factor);
+             histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset()*factor);
+             hist->GetXaxis()->SetTitleOffset(hist->GetXaxis()->GetTitleOffset()*factor);
+             hist->GetXaxis()->SetLabelOffset(hist->GetXaxis()->GetLabelOffset()*factor);
+            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset()*factor);
+            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset()*factor);
+         }
 
          // create impact bar charts
          for(int tt = 0; tt < 2; tt++) {
@@ -8904,15 +8939,16 @@ void xRooNode::Draw(Option_t *opt)
             pullLine->SetName(TString::Format("%dsigmaLine",ii));
             pullLine->SetBit(kCanDelete);
             pullLine->SetPoint(0, -0.5, ii);
-            pullLine->SetPoint(1, hist->GetNbinsX() - 0.5, ii);
+            pullLine->SetPoint(1, hist->GetNbinsY() - 0.5, ii);
             pullLine->SetLineStyle(2);
             pullLine->SetEditable(false);
             hist->GetListOfFunctions()->Add(pullLine, "l");
          }
           hist->GetListOfFunctions()->Add(axis); // draw axis last
-
-          TLegend* leg1 = new TLegend(0.02,doHorizontal ? 0.78 : 0.02,0.27,doHorizontal ? 1.0 : 0.24);
+          TLegend* leg1 = new TLegend(0.02,doHorizontal ? (1.-0.22*factor) : 0.02,0.27,(doHorizontal ? 1. : 0.24));
           leg1->SetFillStyle(0);leg1->SetBorderSize(0);leg1->SetMargin(0.25);leg1->SetNColumns(2);
+
+          leg1->SetTextSizePixels(10/factor);
           //leg1.SetTextFont(gStyle->GetTextFont());
           //leg1.SetTextSize(gStyle->GetTextSize());
          leg1->AddEntry((TObject*)nullptr,"Hessian Pre-fit","");leg1->AddEntry((TObject*)nullptr,"Impact:","");
@@ -8924,8 +8960,16 @@ void xRooNode::Draw(Option_t *opt)
           leg1->AddEntry(hist->FindObject("postfit_impact-"),"#theta = #hat{#theta}-#Delta#theta","f");
 
           hist->GetListOfFunctions()->Add(leg1);
-
-
+          if(gStyle->GetOptTitle()) {
+             histCopy->SetBit(TH1::kNoTitle);
+             TPaveText* title = new TPaveText(gPad->GetLeftMargin(), 1.-gPad->AbsPixeltoY(14), 1.-gPad->GetRightMargin(), 1., "NDC" );
+             title->ConvertNDCtoPad();
+             title->SetY1NDC(1. - gPad->GetTopMargin()*0.6);title->SetY2NDC(1);
+             title->SetTextSizePixels(14/factor);
+             title->SetFillStyle(0);title->SetBorderSize(0);
+             title->AddText(histCopy->GetTitle());
+             hist->GetListOfFunctions()->Add(title);
+          }
       }
 
 
