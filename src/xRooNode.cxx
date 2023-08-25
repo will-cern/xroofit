@@ -2634,7 +2634,7 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
       return out;
    }
 
-   if (strcmp(GetName(), ".coefs") == 0) {
+   if (strcmp(GetName(), ".coef") == 0) { // covers both .coef and .coefs
       // need to add this into the relevant coef ... if its not a RooProduct, replace it with one first
       if (auto p = fParent->fParent->get<RooAddPdf>()) {
          for (size_t i = 0; i < p->pdfList().size(); i++) {
@@ -4412,7 +4412,7 @@ bool xRooNode::SetXaxis(const char *name, const char *title, int nbins, double l
    return SetXaxis(b);
 }
 
-bool xRooNode::SetXaxis(const char *name, const char *title, int nbins, double *bins)
+bool xRooNode::SetXaxis(const char *name, const char *title, int nbins, const double *bins)
 {
    RooBinning b(nbins, bins, name);
    b.SetTitle(title);
@@ -4471,6 +4471,15 @@ bool xRooNode::SetXaxis(const RooAbsBinning &binning)
    fXAxis.reset(); // remove any existing xaxis
 
    return true;
+}
+
+bool xRooNode::SetXaxis(TAxis* ax) {
+   if(!ax) return false;
+   if(ax->IsVariableBinSize()) {
+      return SetXaxis(ax->GetName(),ax->GetTitle(),ax->GetNbins(),ax->GetXbins()->GetArray());
+   } else {
+      return SetXaxis(ax->GetName(),ax->GetTitle(),ax->GetNbins(),ax->GetXmin(),ax->GetXmax());
+   }
 }
 
 bool xRooNode::contains(const std::string &name) const
@@ -4723,7 +4732,8 @@ xRooNode &xRooNode::browse()
          addedChildren += appendChildren(factors());
       // include coefs if any
       auto _coefs = coefs();
-      if (_coefs.get()) {
+      if (_coefs.get() && strcmp(_coefs->GetName(), "1") != 0 &&
+                          strcmp(_coefs->GetName(), "ONE") != 0) {
          if (_coefs.size() == 1 && _coefs.get<RooAddition>()) {
             if (strcmp(_coefs.at(0)->GetName(), "1") != 0 &&
                 strcmp(_coefs.at(0)->GetName(), "ONE") != 0) { // don't add the "1"
@@ -5343,13 +5353,15 @@ xRooNode xRooNode::bins() const
    xRooNode out(".bins", nullptr, *this);
 
    if (auto p = get<RooSimultaneous>(); p) {
-      for (auto &c : p->indexCat()) {
+      std::map<int,std::shared_ptr<xRooNode>> cats; // fill into a map to preserve index ordering
+      for (auto &c : p->indexCat()) { // is alphabetical in labels
          auto pp = p->getPdf(c.first.c_str());
          if (!pp)
             continue;
-         out.emplace_back(
-            std::make_shared<xRooNode>(TString::Format("%s=%s", p->indexCat().GetName(), c.first.c_str()), *pp, *this));
+         cats[c.second] =
+            std::make_shared<xRooNode>(TString::Format("%s=%s", p->indexCat().GetName(), c.first.c_str()), *pp, *this);
       }
+      for(auto& [_,n] : cats) out.emplace_back(n);
    } else if (auto phf = get<ParamHistFunc>(); phf) {
       int i = 1;
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
@@ -5461,7 +5473,7 @@ xRooNode xRooNode::coefs() const
       if(!coefs.empty()) {out.browse();}
       return out;
    } else if(coefs.size()==1) {
-      xRooNode out(".coefs",std::shared_ptr<RooAbsArg>( coefs.at(0), [](RooAbsArg*){} ),*this);
+      xRooNode out(".coef",std::shared_ptr<RooAbsArg>( coefs.at(0), [](RooAbsArg*){} ),*this);
       if(!coefs.empty()) {out.browse();}
       return out;
    } else {
@@ -8948,7 +8960,7 @@ void xRooNode::Draw(Option_t *opt)
           TLegend* leg1 = new TLegend(0.02,doHorizontal ? (1.-0.22*factor) : 0.02,0.27,(doHorizontal ? 1. : 0.24));
           leg1->SetFillStyle(0);leg1->SetBorderSize(0);leg1->SetMargin(0.25);leg1->SetNColumns(2);
 
-          leg1->SetTextSizePixels(10/factor);
+          leg1->SetTextSize((leg1->GetTextFont()%10>2) ? (10/factor) : ( (gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10/factor))/(gPad->GetY2()-gPad->GetY1())));
           //leg1.SetTextFont(gStyle->GetTextFont());
           //leg1.SetTextSize(gStyle->GetTextSize());
          leg1->AddEntry((TObject*)nullptr,"Hessian Pre-fit","");leg1->AddEntry((TObject*)nullptr,"Impact:","");
@@ -8965,7 +8977,7 @@ void xRooNode::Draw(Option_t *opt)
              TPaveText* title = new TPaveText(gPad->GetLeftMargin(), 1.-gPad->AbsPixeltoY(14), 1.-gPad->GetRightMargin(), 1., "NDC" );
              title->ConvertNDCtoPad();
              title->SetY1NDC(1. - gPad->GetTopMargin()*0.6);title->SetY2NDC(1);
-             title->SetTextSizePixels(14/factor);
+             title->SetTextSize((title->GetTextFont()%10>2) ? (14/factor) : ( (gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10/factor))/(gPad->GetY2()-gPad->GetY1())));
              title->SetFillStyle(0);title->SetBorderSize(0);
              title->AddText(histCopy->GetTitle());
              hist->GetListOfFunctions()->Add(title);

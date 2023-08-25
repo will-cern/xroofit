@@ -325,15 +325,17 @@ public:
    void _SetBinContent_(int bin, double value, const char *par = "", double parVal = 1); // *MENU*
 
    bool SetXaxis(const RooAbsBinning &binning);
+   bool SetXaxis(TAxis* ax);
    bool SetXaxis(const char *name, const char *title, int nbins, double low, double high);
-   bool SetXaxis(const char *name, const char *title, int nbins, double *bins);
+   bool SetXaxis(const char *name, const char *title, int nbins, const double *bins);
    bool SetXaxis(const char *title, int nbins, double low, double high)
    {
       return SetXaxis("xaxis", title, nbins, low, high);
    }
-   bool SetXaxis(const char *title, int nbins, double *bins) { return SetXaxis("xaxis", title, nbins, bins); }
+   bool SetXaxis(const char *title, int nbins, const double *bins) { return SetXaxis("xaxis", title, nbins, bins); }
    bool SetXaxis(int nbins, double low, double high) { return SetXaxis("xaxis", "", nbins, low, high); }
-   bool SetXaxis(int nbins, double *bins) { return SetXaxis("xaxis", "", nbins, bins); }
+   bool SetXaxis(int nbins, const double *bins) { return SetXaxis("xaxis", "", nbins, bins); }
+
 
    std::shared_ptr<TStyle> style(TObject *initObject = nullptr, bool autoCreate=true) const;
 
