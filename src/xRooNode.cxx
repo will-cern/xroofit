@@ -3748,6 +3748,10 @@ bool xRooNode::SetBinData(int bin, double value, const char *dataName)
    return datasets()[dataName]->SetBinContent(bin, value);
 }
 
+bool xRooNode::SetData(const TObject& obj, const char* dataName) {
+    return datasets()[dataName]->SetContents(obj);
+}
+
 bool xRooNode::SetBinError(int bin, double value)
 {
 
@@ -5708,6 +5712,8 @@ xRooNode xRooNode::datasets() const
 
                if(cut != "") {
                   RooFormulaVar cutFormula("cut1", cut, cutobs); // doing this to avoid complaints about unused vars
+                  // TODO: Could consider using a 'filter' node (see filter() method) applied to the dataset instead
+                  // of creating and using a reduced dataset here
                   out.emplace_back(std::make_shared<xRooNode>(std::shared_ptr<RooAbsData>(d->get<RooAbsData>()->reduce(cutFormula)),*this));
                   // put a subset of the globs in the returned dataset too
                   out.back()->get<RooAbsData>()->setGlobalObservables(*globs().get<RooArgList>());
