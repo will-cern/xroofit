@@ -7430,8 +7430,10 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
            needBinWidth = true;
        }
 
-       if(auto spdf = dynamic_cast<RooRealSumPdf*>(p); spdf && spdf->canBeExtended() && !spdf->getFloor()) {
+       if(auto spdf = dynamic_cast<RooRealSumPdf*>(p); spdf && spdf->canBeExtended() && !spdf->getFloor() && !_coefs.get()) {
            p = nullptr; // if pdf has no floor, will evaluate it as a function to allow it to be negative - evaluation should also be faster (no integral)
+           // exception is if RooRealSumPdf is embedded in a RooAddPdf (detected by presence of coefs) ... then it must be evaluated as a pdf
+           // technically should check parent is a RooAddPdf, because if was inside a RooRealSumPdf then would be evaluated as a function!
        }
 
       // check if we need to do any projecting of other observables
