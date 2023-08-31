@@ -480,8 +480,10 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig()
                                             // NLL. 1 = just caching, 2 = cache and track
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 29, 00)
    extraOpts->SetValue("StrategySequence", "0s01s12s2s3m");
+   extraOpts->SetValue("HesseStrategy",3); // if hesse is run after minimization, will use this strategy
 #else
    extraOpts->SetValue("StrategySequence", "0s01s12s2m");
+   extraOpts->SetValue("HesseStrategy",2); // when hesse is run after minimization, will use this strategy
 #endif
    extraOpts->SetValue("LogSize", 0); // length of log to capture and save
    extraOpts->SetValue("BoundaryCheck",
@@ -647,11 +649,17 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
    double boundaryCheck = 0;
    std::string s;
    int logSize = 0;
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 29, 00)
+   int hesseStrategy = 3; // uses most precise hesse settings (step sizes and g2 tolerances)
+#else
+   int hesseStrategy = 2; // uses most precise hesse settings (step sizes and g2 tolerances)
+#endif
    if (fitConfig.MinimizerOptions().ExtraOptions()) {
       fitConfig.MinimizerOptions().ExtraOptions()->GetNamedValue("StrategySequence", s);
       fitConfig.MinimizerOptions().ExtraOptions()->GetIntValue("TrackProgress", _progress);
       fitConfig.MinimizerOptions().ExtraOptions()->GetRealValue("BoundaryCheck", boundaryCheck);
       fitConfig.MinimizerOptions().ExtraOptions()->GetIntValue("LogSize", logSize);
+      fitConfig.MinimizerOptions().ExtraOptions()->GetIntValue("HesseStrategy", hesseStrategy);
    }
    TString m_strategy = s;
 
@@ -948,7 +956,9 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       //   dCovar = _minuit2->fMinimum->Error().Dcovar();
       //}
 
-      if (hesse && _minimizer.fitter()->Result().IsValid()) { // only do hesse if was a valid min
+      // only do hesse if was a valid min and not strat2 or above (since such strat already ran hesse, albeit with allowing for forced pos-def)
+      // or if requested hesse strategy is different to the strategy that minimization ran at
+      if (hesse && (strategy<2||strategy!=hesseStrategy) && _minimizer.fitter()->Result().IsValid()) {
          // Note: minima where the covariance was made posdef are deemed 'valid' ...
 
          // remove limits on pars before calculation - CURRENTLY HAS NO EFFECT, minuit still holds the state as transformed
@@ -968,11 +978,9 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
          //std::cout << "nIterations = " << _minimizer.fitter()->GetMinimizer()->NIterations() << std::endl;
          //std::cout << "covQual before hesse = " << _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() << std::endl;
-#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 29, 00)
-         _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(3); // uses most precise hesse settings (step sizes and g2 tolerances)
-#else
-         _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(2); // uses most precise hesse settings (step sizes and g2 tolerances)
-#endif
+
+          _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(hesseStrategy);
+
          //const_cast<ROOT::Math::IOptions*>(_minimizer.fitter()->Config().MinimizerOptions().ExtraOptions())->SetValue("HessianStepTolerance",0.1);
          //const_cast<ROOT::Math::IOptions*>(_minimizer.fitter()->Config().MinimizerOptions().ExtraOptions())->SetValue("HessianG2Tolerance",0.02);
 
@@ -990,6 +998,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
         // otherwise the status appears to be whatever was the status before
         // note that hesse succeeds even if the cov matrix it calculates is forced pos def. Failure is only
         // if it cannot calculate a cov matrix at all.
+        if (_status != -1) _status = 0; // mark as hesse succeeded, although need to look at covQual to see if was any good
 
          /*for(auto f : *floatPars) {
             auto v = dynamic_cast<RooRealVar*>(f);
@@ -1033,6 +1042,15 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
       // signal(SIGINT,gOldHandlerr);
       out = _minimizer.save(fitName, resultTitle);
+
+      // if status is 0 (min succeeded) but the covQual isn't fully accurate but requested hesse, reflect that in the status
+      if(out->status()==0 && out->covQual()!=3 && hesse) {
+          if(out->covQual()==2) { // was made posdef
+              out->setStatus(1); // indicates covariance made pos-def
+          } else { // anything else indicates either hessian is approximate or something else wrong (e.g. not pos-def return from strat3)
+              out->setStatus(2); // hesse invalid
+          }
+      }
 
       out->setStatusHistory(statusHistory);
 
