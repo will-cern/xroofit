@@ -346,7 +346,7 @@ public:
                            double alt_value = std::numeric_limits<double>::quiet_NaN(),
                            const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
 
-   std::shared_ptr<RooArgSet> pars(bool stripGlobalObs = true);
+   std::shared_ptr<RooArgSet> pars(bool stripGlobalObs = true) const;
 
    void Draw(Option_t *opt = "");
 
@@ -381,6 +381,7 @@ public:
    std::shared_ptr<RooAbsReal> func() const; // will assign globs when called
    std::shared_ptr<RooAbsPdf> pdf() const { return fPdf; }
    RooAbsData *data() const; // returns the data hidden inside the NLLVar if there is some
+   const RooAbsCollection* globs() const { return fGlobs.get(); }
 
    // NLL = nllTerm + constraintTerm
    // nllTerm = sum( entryVals ) + extendedTerm + simTerm [+ binnedDataTerm if activated binnedL option]
@@ -397,7 +398,11 @@ public:
    double binnedDataTerm() const;
    double getEntryBinWidth(size_t entry) const;
 
+   double ndof() const;
+   double saturatedVal() const;
+   double saturatedConstraintTerm() const;
    double saturatedNllTerm() const;
+   double pgof() const; // a goodness-of-fit pvalue based on profile likelihood of a saturated model
 
    // change the dataset - will check globs are the same
    Bool_t setData(const std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> &_data);

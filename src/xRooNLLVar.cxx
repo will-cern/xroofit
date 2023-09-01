@@ -79,6 +79,9 @@
 #include "TTree.h"
 #include "TGraph2D.h"
 
+#include "RooGaussian.h"
+#include "RooPoisson.h"
+
 #include "TROOT.h"
 #include "TKey.h"
 #include "TRegexp.h"
@@ -673,6 +676,50 @@ double xRooNLLVar::getEntryBinWidth(size_t entry) const {
 
 }
 
+double xRooNLLVar::saturatedConstraintTerm() const {
+    // for each global observable in the dataset, determine which constraint term is associated to it
+    // and given its type, add the necessary saturated term...
+
+    double out = 0;
+
+    if(!fGlobs) return 0;
+
+    auto cTerm = constraintTerm();
+    if(!cTerm) return 0;
+
+    for(auto c : cTerm->list()) {
+        if(auto gaus = dynamic_cast<RooGaussian*>(c)) {
+            auto v = dynamic_cast<RooAbsReal*>(fGlobs->find(gaus->getX().GetName()));
+            if(!v) {
+                v = dynamic_cast<RooAbsReal*>(fGlobs->find(gaus->getMean().GetName())); // shouldn't really happen but does for at least ws made by pyhf
+            }
+            if(!v) continue;
+            out -= std::log( ROOT::Math::gaussian_pdf(v->getVal(),gaus->getSigma().getVal(),v->getVal()) );
+        }
+        else if(auto pois = dynamic_cast<RooPoisson*>(c)) {
+            auto v = dynamic_cast<RooAbsReal*>(fGlobs->find(pois->getX().GetName()));
+            if(!v) continue;
+            out -= std::log( TMath::Poisson(v->getVal(),v->getVal()));
+        }
+    }
+
+    return out;
+
+}
+
+double xRooNLLVar::ndof() const {
+   return data()->numEntries() + (globs() ? globs()->size() : 0) - std::unique_ptr<RooAbsCollection>(pars()->selectByAttrib("Constant",false))->size();
+}
+
+double xRooNLLVar::pgof() const {
+    // note that if evaluating this for a single channel, until 6.30 is available if you are using Binned mode the pdf will need to be part of a Simultaneous
+    return TMath::Prob( 2.*(get()->getVal() - saturatedVal()), ndof() );
+}
+
+double xRooNLLVar::saturatedVal() const {
+   return saturatedNllTerm() + saturatedConstraintTerm();
+}
+
 double xRooNLLVar::saturatedNllTerm() const {
 
    // Use this term to create a goodness-of-fit metric, which is approx chi2 distributed with numEntries (data) d.o.f:
@@ -713,7 +760,7 @@ double xRooNLLVar::saturatedNllTerm() const {
 }
 
 
-std::shared_ptr<RooArgSet> xRooNLLVar::pars(bool stripGlobalObs)
+std::shared_ptr<RooArgSet> xRooNLLVar::pars(bool stripGlobalObs) const
 {
    auto out = std::shared_ptr<RooArgSet>(get()->getVariables());
    if (stripGlobalObs && fGlobs) {
