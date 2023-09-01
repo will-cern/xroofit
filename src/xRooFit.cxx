@@ -796,7 +796,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
       bool autoMaxCalls = (_minimizer.fitter()->Config().MinimizerOptions().MaxFunctionCalls() == 0);
       if (autoMaxCalls) {
-         _minimizer.fitter()->Config().MinimizerOptions().SetMaxFunctionCalls(500 * floatPars->size());
+         _minimizer.fitter()->Config().MinimizerOptions().SetMaxFunctionCalls(500 * floatPars->size() * floatPars->size()); // hesse requires O(N^2) function calls
       }
       if (_minimizer.fitter()->Config().MinimizerOptions().MaxIterations() == 0) {
          _minimizer.fitter()->Config().MinimizerOptions().SetMaxIterations(500 * floatPars->size());
