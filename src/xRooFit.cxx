@@ -58,6 +58,7 @@
 #include "RooStringVar.h"
 
 #include "RooRealProxy.h"
+#include "RooSuperCategory.h"
 
 #include "xRooFitVersion.h"
 
@@ -611,6 +612,10 @@ xRooFit::StoredFitResult::StoredFitResult(RooFitResult* _fr) : TNamed(*_fr) {
    fr.reset(_fr);
 }
 
+xRooFit::StoredFitResult::StoredFitResult(const std::shared_ptr<RooFitResult>& _fr) : TNamed(*_fr) {
+   fr = _fr;
+}
+
 std::shared_ptr<const RooFitResult>
 xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &_fitConfig, const std::shared_ptr<RooLinkedList>& nllOpts)
 {
@@ -723,7 +728,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       RooMsgService::instance().setGlobalKillBelow(RooFit::FATAL);
 
    // check how many parameters we have ... if 0 parameters then we wont run a fit, we just evaluate nll and return ...
-   if (floatPars->getSize() == 0 || fitConfig.MinimizerOptions().MaxFunctionCalls() == 1) {
+   if (floatPars->empty() || fitConfig.MinimizerOptions().MaxFunctionCalls() == 1) {
       std::shared_ptr<RooFitResult> result;
       RooArgList parsList;
       parsList.add(*floatPars);
@@ -769,17 +774,60 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       return result;
    }
 
-   int strategy = fitConfig.MinimizerOptions().Strategy();
-   // Note: AsymptoticCalculator enforces not less than 1 on tolerance - should we do so too?
+   std::shared_ptr<RooFitResult> out;
 
-   if (_progress) {
-      _nll = new ProgressMonitor(*_nll, _progress);
-      ProgressMonitor::fInterrupt = false;
+   // check if any floatPars are categorical .. if so, need to a "discrete minimization" over the permutations
+   RooArgSet floatCats;
+   for(auto p : *floatPars) {
+      if(p->isCategory()) {
+         floatCats.add(*p);
+      }
+   }
+   if(!floatCats.empty()) {
+      RooSuperCategory allCats("floatCats","Floating categorical parameters",floatCats);
+      std::unique_ptr<RooAbsCollection> _snap(floatCats.snapshot());
+      floatCats.setAttribAll("Constant");
+
+      std::shared_ptr<const RooFitResult> bestFr;
+      for(auto c : allCats) {
+         allCats.setIndex(c.second);
+         Info("minimize","Minimizing with discrete %s",c.first.c_str());
+         auto fr = minimize(nll,_fitConfig,nllOpts);
+         if(!fr) {
+            Warning("minimize","Minimization with discrete %s failed",c.first.c_str());
+            continue;
+         }
+         if(!bestFr || fr->minNll() < bestFr->minNll()) {
+            bestFr = fr;
+         }
+      }
+
+      floatCats.setAttribAll("Constant",false);
+
+      if(!bestFr) return out;
+
+      // create a copy of the fit result, give it a new uuid, and move the const categories into the float area
+      out = std::make_shared<RooFitResult>(*bestFr);
+      const_cast<RooArgList &>(out->floatParsFinal()).addClone(*std::unique_ptr<RooAbsCollection>(out->constPars().selectCommon(floatCats)));
+      const_cast<RooArgList &>(out->floatParsInit()).addClone(*_snap);
+      const_cast<RooArgList &>(out->constPars()).remove(floatCats);
+      out->SetName(TUUID().AsString());
+
    }
 
+
+
+
+
+   bool restore = !fitConfig.UpdateAfterFit();
    std::string logs;
-   RooFitResult *out = nullptr;
-   {
+   if (!out) {
+      int strategy = fitConfig.MinimizerOptions().Strategy();
+      // Note: AsymptoticCalculator enforces not less than 1 on tolerance - should we do so too?
+      if (_progress) {
+         _nll = new ProgressMonitor(*_nll, _progress);
+         ProgressMonitor::fInterrupt = false;
+      }
       auto logger = (logSize > 0) ? std::make_unique<cout_redirect>(logs, logSize) : nullptr;
       RooMinimizer _minimizer(*_nll);
       _minimizer.fitter()->Config() = fitConfig;
@@ -806,7 +854,6 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       _minimizer.fitter()->Config().SetParabErrors(false); // turn "off" so can run hesse as a separate step, appearing in status
       bool minos = _minimizer.fitter()->Config().MinosErrors();
       _minimizer.fitter()->Config().SetMinosErrors(false);
-      bool restore = !_minimizer.fitter()->Config().UpdateAfterFit();
       _minimizer.fitter()->Config().SetUpdateAfterFit(true); // note: seems to always take effect
 
       std::vector<std::pair<std::string, int>> statusHistory;
@@ -1041,7 +1088,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       // method
 
       // signal(SIGINT,gOldHandlerr);
-      out = _minimizer.save(fitName, resultTitle);
+      out.reset( _minimizer.save(fitName, resultTitle) );
 
       // if status is 0 (min succeeded) but the covQual isn't fully accurate but requested hesse, reflect that in the status
       if(out->status()==0 && out->covQual()!=3 && hesse) {
@@ -1173,10 +1220,12 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          }
       }
 
-      if (restore) {
-         *floatPars = out->floatParsInit();
-      }
    }
+
+   if (restore) {
+      *floatPars = out->floatParsInit();
+   }
+
    if (out && !logs.empty()) {
       // save logs to StringVar in constPars list
       const_cast<RooArgList &>(out->constPars()).addOwned(*new RooStringVar(".log", "log", logs.c_str()));
@@ -1211,7 +1260,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          // add the fitConfig name into the fit result before writing, so can retrieve in future
          const_cast<RooArgList &>(out->constPars())
             .addOwned(*new RooStringVar(".fitConfigName", "fitConfigName", configName.c_str()));
-         dir->WriteObject(out, out->GetName());
+         dir->WriteObject(out.get(), out->GetName());
          auto sfr = new StoredFitResult(out);
          dir->Add(sfr);
          return sfr->fr;
@@ -1219,7 +1268,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       }
    }
 
-   return std::shared_ptr<const RooFitResult>(out);
+   return out;
 }
 
 // calculate asymmetric errors, if required, on the named parameter that was floating in the fit

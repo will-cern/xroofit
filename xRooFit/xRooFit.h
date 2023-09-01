@@ -105,6 +105,7 @@ public:
    class StoredFitResult : public TNamed {
    public:
       StoredFitResult(RooFitResult* _fr);
+       StoredFitResult(const std::shared_ptr<RooFitResult>& _fr);
    public:
       std::shared_ptr<RooFitResult> fr; //!
       ClassDef(StoredFitResult, 0)
