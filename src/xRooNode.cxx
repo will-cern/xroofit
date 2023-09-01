@@ -6274,6 +6274,29 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, std::initializer_list<RooCmdArg>
    return nll(_data, l);
 }
 
+xRooNode xRooNode::generate(const xRooNode& fr,bool expected, int seed) {
+   if (!get<RooAbsPdf>()) {
+      // before giving up, if this is a workspace we can proceed if we only have one model
+      if (get<RooWorkspace>()) {
+         std::shared_ptr<xRooNode> mainModel;
+         for(auto& c : const_cast<xRooNode*>(this)->browse()) {
+            if (c->get<RooAbsPdf>()) {
+               if (!mainModel) {
+                  mainModel = c;
+               } else {
+                  throw std::runtime_error(
+                          TString::Format("Workspace has multiple models, you must specify which to generate with (found at least %s and %s)",mainModel->GetName(),c->GetName()));
+               }
+            }
+         }
+         if(mainModel) return mainModel->generate(fr,expected,seed);
+      }
+      throw std::runtime_error(TString::Format("%s is not a pdf", GetName()));
+   }
+   auto _fr = fr.get<RooFitResult>();
+   return xRooNode(xRooFit::generateFrom(*get<RooAbsPdf>(), (_fr ? *_fr : *(fitResult().get<RooFitResult>())), expected, seed).first,*this);
+}
+
 xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
 {
 
