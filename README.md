@@ -21,8 +21,21 @@ docker run –it gitlab-registry.cern.ch/atlas/statanalysis:0-2-1
 or for ATLAS users:
 
 ```bash
-asetup StatAnalysis,0.2.1
+asetup StatAnalysis,0.2.2
 ```
+
+### Using the xRooBrowser via Docker
+
+For those interested in playing with the xRooBrowser you can create a shell function as follows that will open a local workspace file:
+
+```
+xRooBrowser() { xhost +${hostname}; docker run --rm --pull always -v $1:/$(basename "$1") -e DISPLAY=host.docker.internal:0 -it gitlab-registry.cern.ch/atlas/statanalysis:0-2 root -e 'xRooBrowser b; b.Open("'$(basename "$1")'")'; }
+```
+Once you have defined this you can e.g. do:
+```
+xRooBrowser myFile.root
+```
+to open the file in the browser inside the docker container. This should also work with json format workspaces.
 
 ### Compiling from source
 
@@ -150,7 +163,7 @@ The `fr` is a (wrapped version of) a `RooFitResult`. It can be visualized with `
 Asymmetric errors can be calculated for any floating parameters by flagging these parameters before the minimization:
 
 ```python
-w["modelName"].pars()["parameterName"].setAttribute("minos",True)
+w["modelName"].pars()["parameterName"].setAttribute("minos",True) # uses minuit builtin minos ... specify "xminos" to use xRooFit-improved method
 ```
 
 Parameters can also be flipped from floating to constant and vice-versa in a similar fashion, e.g.:
