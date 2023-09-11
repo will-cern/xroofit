@@ -9359,7 +9359,7 @@ void xRooNode::Draw(Option_t *opt)
          gPad->SetGrid(1, 1);
       }
    }
-   TString dOpt = (TString(rar->ClassName()).Contains("Hist") || rar->isBinnedDistribution(*vv) ||
+   TString dOpt = (TString(rar->ClassName()).Contains("Hist") || rar->isBinnedDistribution(*vv) || h->GetNbinsX()==1 ||
                    rar->getAttribute("BinnedLikelihood") ||
                    (dynamic_cast<RooAbsRealLValue *>(vv) &&
                     std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue *>(vv),
@@ -9367,7 +9367,7 @@ void xRooNode::Draw(Option_t *opt)
                                                                           std::numeric_limits<double>::infinity()))))
                      ? ""
                      : "LF2";
-   if (auto d = dynamic_cast<RooHistFunc*>(rar); d && !d->isBinnedDistribution(*vv)) {
+   if (auto d = dynamic_cast<RooHistFunc*>(rar); d && !d->isBinnedDistribution(*vv) && h->GetNbinsX()!=1) {
       dOpt = "LF2"; // hist func is interpolated, so draw it as such
    }
    if (dOpt == "LF2" && !components().empty()) {
