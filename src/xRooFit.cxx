@@ -79,6 +79,11 @@ RooCmdArg xRooFit::Tolerance(double val)
     return RooCmdArg("Tolerance", 0, 0, val);
 }
 
+RooCmdArg xRooFit::StrategySequence(const char* val)
+{
+    return RooCmdArg("StrategySequence", 0, 0, 0, 0, val);
+}
+
 xRooNLLVar xRooFit::createNLL(const std::shared_ptr<RooAbsPdf> pdf, const std::shared_ptr<RooAbsData> data,
                               const RooLinkedList &nllOpts)
 {
