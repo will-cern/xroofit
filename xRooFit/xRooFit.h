@@ -60,6 +60,7 @@ class xRooFit {
 public:
    // Extra options for NLL creation:
    static RooCmdArg ReuseNLL(bool flag); // if should try to reuse the NLL object when it changes dataset
+   static RooCmdArg Tolerance(double value);
    static constexpr double OBS = std::numeric_limits<double>::quiet_NaN();
 
    // Helper function for matching precision of a value and its error
