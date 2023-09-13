@@ -6268,9 +6268,20 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data) const
 
 xRooNLLVar xRooNode::nll(const xRooNode &_data, std::initializer_list<RooCmdArg> nllOpts) const
 {
+   auto defaultOpts = xRooFit::createNLLOptions(); // smart pointer will cleanup the list
+   // add user-specified options to list ... if already existing in default list, override and warn
    RooLinkedList l;
-   for (auto &i : nllOpts)
+   for(auto opt : *defaultOpts) {
+      l.Add(opt);
+   }
+   for (auto &i : nllOpts) {
+      if (auto o = l.FindObject(i.GetName())) {
+         Info("nll","Overriding NLL Option: %s",o->GetName());
+         l.Remove(o);
+      }
       l.Add(const_cast<RooCmdArg *>(&i));
+   }
+
    return nll(_data, l);
 }
 

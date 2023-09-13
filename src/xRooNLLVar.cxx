@@ -176,6 +176,8 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf,
             fitConfig()->SetParabErrors(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0)); // controls hesse
       } else if(strcmp(opts.At(i)->GetName(),"Strategy")==0) {
          fitConfig()->MinimizerOptions().SetStrategy(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
+      } else if(strcmp(opts.At(i)->GetName(),"PrintLevel")==0) {
+          fitConfig()->MinimizerOptions().SetPrintLevel(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
       } else {
          if (strcmp(opts.At(i)->GetName(), "Optimize") == 0) {
             // this flag will trigger constOptimizeTestStatistic to be called on the nll in createNLL method
