@@ -253,11 +253,11 @@ int xRooNLLVar::xRooHypoSpace::scan(const char* type, size_t nPoints, double low
       }
       for (auto a : axes()) {
          if (!a->hasRange("physical")) {
-            ::Info("xRooHypoSpace::limits", "No physical range set for %s, setting to [0,inf]", p->GetName());
+            ::Info("xRooHypoSpace::scan", "No physical range set for %s, setting to [0,inf]", p->GetName());
             dynamic_cast<RooRealVar *>(a)->setRange("physical", 0, std::numeric_limits<double>::infinity());
          }
          if (!a->getStringAttribute("altVal") || !strlen(p->getStringAttribute("altVal"))) {
-            ::Info("xRooHypoSpace::limits", "No altVal set for %s, setting to 0", a->GetName());
+            ::Info("xRooHypoSpace::scan", "No altVal set for %s, setting to 0", a->GetName());
             a->setStringAttribute("altVal", "0");
          }
          // ensure range straddles altVal
