@@ -1380,8 +1380,10 @@ std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(boo
       if (!theFit || allowedStatusCodes.find(theFit->status()) == allowedStatusCodes.end())
          return fAsimov;
       fAsimov = std::make_shared<xRooHypoPoint>(*this);
+      fAsimov->coords.reset( fAsimov->coords->snapshot() ); // create a copy so can remove the physical range below
       fAsimov->hypoTestResult.reset();
       fAsimov->fPllType = xRooFit::Asymptotics::TwoSided;
+      for(auto p : fAsimov->poi()) dynamic_cast<RooRealVar*>(p)->removeRange("physical");
       fAsimov->nullToys.clear(); fAsimov->altToys.clear();
       fAsimov->fUfit = retrieveFit(3);
       fAsimov->fNull_cfit = retrieveFit(4);
@@ -1517,6 +1519,13 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
    }
    if (allowedStatusCodes.find(_ufit->status()) == allowedStatusCodes.end()) {
       return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+   }
+   if(auto _first_poi = dynamic_cast<RooRealVar*>(poi().first()); _first_poi && _first_poi->hasMin("physical") && mu_hat().getVal() < _first_poi->getMin("physical")) {
+       // replace _ufit with fit "boundary" conditional fit
+      _ufit = cfit_lbound(readOnly);
+      if (!_ufit) {
+         return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      }
    }
    auto cFactor = (fPllType==xRooFit::Asymptotics::TwoSided) ? 1. : xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
    if (cFactor == 0)
@@ -1688,6 +1697,58 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_null(bool re
    }
    nllVar->get()->setStringAttribute("fitresultTitle", collectionContents(poi()).c_str());
    return (fNull_cfit = nllVar->minimize());
+}
+
+std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_lbound(bool readOnly)
+{
+    auto _first_poi = dynamic_cast<RooRealVar*>(poi().first());
+    if(!_first_poi) return nullptr;
+    if (!_first_poi->hasMin("physical")) return nullptr;
+    if (fLbound_cfit)
+        return fLbound_cfit;
+    if(auto rfit = retrieveFit(6)) {
+        return fLbound_cfit = rfit;
+    }
+    if (!nllVar || (readOnly && nllVar->get() && !nllVar->get()->getAttribute("readOnly")))
+        return nullptr;
+    if (!nllVar->fFuncVars)
+        nllVar->reinitialize();
+    AutoRestorer snap(*nllVar->fFuncVars, nllVar.get());
+    if (!fData.first) {
+        if(!readOnly && isExpected && fGenFit) {
+            // can try to do a readOnly in case can load from cache
+            bool tmp = nllVar->get()->getAttribute("readOnly");
+            nllVar->get()->setAttribute("readOnly");
+            auto out = cfit_lbound(true);
+            nllVar->get()->setAttribute("readOnly",tmp);
+            if(out) {
+                // retrieve from cache worked, no need to generate dataset
+                return out;
+            } else if(!tmp) { // don't need to setData if doing a readOnly fit
+                nllVar->setData(data());
+            }
+        }
+    } else if(!nllVar->get()->getAttribute("readOnly")) { // don't need to setData if doing a readOnly fit
+        nllVar->setData(fData);
+    }
+    if (fUfit) {
+        // move to ufit coords before evaluating
+        *nllVar->fFuncVars = fUfit->floatParsFinal();
+    }
+    nllVar->fFuncVars->setAttribAll("Constant", false);
+    *nllVar->fFuncVars = *coords; // will reconst the coords
+    nllVar->fFuncVars->setRealValue(_first_poi->GetName(),_first_poi->getMin("physical"));
+    if (nllVar->fFuncGlobs)
+        nllVar->fFuncGlobs->setAttribAll("Constant", true);
+    if(fPOIName()) nllVar->fFuncVars->find(fPOIName())
+                ->setStringAttribute("altVal", (!std::isnan(fAltVal())) ? TString::Format("%g", fAltVal()) : nullptr);
+    if (fGenFit) {
+        nllVar->get()->SetName(
+                TString::Format("%s/%s_%s", nllVar->get()->GetName(), fGenFit->GetName(), (isExpected) ? "asimov" : "toys"));
+        if(!isExpected) nllVar->get()->SetName(TString::Format("%s/%s",nllVar->get()->GetName(),fData.first->GetName()));
+    }
+    nllVar->get()->setStringAttribute("fitresultTitle", collectionContents(*std::unique_ptr<RooAbsCollection>(nllVar->fFuncVars->selectCommon(poi()))).c_str());
+    return (fLbound_cfit = nllVar->minimize());
 }
 
 std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt(bool readOnly)
@@ -2527,7 +2588,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    }
    fitMeta.setCatIndex("pllType",int(fPllType));
    fitMeta.addClone(RooRealVar("isExpected","isExpected",int(isExpected)));
-   fitDetails.addClone(RooCategory("type","fit type",{{"ufit",0},{"cfit_null",1},{"cfit_alt",2},{"asimov_ufit",3},{"asimov_cfit_null",4},{"gen",5}}));
+   fitDetails.addClone(RooCategory("type","fit type",{{"ufit",0},{"cfit_null",1},{"cfit_alt",2},{"asimov_ufit",3},{"asimov_cfit_null",4},{"gen",5},{"cfit_lbound",6}}));
    //fitDetails.addClone(RooStringVar("name", "Fit Name", "")); -- not supported properly in ROOT yet
    fitDetails.addClone(RooRealVar("status", "status", 0));
    fitDetails.addClone(RooRealVar("minNll", "minNll", 0));
@@ -2535,7 +2596,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    auto fitDS = new RooDataSet("fits","fit summary data",fitDetails);
    fitDS->convertToTreeStore(); // strings not stored properly in vector store, so do convert!
 
-   for(int i=0;i<6;i++) {
+   for(int i=0;i<7;i++) {
       std::shared_ptr<const RooFitResult> fit;
       switch(i) {
       case 0: fit = ufit(); break;
@@ -2544,6 +2605,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       case 3: fit = asimov() ? asimov()->ufit(true) : nullptr; break;
       case 4: fit = asimov() ? asimov()->cfit_null(true) : nullptr; break;
       case 5: fit = fGenFit; break;
+      case 6: fit = cfit_lbound(); break;
       }
       if(fit) {
          fitDetails.setCatIndex("type",i);

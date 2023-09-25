@@ -161,6 +161,7 @@ public:
       std::shared_ptr<const RooFitResult> ufit(bool readOnly = false);
       std::shared_ptr<const RooFitResult> cfit_null(bool readOnly = false);
       std::shared_ptr<const RooFitResult> cfit_alt(bool readOnly = false);
+      std::shared_ptr<const RooFitResult> cfit_lbound(bool readOnly = false); // cfit @ the lower bound of mu
       std::shared_ptr<const RooFitResult> gfit() { return fGenFit; } // non-zero if data was generated
 
       std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> fData;
@@ -223,7 +224,7 @@ public:
 
       std::shared_ptr<const RooAbsCollection> coords; // pars of the nll that will be held const alongside POI
 
-      std::shared_ptr<const RooFitResult> fUfit, fNull_cfit, fAlt_cfit;
+      std::shared_ptr<const RooFitResult> fUfit, fNull_cfit, fAlt_cfit, fLbound_cfit;
       std::shared_ptr<const RooFitResult> fGenFit; // if the data was generated, this is the fit is was generated from
       bool isExpected = false;                     // if genFit, flag says is asimov or not
 
