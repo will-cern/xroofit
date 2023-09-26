@@ -155,11 +155,11 @@ public:
       }
 
       // inverse of PValue function
-      static Double_t k(const IncompatFunc &compatRegions, double pValue, double poiVal, double poiPrimeVal,
+      static double k(const IncompatFunc &compatRegions, double pValue, double poiVal, double poiPrimeVal,
                         double sigma_mu = 0, double mu_low = -std::numeric_limits<double>::infinity(),
                         double mu_high = std::numeric_limits<double>::infinity());
 
-      static Double_t k(const PLLType &pllType, double pValue, double mu, double mu_prime, double sigma_mu = 0,
+      static double k(const PLLType &pllType, double pValue, double mu, double mu_prime, double sigma_mu = 0,
                         double mu_low = -std::numeric_limits<double>::infinity(),
                         double mu_high = std::numeric_limits<double>::infinity())
       {
@@ -167,18 +167,18 @@ public:
       }
 
       // Recommend sigma_mu = |mu - mu_prime|/sqrt(pll_mu(asimov_mu_prime))
-      static Double_t PValue(const IncompatFunc &compatRegions, double k, double mu, double mu_prime,
+      static double PValue(const IncompatFunc &compatRegions, double k, double mu, double mu_prime,
                              double sigma_mu = 0, double mu_low = -std::numeric_limits<double>::infinity(),
                              double mu_high = std::numeric_limits<double>::infinity());
 
-      static Double_t PValue(const PLLType &pllType, double k, double mu, double mu_prime, double sigma_mu = 0,
+      static double PValue(const PLLType &pllType, double k, double mu, double mu_prime, double sigma_mu = 0,
                              double mu_low = -std::numeric_limits<double>::infinity(),
                              double mu_high = std::numeric_limits<double>::infinity())
       {
          return PValue(IncompatibilityFunction(pllType, mu), k, mu, mu_prime, sigma_mu, mu_low, mu_high);
       }
 
-      static Double_t Phi_m(double mu, double mu_prime, double a, double sigma, const IncompatFunc &compatRegions);
+      static double Phi_m(double mu, double mu_prime, double a, double sigma, const IncompatFunc &compatRegions);
 
       static int CompatFactor(const IncompatFunc &func, double mu_hat);
 

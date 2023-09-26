@@ -145,7 +145,7 @@ void xRooNode::Interactive_PLLPlot()
    // TObject *select = gPad->GetSelected();
    // if(!select) return;
    // if (!select->InheritsFrom(TGraph::Class())) {gPad->SetUniqueID(0); return;}
-   // gPad->GetCanvas()->FeedbackMode(kTRUE);
+   // gPad->GetCanvas()->FeedbackMode(true);
 
    auto _pull_pad = gPad->GetPad(1);
    auto _hidden_pad = gPad->GetPad(2);
@@ -164,8 +164,8 @@ void xRooNode::Interactive_PLLPlot()
    // if(pxold) gVirtualX->DrawLine(pxold,pymin,pxold,pymax);
    // gVirtualX->DrawLine(px,pymin,px,pymax);
    gPad->SetUniqueID(px);
-   Float_t upx = gPad->AbsPixeltoX(px);
-   Float_t x = gPad->PadtoX(upx);
+   float upx = gPad->AbsPixeltoX(px);
+   float x = gPad->PadtoX(upx);
 
    // find which graph in the hidden pad best reflects current x value
    TObject *foundGraph = nullptr;

@@ -363,7 +363,7 @@ void xRooNLLVar::reinitialize()
                   std::unique_ptr<RooArgSet> obs(a->getObservables(fData->get()));
                   if (obs->size() == 1) { // RooNLLVar requires exactly 1 obs
                      auto *var = static_cast<RooRealVar *>(obs->first());
-                     std::unique_ptr<std::list<Double_t>> boundaries{dynamic_cast<RooAbsReal *>(a)->binBoundaries(
+                     std::unique_ptr<std::list<double>> boundaries{dynamic_cast<RooAbsReal *>(a)->binBoundaries(
                         *var, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity())};
                      if (boundaries) {
                         if (!std::shared_ptr<RooAbsReal>::get())
@@ -942,7 +942,7 @@ std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> 
    return std::make_pair(fData, fGlobs);
 }
 
-Bool_t xRooNLLVar::setData(const xRooNode &data)
+bool xRooNLLVar::setData(const xRooNode &data)
 {
    if (data.fComp && !data.get<RooAbsData>()) {
       return false;
@@ -951,7 +951,7 @@ Bool_t xRooNLLVar::setData(const xRooNode &data)
                   std::shared_ptr<const RooAbsCollection>(data.globs().argList().snapshot()));
 }
 
-Bool_t xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> &_data)
+bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> &_data)
 {
 
    if (fData == _data.first && fGlobs == _data.second)

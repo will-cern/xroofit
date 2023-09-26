@@ -656,9 +656,9 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
    auto _nllVars = std::unique_ptr<RooAbsCollection>(_nll->getVariables());
 
-   std::unique_ptr<RooAbsCollection> constPars(_nllVars->selectByAttrib("Constant", kTRUE));
+   std::unique_ptr<RooAbsCollection> constPars(_nllVars->selectByAttrib("Constant", true));
    constPars->add(fUserPars, true); // add here so checked for when loading from cache
-   std::unique_ptr<RooAbsCollection> floatPars(_nllVars->selectByAttrib("Constant", kFALSE));
+   std::unique_ptr<RooAbsCollection> floatPars(_nllVars->selectByAttrib("Constant", false));
 
    int _progress = 0;
    double boundaryCheck = 0;

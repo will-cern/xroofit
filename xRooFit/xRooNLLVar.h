@@ -406,12 +406,12 @@ public:
    double pgof() const; // a goodness-of-fit pvalue based on profile likelihood of a saturated model
 
    // change the dataset - will check globs are the same
-   Bool_t setData(const std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> &_data);
-   Bool_t setData(const std::shared_ptr<RooAbsData> &data, const std::shared_ptr<const RooAbsCollection> &globs)
+   bool setData(const std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> &_data);
+   bool setData(const std::shared_ptr<RooAbsData> &data, const std::shared_ptr<const RooAbsCollection> &globs)
    {
       return setData(std::make_pair(data, globs));
    }
-   Bool_t setData(const xRooNode &data);
+   bool setData(const xRooNode &data);
 
    // using shared ptrs everywhere, even for RooLinkedList which needs custom deleter to clear itself
    // but still work ok for assignment operations

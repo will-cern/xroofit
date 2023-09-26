@@ -645,7 +645,7 @@ void xRooNode::Browse(TBrowser *b)
          v->TNamed::SetNameTitle(nameSave, titleSave);
       if (_checked != -1) {
          dynamic_cast<TQObject *>(b->GetBrowserImp())
-            ->Connect("Checked(TObject *, Bool_t)", ClassName(), v.get(), "Checked(TObject *, Bool_t)");
+            ->Connect("Checked(TObject *, bool)", ClassName(), v.get(), "Checked(TObject *, bool)");
       }
       if (_fr) {
          if(_fr->status() || _fr->covQual()!=3) { // snapshots or bad fits
@@ -712,7 +712,7 @@ void xRooNode::Browse(TBrowser *b)
    b->SetSelected(this);
 }
 
-void xRooNode::_ShowVars_(Bool_t set)
+void xRooNode::_ShowVars_(bool set)
 {
    if (!set) {
       // can't remove as causes a crash, need to remove from the browser first
@@ -754,19 +754,19 @@ class Axis2 : public TAxis {
 
 public:
    using TAxis::TAxis;
-   Double_t GetBinWidth(Int_t bin) const override
+   double GetBinWidth(Int_t bin) const override
    {
       if (auto v = var(); v)
          return v->getBinWidth(bin - 1, GetName());
       return 1;
    }
-   Double_t GetBinLowEdge(Int_t bin) const override
+   double GetBinLowEdge(Int_t bin) const override
    {
       if (auto v = rvar(); v)
          return (bin==v->getBinning(GetName()).numBins()+1) ? v->getBinning(GetName()).binHigh(bin-2) : v->getBinning(GetName()).binLow(bin - 1);
       return bin - 1;
    }
-   Double_t GetBinUpEdge(Int_t bin) const override
+   double GetBinUpEdge(Int_t bin) const override
    {
       if (auto v = rvar(); v)
          return (bin==0) ? v->getBinning(GetName()).binLow(bin) : v->getBinning(GetName()).binHigh(bin - 1);
@@ -785,20 +785,20 @@ public:
          dynamic_cast<TNamed *>(GetParent())->SetTitle(title);
    }
 
-   void Set(Int_t nbins, const Double_t *xbins) override
+   void Set(Int_t nbins, const double *xbins) override
    {
       if (auto v = dynamic_cast<RooRealVar *>(rvar()))
          v->setBinning(RooBinning(nbins, xbins), GetName());
       TAxis::Set(nbins, xbins);
    }
-   void Set(Int_t nbins, const Float_t *xbins) override
+   void Set(Int_t nbins, const float *xbins) override
    {
       std::vector<double> bins(nbins + 1);
       for (int i = 0; i <= nbins; i++)
          bins.at(i) = xbins[i];
       return Set(nbins, &bins[0]);
    }
-   void Set(Int_t nbins, Double_t xmin, Double_t xmax) override
+   void Set(Int_t nbins, double xmin, double xmax) override
    {
       if (auto v = dynamic_cast<RooRealVar *>(rvar()))
          v->setBinning(RooUniformBinning(xmin, xmax, nbins), GetName());
@@ -808,7 +808,7 @@ public:
    const RooAbsBinning *binning() const { return var()->getBinningPtr(GetName()); }
 
    Int_t FindFixBin(const char *label) const override { return TAxis::FindFixBin(label); }
-   Int_t FindFixBin(Double_t x) const override { return (binning()) ? (binning()->binNumber(x) + 1) : x; }
+   Int_t FindFixBin(double x) const override { return (binning()) ? (binning()->binNumber(x) + 1) : x; }
 
 private:
    RooAbsLValue *var() const { return dynamic_cast<RooAbsLValue *>(GetParent()); }
@@ -2049,7 +2049,7 @@ xRooNode::~xRooNode()
    // std::cout << "deleting " << GetPath() << std::endl;
 }
 
-void xRooNode::SetHidden(Bool_t set)
+void xRooNode::SetHidden(bool set)
 {
    if (auto a = get<RooAbsArg>()) {
       a->setAttribute("hidden", set);
@@ -6052,7 +6052,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
                 auto fr = std::make_shared<RooFitResult>(TString::Format("%s-dirty",_fr->GetName()));
                 fr->SetTitle(TString::Format("%s parameter snapshot", GetName()));
                 fr->setFinalParList(*_pars);
-                TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(_fr,_VM));
+                TMatrixTSym<double> *prevCov = static_cast<TMatrixTSym<double>*>(GETDMP(_fr,_VM));
                 if (prevCov) {
                    auto cov = _fr->reducedCovarianceMatrix(*_pars);
                    // make the diagonals all the current error values
@@ -6108,7 +6108,7 @@ xRooNode xRooNode::fitResult(const char *opt) const
    fr->setStatus(-1);
 
    TMatrixDSym cov(fr->floatParsFinal().getSize());
-   TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(fr.get(),_VM));
+   TMatrixTSym<double> *prevCov = static_cast<TMatrixTSym<double>*>(GETDMP(fr.get(),_VM));
    if (prevCov) {
       for (int i = 0; i < prevCov->GetNcols(); i++) {
          for (int j = 0; j < prevCov->GetNrows(); j++) {
@@ -6648,8 +6648,8 @@ public:
    {
    }
    virtual TObject *clone(const char *newname) const override { return new PdfWrapper(*this, newname); }
-   Bool_t isBinnedDistribution(const RooArgSet &obs) const override { return fFunc->isBinnedDistribution(obs); }
-   std::list<Double_t> *binBoundaries(RooAbsRealLValue &obs, Double_t xlo, Double_t xhi) const override
+   bool isBinnedDistribution(const RooArgSet &obs) const override { return fFunc->isBinnedDistribution(obs); }
+   std::list<double> *binBoundaries(RooAbsRealLValue &obs, double xlo, double xhi) const override
    {
       return fFunc->binBoundaries(obs, xlo, xhi);
    }
@@ -6664,7 +6664,7 @@ public:
    bool selfNormalized() const override { return true; } // so that doesn't try to do an integral because we are passing integration onto fFunc in evaluate
 
    // faster than full evaluation because doesnt make the integral dependent on the full expression
-   Double_t getSimplePropagatedError(const RooFitResult &fr, const RooArgSet &nset_in) const
+   double getSimplePropagatedError(const RooFitResult &fr, const RooArgSet &nset_in) const
    {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 28, 00)
       double oo = getPropagatedError(fr,nset_in); // method was improved in 6.28 so use this instead
@@ -6810,7 +6810,7 @@ public:
          }
       }
 
-      std::vector<Double_t> plusVar, minusVar;
+      std::vector<double> plusVar, minusVar;
 
       // Create vector of plus,minus variations for each parameter
       TMatrixDSym V(paramList.getSize() == fr.floatParsFinal().getSize() ? fr.covarianceMatrix()
@@ -6820,8 +6820,8 @@ public:
 
          RooRealVar &rrv = (RooRealVar &)fpf[fpf_idx[ivar]];
 
-         Double_t cenVal = rrv.getVal();
-         Double_t errVal = sqrt(V(ivar, ivar));
+         double cenVal = rrv.getVal();
+         double errVal = sqrt(V(ivar, ivar));
 
          // Make Plus variation
          ((RooRealVar *)paramList.at(ivar))->setVal(cenVal + errVal);
@@ -6857,7 +6857,7 @@ public:
       }
 
       // Calculate error in linear approximation from variations and correlation coefficient
-      Double_t sum = F * (C * F);
+      double sum = F * (C * F);
 
       //delete cloneFunc;
       delete errorParams;
@@ -7327,7 +7327,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          //            fr->setFinalParList(l2);
          //        }
 
-         TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t> *>(GETDMP(fr, _VM));
+         TMatrixTSym<double> *prevCov = static_cast<TMatrixTSym<double> *>(GETDMP(fr, _VM));
 
          if (!prevCov || size_t(fr->covarianceMatrix().GetNcols()) < fr->floatParsFinal().size()) {
             TMatrixDSym cov(fr->floatParsFinal().getSize());
@@ -7666,14 +7666,14 @@ void xRooNode::Inspect() const
       TNamed::Inspect();
 }
 
-Bool_t TopRightPlaceBox(TPad *p, TObject *o, Double_t w, Double_t h, Double_t &xl, Double_t &yb)
+bool TopRightPlaceBox(TPad *p, TObject *o, double w, double h, double &xl, double &yb)
 {
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
    // reinitialize collide grid because the filling depends on fUxmin and fUxmax (and ymin ymax too)
    // and these aren't filled on the first time we do the placement (they init to 0 and 1), but will be filled subsequently
    for (int i = 0; i < p->fCGnx; i++) {
       for (int j = 0; j < p->fCGny; j++) {
-         p->fCollideGrid[i + j * p->fCGnx] = kTRUE;
+         p->fCollideGrid[i + j * p->fCGnx] = true;
       }
    }
    p->FillCollideGrid(o);
@@ -7688,13 +7688,13 @@ Bool_t TopRightPlaceBox(TPad *p, TObject *o, Double_t w, Double_t h, Double_t &x
          if (p->Collide(i, j, iw, ih)) {
             continue;
          } else {
-            xl = (Double_t)(i) / (Double_t)(p->fCGnx);
-            yb = (Double_t)(j) / (Double_t)(p->fCGny);
-            return kTRUE;
+            xl = (double)(i) / (double)(p->fCGnx);
+            yb = (double)(j) / (double)(p->fCGny);
+            return true;
          }
       }
    }
-   return kFALSE;
+   return false;
 #else
    return p->PlaceBox(o, w, h, xl, yb, "trw");
 #endif
@@ -10061,7 +10061,7 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
    //        fr->setFinalParList(l2);
    //    }
 
-   TMatrixTSym<Double_t> *prevCov = static_cast<TMatrixTSym<Double_t>*>(GETDMP(fr.get(),_VM));
+   TMatrixTSym<double> *prevCov = static_cast<TMatrixTSym<double>*>(GETDMP(fr.get(),_VM));
 
 
    if (!prevCov || size_t(prevCov->GetNcols()) < fr->floatParsFinal().size()) {
