@@ -2496,7 +2496,7 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
                i++;
             }
          }
-         // then scale the relevant bin ... if the relevent bin is a "1" then just drop in our factor (inside a
+         // then scale the relevant bin ... if the relevant bin is a "1" then just drop in our factor (inside a
          // RooProduct though, to avoid it getting modified by subsequent multiplies)
          auto _bin = binFactors->bins().at(fBinNumber - 1);
          if (auto phf = binFactors->get<ParamHistFunc>(); phf && _bin) {
@@ -5194,83 +5194,7 @@ xRooNode xRooNode::components() const
       for (auto& a : *p4) {
          out.emplace_back(std::make_shared<xRooNode>(*a,*this));
       }
-   } /*else if(auto p = get<RooFitResultTree>(); p) {
-       long _nentries = p->GetEntries();
-
-       // iterate up through parents until we are out of the tree
-       int depth = 0;
-       auto _pdf = fParent;
-       while(_pdf && _pdf->get()==p) {
-           _pdf = _pdf->fParent;
-           depth++;
-       }
-
-       // first layer is organised by dsid ...
-       if (depth==0) {
-           long total = 0;
-           for (auto &_d : _pdf->datasets()) { // parent of a frt should be the pdf
-               auto _hash = RooAbsTree::nameToHash(_d->get()->GetName());
-               TString _sel = TString::Format("data_hash.first==%d&&data_hash.second==%d", _hash.first, _hash.second);
-               auto nFits = p->get()->GetEntries(_sel);
-               if (nFits > 0) {
-                   total += nFits;
-                   out.emplace_back(std::make_shared<xRooNode>( _d->GetName(), fComp, *this));
-               }
-               if (total >= _nentries) break;
-           }
-           if (total < _nentries) {
-               out.emplace_back(std::make_shared<xRooNode>("otherDatasets", fComp, *this));
-           }
-       } else if(depth==1) {
-           // get unconditional fit if we can ...
-           std::string dName = (strcmp(GetName(),"otherDatasets")==0) ? "*" : GetName();
-           long total = 0;
-           if(auto _ufits = p->GetEntrys(p->BuildSelection(dName, std::map<std::string, double>{})); !_ufits.empty()) {
-               for(auto i : _ufits) {
-                   auto _fr = p->GetFit(i);
-                   TUUID uuid(_fr->GetName());
-                   TString _name = (dName=="*") ? _fr->GetTitle() : "";
-                   if (_name!="") _name += ";";
-                   // before adding a copy of fit, see if fit already exists in this and reuse
-                   _name += uuid.GetTime().AsString();
-                   if (auto _existing = find(_name.Data()); _existing) {
-                       out.emplace_back(std::make_shared<xRooNode>(*_existing));
-                   } else {
-                       out.emplace_back(std::make_shared<xRooNode>(_name, _fr, *this));
-                       out.back()->fFolder = "!unconditional";
-                   }
-
-               }
-               total += _ufits.size();
-           }
-           for(auto& _par : *p->GetParameters()) {
-               if (total >= _nentries) break;
-               if (_par->getAttribute("Constant")) continue;
-               //auto _sel = p->BuildSelection(dName,{{_par->GetName(),
-   {dynamic_cast<RooRealVar*>(_par)->getMin(),dynamic_cast<RooRealVar*>(_par)->getMax()}}}); if (auto n = p->GetEntrys(
-                           p->BuildSelection(dName, {{_par->GetName(), std::numeric_limits<double>::quiet_NaN()}}),
-   1).size();n > 0) {
-               //if (p->get()->GetEntries(_sel) > 0) {
-                   out.emplace_back(std::make_shared<xRooNode>(_par->GetName(),fComp,*this));
-                   total += n;
-               }
-           }
-       } else if(depth==2) {
-           std::string dName = (strcmp(fParent->GetName(),"otherDatasets")==0) ? "*" : fParent->GetName();
-           //std::cout << p->BuildSelection(dName,{{GetName(),std::numeric_limits<double>::quiet_NaN()}}).GetTitle() <<
-   std::endl; for(auto& i : p->GetEntrys( p->BuildSelection(dName, {{GetName(),
-   std::numeric_limits<double>::quiet_NaN()}}), -1)) { auto _fr = p->GetFit(i); TString _name =
-   TString::Format("%f;%s",dynamic_cast<RooAbsReal*>(_fr->constPars().find(GetName()))->getVal(),TUUID(_fr->GetName()).GetTime().AsString());
-               if (auto _existing = find(_name.Data()); _existing) {
-                   out.emplace_back(std::make_shared<xRooNode>(*_existing));
-               } else {
-                   out.emplace_back(std::make_shared<xRooNode>(_name, _fr, *this));
-               }
-           }
-       }
-
-   }*/
-   else if (auto p5 = get<RooWorkspace>(); p5) {
+   } else if (auto p5 = get<RooWorkspace>(); p5) {
       for (auto &o : p5->components()) {
          // only top-level nodes (only clients are integrals or things that aren't part of the workspace)
          // if (o->hasClients()) continue;
@@ -5297,7 +5221,7 @@ xRooNode xRooNode::components() const
                // std::cout << " type = " << _pdf->get()->ClassName() << std::endl;
                out.emplace_back(std::make_shared<xRooNode>(fr->GetName(), *fr, _pdf));
                // for a while, this node's parent pointed to something of type Node2!!
-               // how to fix??? - I fxied it with a new constructo to avoid the shared_ptr<Node2> calling the const
+               // how to fix??? - I fxied it with a new constructor to avoid the shared_ptr<Node2> calling the const
                // Node2& constructor via getting wrapped in a Node2(shared_ptr<TObject>) call
                // out.back()->fParent = _pdf;
                // std::cout << " type2 = " << out.back()->fParent->get()->ClassName() << std::endl;
@@ -7216,7 +7140,7 @@ xRooNode xRooNode::histo(const xRooNode& vars, const xRooNode& fr, bool content,
 
                dynamic_cast<TNamed *>(ll->At(i))->SetTitle(_title.c_str());
 
-               // style hists according to availble styles ... creating if necessary
+               // style hists according to available styles ... creating if necessary
                auto _style = xRooNode(*ll->At(i),*this).style(ll->At(i));
                if(_style) {
                   *dynamic_cast<TAttLine *>(ll->At(i)) = *_style;
@@ -9703,7 +9627,7 @@ void xRooNode::Draw(Option_t *opt)
                 if (!commonSuffix.empty() && TString(_title).EndsWith(commonSuffix.c_str()))
                    _title = _title.substr(0, _title.length() - commonSuffix.length());
 
-                // style hists according to availble styles ... creating if necessary
+                // style hists according to available styles ... creating if necessary
                 dynamic_cast<TNamed *>(ll->At(i))->SetTitle(_title.c_str());
                 addLegendEntry(ll->At(i), _title.c_str(), "f");
              }
