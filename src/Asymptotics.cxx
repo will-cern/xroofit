@@ -10,7 +10,7 @@
 BEGIN_XROOFIT_NAMESPACE
 
 double xRooFit::Asymptotics::k(const IncompatFunc &compatRegions, double pValue, double poiVal, double poiPrimeVal,
-                                 double sigma, double low, double high)
+                               double sigma, double low, double high)
 {
 
    // determine the pll value corresponding to nSigma expected - i.e. where the altPValue equals e.g. 50% for nSigma=0,
@@ -36,7 +36,12 @@ double xRooFit::Asymptotics::k(const IncompatFunc &compatRegions, double pValue,
    struct TailIntegralFunction {
       TailIntegralFunction(double _poiVal, double _alt_val, double _sigma_mu, double _low, double _high,
                            IncompatFunc _compatibilityFunction, double _target)
-         : poiVal(_poiVal), alt_val(_alt_val), sigma_mu(_sigma_mu), low(_low), high(_high), target(_target),
+         : poiVal(_poiVal),
+           alt_val(_alt_val),
+           sigma_mu(_sigma_mu),
+           low(_low),
+           high(_high),
+           target(_target),
            cFunc(_compatibilityFunction)
       {
       }
@@ -94,7 +99,7 @@ double xRooFit::Asymptotics::k(const IncompatFunc &compatRegions, double pValue,
 }
 
 double xRooFit::Asymptotics::PValue(const IncompatFunc &compatRegions, double k, double poiVal, double poi_primeVal,
-                                      double sigma, double lowBound, double upBound)
+                                    double sigma, double lowBound, double upBound)
 {
    // uncapped test statistic is equal to onesidednegative when k is positive, and equal to 1.0 - difference between
    // twosided and onesidednegative when k is negative ...
@@ -132,9 +137,9 @@ double xRooFit::Asymptotics::PValue(const IncompatFunc &compatRegions, double k,
       return -1;
 
    double k_low = (lowBound == -std::numeric_limits<double>::infinity()) ? std::numeric_limits<double>::infinity()
-                                                                           : pow((poiVal - lowBound) / sigma, 2);
+                                                                         : pow((poiVal - lowBound) / sigma, 2);
    double k_high = (upBound == std::numeric_limits<double>::infinity()) ? std::numeric_limits<double>::infinity()
-                                                                          : pow((upBound - poiVal) / sigma, 2);
+                                                                        : pow((upBound - poiVal) / sigma, 2);
 
    double out = Phi_m(poiVal, poi_primeVal, std::numeric_limits<double>::infinity(), sigma, compatRegions) - 1;
 

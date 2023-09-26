@@ -15,20 +15,21 @@
 #include <fstream>
 
 struct cout_redirect {
-   cout_redirect(std::string &_out, size_t bufSize = 102 * 1024) : buffer2(nullptr), fp(nullptr), out(_out), fBufSize(bufSize)
+   cout_redirect(std::string &_out, size_t bufSize = 102 * 1024)
+      : buffer2(nullptr), fp(nullptr), out(_out), fBufSize(bufSize)
    {
 
       filename = "xRooFit-logging-";
       old = std::cout.rdbuf(buffer.rdbuf());
       old2 = std::cerr.rdbuf(buffer.rdbuf());
-      old3 = stdout; old4 = stderr;
-      //buffer2 = (char *)calloc(sizeof(char), bufSize);fp = fmemopen(buffer2, bufSize, "w");
+      old3 = stdout;
+      old4 = stderr;
+      // buffer2 = (char *)calloc(sizeof(char), bufSize);fp = fmemopen(buffer2, bufSize, "w");
       fp = gSystem->TempFileName(filename);
-      if(fp) {
+      if (fp) {
          stdout = fp;
          stderr = fp;
       }
-
    }
    ~cout_redirect()
    {
@@ -36,7 +37,7 @@ struct cout_redirect {
       std::cerr.rdbuf(old2);
       stdout = old3;
       stderr = old4;
-      if(fp) {
+      if (fp) {
          std::fclose(fp);
          {
             std::ifstream t(filename);
@@ -45,11 +46,12 @@ struct cout_redirect {
          gSystem->Unlink(filename); // delete the temp file
       }
       out = buffer.str();
-      if(buffer2) {
+      if (buffer2) {
          out += buffer2;
          free(buffer2);
       }
-      if (out.length() > fBufSize) out.resize(fBufSize);
+      if (out.length() > fBufSize)
+         out.resize(fBufSize);
    }
 
 private:
@@ -57,7 +59,8 @@ private:
    std::stringstream buffer;
    char *buffer2;
    FILE *fp;
-   FILE *old3; FILE *old4;
+   FILE *old3;
+   FILE *old4;
    std::string &out;
    TString filename;
    size_t fBufSize;
