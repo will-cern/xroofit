@@ -6854,7 +6854,7 @@ public:
          return sqrt(sum) ;
       }
       return oo;
-#endif
+#else
 
       // Strip out parameters with zero error
       RooArgList fpf_stripped;
@@ -6940,6 +6940,7 @@ public:
       delete nset;
 
       return sqrt(sum);
+#endif
    }
 
 private:
@@ -7518,9 +7519,9 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             if (hasRange) {
                 // commented out passing of normset so that getVal of non-pdf is always a 'raw' value (needed for raw eval of RooRealSumPdf)
                rar =
-                  rar->createIntegral(*_obs.get<RooArgList>(), /*RooFit::NormSet(normSet),*/ RooFit::Range("coordRange"));
+                  std::unique_ptr<RooAbsReal>{rar->createIntegral(*_obs.get<RooArgList>(), /*RooFit::NormSet(normSet),*/ RooFit::Range("coordRange"))}.release();
             } else {
-               rar = rar->createIntegral(*_obs.get<RooArgList>()/*, RooFit::NormSet(normSet)*/);
+               rar = std::unique_ptr<RooAbsReal>{rar->createIntegral(*_obs.get<RooArgList>()/*, RooFit::NormSet(normSet)*/)}.release();
             }
          }
       }

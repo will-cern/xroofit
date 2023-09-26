@@ -18,7 +18,7 @@
 #if !defined(XROOFIT_XROONLLVAR_H) || defined(XROOFIT_USE_PRAGMA_ONCE)
 #ifndef XROOFIT_USE_PRAGMA_ONCE
 #define XROOFIT_XROONLLVAR_H
-# endif
+#endif
 
 #include "xRooFit.h"
 

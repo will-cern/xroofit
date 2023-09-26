@@ -27,7 +27,7 @@
 // however for now users of xRooFit should only need to include the main xRooFit header to use it all
 // in future we should try removing the pragma once altogether (undef XROOFIT_USE_PRAGMA_ONCE)
 // and see if it has negative consequences anywhere
-# endif
+#endif
 
 /**
  * This is the main include for the xRooFit project.

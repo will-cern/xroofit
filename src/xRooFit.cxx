@@ -362,7 +362,7 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
          _out.first->add(_tmp);
       } else {
          if (_pdf->canBeExtended()) {
-            _out.first.reset(_pdf->generate(*_obs, RooFit::Extended(), RooFit::ExpectedData(expected)));
+            _out.first = std::unique_ptr<RooDataSet>{_pdf->generate(*_obs, RooFit::Extended(), RooFit::ExpectedData(expected))};
          } else {
             if (expected) {
                // use AsymptoticCalculator because generate expected not working correctly on unextended pdf?
@@ -370,7 +370,7 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
                // ObsToExpected?
                _out.first.reset(RooStats::AsymptoticCalculator::GenerateAsimovData(*_pdf, *_obs));
             } else {
-               _out.first.reset(_pdf->generate(*_obs, RooFit::ExpectedData(expected)));
+               _out.first = std::unique_ptr<RooDataSet>{_pdf->generate(*_obs, RooFit::ExpectedData(expected))};
             }
          }
       }
@@ -1098,7 +1098,7 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
       // method
 
       // signal(SIGINT,gOldHandlerr);
-      out.reset( _minimizer.save(fitName, resultTitle) );
+      out = std::unique_ptr<RooFitResult>{_minimizer.save(fitName, resultTitle)};
 
       // if status is 0 (min succeeded) but the covQual isn't fully accurate but requested hesse, reflect that in the status
       if(out->status()==0 && out->covQual()!=3 && hesse) {
@@ -1163,11 +1163,11 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
          }
          if (limit_status == 900) {
             if (printLevel >= 0)
-               Warning("miminize", "BOUNDCHK: Parameters within %g%% limit in fit result: %s", boundaryCheck * 100,
+               Warning("minimize", "BOUNDCHK: Parameters within %g%% limit in fit result: %s", boundaryCheck * 100,
                        listpars.c_str());
          } else if (limit_status > 0) {
             if (printLevel >= 0)
-               Warning("miminize", "BOUNDCHK: Parameters near limit in fit result");
+               Warning("minimize", "BOUNDCHK: Parameters near limit in fit result");
          }
 
          // store the limit check result
@@ -1238,7 +1238,11 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
 
    if (out && !logs.empty()) {
       // save logs to StringVar in constPars list
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,28,00)
+      const_cast<RooArgList &>(out->constPars()).addOwned(std::make_unique<RooStringVar>(".log", "log", logs.c_str()));
+#else
       const_cast<RooArgList &>(out->constPars()).addOwned(*new RooStringVar(".log", "log", logs.c_str()));
+#endif
    }
 
    if (out && cacheDir && cacheDir->IsWritable()) {
@@ -1268,8 +1272,11 @@ xRooFit::minimize(RooAbsReal &nll, const std::shared_ptr<ROOT::Fit::FitConfig> &
             dir->WriteObject(&fitConfig, configName.data());
          }
          // add the fitConfig name into the fit result before writing, so can retrieve in future
-         const_cast<RooArgList &>(out->constPars())
-            .addOwned(*new RooStringVar(".fitConfigName", "fitConfigName", configName.c_str()));
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6,28,00)
+         const_cast<RooArgList &>(out->constPars()).addOwned(std::make_unique<RooStringVar>(".fitConfigName", "fitConfigName", configName.c_str()));
+#else
+         const_cast<RooArgList &>(out->constPars()).addOwned(*new RooStringVar(".fitConfigName", "fitConfigName", configName.c_str()));
+#endif
          dir->WriteObject(out.get(), out->GetName());
          auto sfr = new StoredFitResult(out);
          dir->Add(sfr);
