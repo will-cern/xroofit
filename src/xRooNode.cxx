@@ -10,6 +10,15 @@
  * listed in LICENSE (http://roofit.sourceforge.net/license.txt)
  */
 
+/** \class ROOT::Experimental::XRooFit::xRooNode
+\ingroup xroofit
+
+The xRooNode class is designed to wrap over a TObject and provide functionality to aid with interacting with that object,
+ particularly in the case where the object is a RooFit class instance.
+It is a smart pointer to the object, so you have access to all the methods of the object too.
+ */
+
+
 #include "RVersion.h"
 
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
@@ -174,7 +183,7 @@ auto GETLISTTREE(TGFileBrowser *b)
 #include "RooNaNPacker.h"
 #endif
 
-BEGIN_XROOFIT_NAMESPACE
+BEGIN_XROOFIT_NAMESPACE;
 
 xRooNode::InteractiveObject *xRooNode::gIntObj = nullptr;
 std::map<std::string, std::tuple<std::function<double(double, double, double)>, bool>> xRooNode::auxFunctions;
@@ -6933,7 +6942,7 @@ public:
 
          // Re-evaluate this RooAbsReal with the central parameters just to be
          // extra-safe that a call to `getPropagatedError()` doesn't change any state.
-         // It should not be necessarry because thanks to the dirty flag propagation
+         // It should not be necessary because thanks to the dirty flag propagation
          // the RooAbsReal is re-evaluated anyway the next time getVal() is called.
          // Still there are imaginable corner cases where it would not be triggered,
          // for example if the user changes the RooFit operation more after the error
@@ -7668,7 +7677,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    }
 
    bool scaleExpected = (p && p->canBeExtended() && !_coefs.get());
-   // Note about above: if pdf has coeficients then its embedded in a RooAddPdf that has coefs defined ...
+   // Note about above: if pdf has coefficients then its embedded in a RooAddPdf that has coefs defined ...
    // in this case we should *not* scale by expected, since the coefs become the scaling instead
 
    std::unique_ptr<RooArgSet> snap(normSet.snapshot());
@@ -8712,7 +8721,7 @@ void xRooNode::Draw(Option_t *opt)
             int idx = pars.index(poiName.c_str());
             double reducedVar = fr->conditionalCovarianceMatrix(pars)(idx, idx);
             if (reducedVar > variance) {
-               Warning("Draw", "breakdown group %s variance bigger than preceeding?", group.c_str());
+               Warning("Draw", "breakdown group %s variance bigger than preceding?", group.c_str());
                pie->SetEntryVal(i, 0);
                pie->SetEntryLabel(i, TString::Format("%s: NaN", group.c_str()));
             } else {
@@ -10480,4 +10489,4 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
    return out;
 }
 
-END_XROOFIT_NAMESPACE
+END_XROOFIT_NAMESPACE;
