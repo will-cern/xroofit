@@ -1729,8 +1729,14 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::ufit(bool readOnl
          nllVar->get()->SetName(TString::Format("%s/%s", nllVar->get()->GetName(), fData.first->GetName()));
 
    } else if (!std::isnan(fAltVal())) {
-      // guess data given is expected to align with alt value
-      nllVar->fFuncVars->setRealValue(fPOIName(), fAltVal());
+      // guess data given is expected to align with alt value, unless initVal attribute specified
+      for(auto _poiCoord : poi()) {
+         auto _poi = dynamic_cast<RooRealVar *>(nllVar->fFuncVars->find(_poiCoord->GetName()));
+         if (_poi) {
+            _poi->setVal(_poi->getStringAttribute("initVal") ? TString(_poi->getStringAttribute("initVal")).Atof()
+                                                             : fAltVal());
+         }
+      }
    }
    return (fUfit = nllVar->minimize());
 }
