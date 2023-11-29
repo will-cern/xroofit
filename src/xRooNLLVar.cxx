@@ -2668,9 +2668,57 @@ double xRooNLLVar::xRooHypoPoint::fAltVal()
 xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints, double low, double high,
                                                 double alt_value, const xRooFit::Asymptotics::PLLType &pllType)
 {
+    if (nPoints < 0) {
+        // catches case where pyROOT has converted TestStatistic enum to int
+        int tsType = nPoints;
+       double alt_val = std::numeric_limits<double>::quiet_NaN();
+       if(tsType == xRooFit::TestStatistic::qmutilde || tsType==xRooFit::TestStatistic::qmu) {
+          alt_val = 0;
+       } else if(tsType == xRooFit::TestStatistic::q0 || tsType==xRooFit::TestStatistic::uncappedq0) {
+          alt_val = 1;
+       }
+
+       auto out = hypoSpace(parName,pllType,alt_val);
+
+       if(tsType == xRooFit::TestStatistic::qmutilde) {
+          // TODO: things like the physical range and alt value can't be stored on the poi
+          // because if they change they will change for all hypoSpaces at once, so cannot have
+          // two hypoSpace with e.g. different physical ranges.
+          // the hypoSpace should make a copy of them at some point
+          for(auto p : out.poi()) {
+             dynamic_cast<RooRealVar*>(p)->setRange("physical",0,std::numeric_limits<double>::infinity());
+             Info("xRooNLLVar::hypoSpace","Setting physical range of %s to [0,inf]",p->GetName());
+          }
+       }
+
+       // ensure pll type is set explicitly if known at this point
+       if(tsType == xRooFit::TestStatistic::qmutilde || tsType==xRooFit::TestStatistic::qmu) {
+          out.fTestStatType = xRooFit::Asymptotics::OneSidedPositive;
+       } else if(tsType==xRooFit::TestStatistic::uncappedq0) {
+          out.fTestStatType = xRooFit::Asymptotics::Uncapped;
+       } else if(tsType==xRooFit::TestStatistic::q0) {
+          out.fTestStatType = xRooFit::Asymptotics::OneSidedNegative;
+       }
+
+       // in this case the arguments are shifted over by one
+       if (int(low+0.5) > 0) {
+          out.AddPoints(parName, int(low+0.5), high, alt_value);
+       } else {
+           for(auto p : out.poi()) {
+               dynamic_cast<RooRealVar*>(p)->setRange("scan",high,alt_value);
+           }
+       }
+       return out;
+    }
+
    xRooNLLVar::xRooHypoSpace hs = hypoSpace(parName, pllType, alt_value);
    if (nPoints > 0)
       hs.AddPoints(parName, nPoints, low, high);
+   else {
+       for(auto p : hs.poi()) {
+           dynamic_cast<RooRealVar*>(p)->setRange("scan",low,high);
+       }
+   }
    return hs;
 }
 
