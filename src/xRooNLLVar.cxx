@@ -986,6 +986,9 @@ void xRooNLLVar::Draw(Option_t *opt)
       TArrow a;
       a.DrawArrow(init, 0, init, -0.1);
       gPad->Update();
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+      gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+#endif
       gSystem->ProcessEvents();
       v->setVal(init);
    } else {
@@ -2198,6 +2201,9 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
       Draw();
       if (gPad) {
          gPad->Update();
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+         gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+#endif
          gSystem->ProcessEvents();
       }
    }

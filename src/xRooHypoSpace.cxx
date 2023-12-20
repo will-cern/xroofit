@@ -1257,6 +1257,9 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
             gPad->RedrawAxis();
             gPad->GetCanvas()->Paint();
             gPad->GetCanvas()->Update();
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+            gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+#endif
             gSystem->ProcessEvents();
          }
          gSystem->ProcessEvents();
@@ -1674,6 +1677,9 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
             gPad->RedrawAxis();
             gPad->GetCanvas()->Paint();
             gPad->GetCanvas()->Update();
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+            gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+#endif
             gSystem->ProcessEvents();
          }
       }
@@ -1825,6 +1831,9 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
    }
    basePad->GetCanvas()->Paint();
    basePad->GetCanvas()->Update();
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+   basePad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+#endif
    gSystem->ProcessEvents();
 
    // finish by overlaying ufit
