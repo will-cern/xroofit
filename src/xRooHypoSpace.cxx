@@ -1057,6 +1057,11 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(
                if (gPad)
                   gPad->Clear();
                gra->DrawClone(expBand ? "AF" : "ALP")->SetBit(kCanDelete);
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+               if(auto pad = gROOT->GetSelectedPad()) {
+                  pad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+               }
+#endif
                gSystem->ProcessEvents();
             }
          } else {
@@ -1135,6 +1140,11 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(
       if (gPad)
          gPad->Clear();
       out->DrawClone(expBand ? "AF" : "ALP")->SetBit(kCanDelete);
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+      if(auto pad = gROOT->GetSelectedPad()) {
+         pad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+      }
+#endif
       gSystem->ProcessEvents();
    }
 
@@ -1260,7 +1270,6 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
             gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
 #endif
-            gSystem->ProcessEvents();
          }
          gSystem->ProcessEvents();
       }
@@ -1371,6 +1380,9 @@ xRooNLLVar::xRooHypoSpace::findlimit(const char *opt, double relUncert, unsigned
          gra->GetHistogram()->SetMinimum(1e-9);
          gra->GetHistogram()->GetYaxis()->SetRangeUser(1e-9, 1);
          gPad->Modified();
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+         gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+#endif
          gSystem->ProcessEvents();
       }
    }
