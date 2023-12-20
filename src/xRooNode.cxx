@@ -469,6 +469,11 @@ void xRooNode::Checked(TObject *obj, bool val)
       if (auto fr = get<RooFitResult>(); fr) {
          if (auto _ws = ws(); _ws) {
             if (val) {
+                // ensure fit result is in genericObjects list ... if not, add a copy ...
+                if(!_ws->genobj(fr->GetName())) {
+                    _ws->import(*fr);
+                    if(auto wfr = dynamic_cast<RooFitResult*>(_ws->genobj(fr->GetName()))){fr = wfr;}
+                }
                RooArgSet _allVars = _ws->allVars();
                _allVars = fr->floatParsFinal();
                _allVars = fr->constPars();
@@ -9433,14 +9438,16 @@ void xRooNode::Draw(Option_t *opt)
                   int binNum = mainHist->FindFixBin(ratioGraph->GetPointX(i));
                   double nom = mainHist->GetBinContent(binNum);
                   double nomerr = mainHist->GetBinError(binNum);
-                  ratioGraph->SetPointY(
-                     i, std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(ratioGraph->GetPointY(i), nom, nomerr));
-                  ratioGraph->SetPointEYhigh(i, std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(
-                                                   val + ratioGraph->GetErrorYhigh(i), nom, nomerr) -
-                                                   ratioGraph->GetPointY(i));
-                  ratioGraph->SetPointEYlow(i, ratioGraph->GetPointY(i) -
-                                                  std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(
-                                                     val - ratioGraph->GetErrorYlow(i), nom, nomerr));
+                  double yval = std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(ratioGraph->GetPointY(i), nom, nomerr);
+                  double yup = std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(
+                          val + ratioGraph->GetErrorYhigh(i), nom, nomerr) - yval;
+                  double ydown = yval - std::get<0>(auxFunctions[h->GetYaxis()->GetTitle()])(val - ratioGraph->GetErrorYlow(i),nom,nomerr);
+                  if(!std::isnan(yval)) {
+                     ratioGraph->SetPointY(i, yval );
+                     if(!std::isnan(yup)) ratioGraph->SetPointEYhigh(i, yup );
+                     if(!std::isnan(ydown)) ratioGraph->SetPointEYlow(i, ydown);
+                  }
+
                }
                // remove the zero points
                int i = 0;
@@ -9460,7 +9467,6 @@ void xRooNode::Draw(Option_t *opt)
             }
          }
       }
-
       dataGraph->Draw("z0p same");
       addLegendEntry((noPoint) ? nullptr : dataGraph, strlen(dataGraph->GetTitle()) ? dataGraph->GetTitle() : GetName(),
                      noPoint ? "" : "pEX0");
