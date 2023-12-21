@@ -330,8 +330,9 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
                s->setAttribute("obs");
                s->setAttribute("global");
             }
-         }
-         if (TString(k).EndsWith("_POI")) {
+         } else if (TString(k).EndsWith("_Observables")) {
+             const_cast<RooArgSet &>(v).setAttribAll("obs");
+         } else if (TString(k).EndsWith("_POI")) {
             for (auto &s : v) {
                s->setAttribute("poi");
                auto _v = dynamic_cast<RooRealVar *>(s);
@@ -6218,7 +6219,11 @@ xRooNode xRooNode::fitResult(const char *opt) const
                   auto cov = _fr->reducedCovarianceMatrix(*_pars);
                   // make the diagonals all the current error values
                   for (size_t i = 0; i < _pars->size(); i++) {
-                     cov(i, i) = pow(dynamic_cast<RooRealVar *>(_pars->at(i))->getError(), 2);
+                      if(auto v = dynamic_cast<RooRealVar *>(_pars->at(i))) {
+                          cov(i, i) = pow(v->getError(), 2);
+                      } else {
+                          cov(i,i) = 0;
+                      }
                   }
                   fr->setCovarianceMatrix(cov);
                }
@@ -6284,7 +6289,11 @@ xRooNode xRooNode::fitResult(const char *opt) const
    int i = 0;
    for (auto &p : fr->floatParsFinal()) {
       if (!prevCov || i >= prevCov->GetNcols()) {
-         cov(i, i) = pow(dynamic_cast<RooRealVar *>(p)->getError(), 2);
+          if(auto v = dynamic_cast<RooRealVar *>(p)) {
+              cov(i, i) = pow(v->getError(), 2);
+          } else {
+              cov(i,i) = 0;
+          }
       }
       i++;
    }
