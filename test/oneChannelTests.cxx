@@ -9,6 +9,8 @@
 #include "RooAbsData.h"
 #include "RooFitResult.h"
 #include "TSystem.h"
+#include "RooFormulaVar.h"
+#include "RooStats/HypoTestInverterResult.h"
 #include <thread>
 #endif
 
@@ -52,7 +54,7 @@ void altOneChannel() {
 
     // overall and histo factors can be varied
     w["myModel"]->variations()["myChannel"]->factors()["samples"]->components()["s1"]->factors().Add("c1_s1_overall","overall");
-    w["myModel"]->variations()["myChannel"]->factors()["samples"]->components()["s1"]->factors()["c1_s1_overall"]->variations()["ucs=1"]->SetContents(1.1);
+    w["myModel"]->variations()["myChannel"]->factors()["samples"]->components()["s1"]->factors()["c1_s1_overall"]->variations()["ucs=1"]->SetContent(1.1);
     // the main sample histo factor, so can also be varied:
     w["myModel"]->variations()["myChannel"]->factors()["samples"]->components()["s1"]->factors()["s1"]->variations()["d=1"]->SetBinContent(3,3);
 
@@ -88,8 +90,8 @@ xRooNode buildModel(double data, double bkg, double bkg_uncert, double sig, doub
     // types of factor are: norm, overall, shape, histo
     if(sig_uncert_up > 0 || sig_uncert_down > 0) {
         w["simPdf/channel1/sig"]->Multiply("c1_sig_overall", "overall"); // add an overall factor that we will vary
-        w["simPdf/channel1/sig/c1_sig_overall"]->SetContents(sig_uncert_up, "ucs", 1);
-        w["simPdf/channel1/sig/c1_sig_overall"]->SetContents(sig_uncert_down, "ucs", -1);
+        w["simPdf/channel1/sig/c1_sig_overall"]->SetContent(sig_uncert_up, "ucs", 1);
+        w["simPdf/channel1/sig/c1_sig_overall"]->SetContent(sig_uncert_down, "ucs", -1);
         w["simPdf"]->pars()["ucs"]->Constrain("normal"); // constrain it
     }
     if(lumi_uncert>0) {
@@ -221,6 +223,20 @@ double testPoint(xRooNode w, double testValue = 1, double altValue = 0, int nToy
 
 #ifndef __CLING__
 
+TEST(iterateTest,iterateTest) {
+    // purpose of this test is to test the custom iteration (xRooNodeIterator)
+    // which is designed to browse the objects as they are obtained by dereferencing the iterator
+
+    auto _w = buildModel(0,0.43,0.16,5.611,1.19266,0.807337,0.017);
+
+    xRooNode w(*_w.ws());
+
+    for(auto n : *w["simPdf"]) {
+        ASSERT_NE(n->size(),0);
+    }
+
+}
+
 TEST(test1,test1) {
 
     auto res = testPoint(buildModel(0,0.43,0.16,5.611,1.19266,0.807337,0.017),
@@ -229,9 +245,9 @@ TEST(test1,test1) {
     //old res: 0.0019764892592501124 - got without change to ranges on POI
 
     // updte to 00188366 when realised "physical" range isnt propagated into floatParsFinal in FitResults
-
-    ASSERT_LT(res, 0.00188366 + 1e-7);
-    ASSERT_GT(res, 0.00188366 - 1e-7);
+    // Sep2023: update to 0.00197646 once implemented lower-bound feature of pll test statistic (cfit_lbound)
+    ASSERT_LT(res, 0.00197646 + 1e-7);
+    ASSERT_GT(res, 0.00197646 - 1e-7);
 
 }
 
@@ -248,6 +264,37 @@ TEST(test1,limiTest1) {
 
     auto model = buildModel(20,16,0,1,0,0,0);
 
+
+}
+
+TEST(test2,twoChannelTests) {
+    xRooNode w("RooWorkspace","w","w");
+    TH1D chan1_bkg("chan1_bkg","Background;dummyObs",1,0,1);chan1_bkg.SetBinContent(1,10);chan1_bkg.SetBinError(1,0.1);w["simPdf/chan1"]->Add(chan1_bkg);
+    auto chan1_data = static_cast<TH1D*>(chan1_bkg.Clone("chan1_data")); chan1_data->SetTitle("Data");
+    chan1_data->SetBinContent(1,chan1_data->GetBinContent(1)+1);
+    w["simPdf/chan1"]->datasets()["obsData"]->Add(*chan1_data);
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->datasets()["obsData"]->GetBinContent(1),chan1_data->GetBinContent(1));
+
+    TH1D chan2_bkg("chan2_bkg","Background;dummyObs",1,0,1);
+    chan2_bkg.SetBinContent(1,5);chan2_bkg.SetBinError(1,0.5);
+    w["simPdf/chan2"]->Add(chan2_bkg);
+    auto chan2_data = static_cast<TH1D*>(chan2_bkg.Clone("chan2_data")); chan2_data->SetTitle("Data");
+    chan2_data->SetBinContent(1,chan2_data->GetBinContent(1)+1);
+    w["simPdf/chan2"]->datasets()["obsData"]->Add(*chan2_data);
+    ASSERT_DOUBLE_EQ(w["simPdf/chan2"]->datasets()["obsData"]->GetBinContent(1),chan2_data->GetBinContent(1));
+
+
+    xRooNode genDs(w["simPdf"]->reduced("chan1").nll().generate(true).first); // generate the asimov dataset for chan1
+    genDs.Add(*w["simPdf"]->reduced("chan2").datasets()["obsData"]); // add the obsData of chan2
+
+    // dataset should be asimov of chan1 with obs of chan2
+    ASSERT_DOUBLE_EQ(w["simPdf/chan2"]->datasets()["obsData"]->GetBinContent(1)+w["simPdf/chan1"]->GetBinContent(1),genDs.get<RooAbsData>()->sumEntries());
+
+    // should have the same global observables for the mc-stat errors
+    ASSERT_TRUE( genDs.globs().get<RooArgList>()->equals(*w["obsData"]->globs().get<RooArgList>()));
+    for(auto glob : genDs.globs()) {
+        ASSERT_DOUBLE_EQ( glob->GetContent(), w["obsData"]->globs().at(glob->GetName())->GetContent() );
+    }
 
 }
 
@@ -305,6 +352,9 @@ TEST(test1, testSimpleModel) {
     w["simPdf/chan1/samp1"]->SetBinError(1,0.5);
 
     ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinError(1),0.5);
+    // verify the histograms have the right error too
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->BuildHistogram(nullptr,false,true)->GetBinError(1),0.5);
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1/samples"]->BuildHistogram(nullptr,false,true)->GetBinError(1),0.5);
 
 
     w["simPdf/chan1/samp2"]->SetBinContent(1,1);
@@ -347,6 +397,35 @@ TEST(test1, testSimpleModel) {
 
 }
 
+TEST(test1,discreteMinimizationTest) {
+    // test if can minimize a model containing a categorical (discrete) parameter
+
+    // for this dummy test will create a channel but use category as a scaling factor
+    RooWorkspace _ws;
+    xRooNode w(_ws);
+    w["simPdf/chan1"]->SetXaxis(1,0,1);
+    w["simPdf/chan1/bkg1"]->SetBinContent(1,5);
+    w["simPdf/chan1/bkg1"]->SetBinError(1,0.1);
+    w["simPdf/chan1/bkg2"]->SetBinContent(1,10);
+    w["simPdf/chan1/bkg2"]->SetBinError(1,1);
+    w["simPdf/chan1/bkg1"]->Multiply("fac1('myCat==0?1:0',myCat[a,b])","func");
+    w["simPdf/chan1/bkg2"]->Multiply("fac2('myCat==0?0:1',myCat)","func");
+    w["simPdf/chan1"]->SetBinData(1,12);
+
+    auto fr = w["simPdf"]->nll("obsData").minimize();
+
+    // expect cat index = 1 (second case) to be a better fit ...
+    EXPECT_EQ( fr->floatParsFinal().getCatIndex("myCat"), 1 );
+
+    // now change data to below 5
+    w["simPdf/chan1"]->SetBinData(1,4);
+
+    // expect cat index = 0 (first case) to be a better fit ...
+    EXPECT_EQ( w["simPdf"]->nll("obsData").minimize()->floatParsFinal().getCatIndex("myCat"), 0 );
+
+
+}
+
 TEST(test1,speedTest) {
 
     xRooNode w("~/Downloads/hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
@@ -370,22 +449,26 @@ TEST(test1,speedTest) {
 
     TFile f("hypoSpace400.root","RECREATE");
 
-    nll.pars()->find("sqrt_mu")->setStringAttribute("altVal","0");
-    auto hs = nll.hypoSpace("sqrt_mu");
+    //nll.pars()->find("sqrt_mu")->setStringAttribute("altVal","0");
+    auto hs = nll.hypoSpace("sqrt_mu",xRooFit::Asymptotics::OneSidedPositive,0);
 
-    auto lim = hs.FindLimit("cls exp0",0.05);
+    auto lim = hs.findlimit("pcls exp0", 0.05);
     std::cout << lim.first << " +/- " << lim.second << std::endl;
     hs.Print();
     for(auto& hp : hs) hp.Print();
 
     f.Close();
 
-    // verify can reproduce limit ....
-    xRooHypoSpace hs2;
-    hs2.LoadFits("hypoSpace400.root:nll_hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
-    hs2.Print();for(auto& hp : hs2) hp.Print();
+    auto result = hs.result();
 
-    auto lim2 = hs2.FindLimit("cls exp0",0.05);
+    // verify can reproduce limit .... 1/6/23: planning to phase out LoadFits functionality in favour of HypoTestInverterResult
+    //xRooHypoSpace hs2;
+    //hs2.LoadFits("hypoSpace400.root:nll_hatt_SI_1L_combined_hatt_SI_1L_exp_A4001_0_model.root");
+    //hs2.Print();for(auto& hp : hs2) hp.Print();
+
+    xRooHypoSpace hs2( result );
+
+    auto lim2 = hs2.findlimit("pcls exp0", 0.05);
     std::cout << lim2.first << " +/- " << lim2.second << std::endl;
 
     ASSERT_LT(abs(lim.first-lim2.first),1e-3);
@@ -483,5 +566,118 @@ TEST(test1,unextendedPdfError) {
 
 }
 
+TEST(test1,replaceTest) {
+    xRooNode w("/tmp/dado.root");
+    w.vars()["gamma_templateSF_SR_emu_Signal_1p5_172p5_bin_0"]->Replace(RooFormulaVar("myVar","gamma_templateSF_SR_emu_Signal_1p5_172p5_bin_0*2",*w.vars()["gamma_templateSF_SR_emu_Signal_1p5_172p5_bin_0"]->get<RooAbsArg>()));
+    w.SaveAs("/tmp/dado_replaced.root");
+}
+
+//TEST(test1,memLeakTest) {
+//
+//   //xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-root_628/tomas-complex-notAllRegions.root");
+//   //w["simPdf/SR_4L_SF"]->GetBinContents();
+//
+//   //xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-root_628/tomas.root");
+//   xRooNode w("/tmp/ws626.root");
+//   //w["simPdf/ljets_5j3b_HT/samples"]->GetBinContents();
+//   auto tmp = w["simPdf/ljets_5j3b_HT"];
+//   std::cout << tmp->GetBinContent(1) << std::endl;
+//
+//}
+
+TEST(test1,simpleToyTest) {
+    xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-root_628/tomas.root");
+    auto hp1 = w.nll().hypoPoint(1,0);
+    hp1.addNullToys(1000);
+}
+
+TEST(test1,simpleLimitTest) {
+    xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-root_628/tomas.root");
+    auto hs = w["simPdf"]->nll().hypoSpace();
+    std::unique_ptr<RooAbsCollection> coords(hs.pars()->snapshot());
+    std::unique_ptr<RooAbsCollection> toRemove(std::unique_ptr<RooAbsCollection>(coords->selectByAttrib("Constant", false))->snapshot());
+    const_cast<RooAbsCollection *>(coords.get())->remove(*toRemove, true, true);
+}
+
+TEST(test1,anotherTest) {
+    TFile* f = TFile::Open("~/Downloads/FitExampleNtuple_combined_FitExampleNtuple_model.root", "READ");
+    {
+        std::unique_ptr<RooWorkspace> ws(f->Get<RooWorkspace>("combined"));
+
+        xRooNode model(*ws);
+        auto hs = model.nll("obsData").hypoSpace("mu_XS_ttH");
+        hs.scan("cls");
+        auto result = hs.result();
+        result->SetName("clsLimits");
+        model.ws()->import(*result);
+    }
+    f->Close();
+
+}
+
+TEST(test1,toysTest) {
+//   xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-root_628/tomas.root");
+//   w.poi()[0]->get<RooAbsArg>()->setStringAttribute("altVal","0");
+//   w.np().get<RooArgList>()->setAttribAll("Constant");
+
+    xRooNode w("/Users/cym53897/CLionProjects/xroofit/cmake-build-debug-root_628/tomas.root");
+    auto nll = w.nll();
+
+    for(int i=1;i<10001;i++) {
+        nll.generate();
+    }
+
+   //----
+
+//   auto hs = w["simPdf"]->nll("asimovData").hypoSpace();
+//   hs.AddPoints("mu_XS_ttH",10,0,4);
+//   hs.graphs("pcls toys");
+//   hs.Print();
+//   for(auto& hp : hs) hp.Print();
+
+// -----
+
+//   auto hp1 = w.nll().hypoPoint(1,0);
+//   hp1.addNullToys(100,0,0.05);
+//   hp1.addAltToys(100);
+
+//   xRooNode w2("~/Downloads/jack_failedLimit.root");
+//   w2.pars().reduced("mu",true).get<RooArgList>()->setAttribAll("Constant",true);
+//   xRooFit::defaultFitConfig()->SetParabErrors(false);
+//   auto hs = w2["CombinedPdf"]->nll("combData").hypoSpace();
+//   hs.AddPoint("mu=4000").addCLsToys(100);
+}
+
+TEST(test1,plotTest) {
+    {
+        xRooNode w("~/Downloads/largeTrexWS.root");
+        w["simPdf"]->Draw("eratio");
+    }
+}
+
+
+xRooNode GetNode(const std::string& path) {
+
+    std::unique_ptr<TFile> wsFile(TFile::Open(path.c_str(), "READ"));
+    std::unique_ptr<RooWorkspace> ws(wsFile->Get<RooWorkspace>("combined"));
+
+    wsFile->Close();
+    xRooNode node(path.c_str());
+
+    return node;
+}
+
+TEST(test1,NodeLoadTest) {
+
+    std::cout << "start\n";
+    {
+        xRooNode node = GetNode("~/Downloads/Fit_1l_allRegions_combined_Fit_1l_model.root");
+        auto pdf = node["simPdf"];
+        std::cout << "end\n";
+    }
+    xRooNode node = GetNode("~/Downloads/Fit_1l_allRegions_combined_Fit_1l_model.root");
+    auto pdf = node["simPdf"];
+    std::cout << "end1\n";
+}
 
 #endif
