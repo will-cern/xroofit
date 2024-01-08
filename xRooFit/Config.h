@@ -26,27 +26,23 @@
 #ifndef xRooFit_Config_h_xRooFit
 #define xRooFit_Config_h_xRooFit
 
-
 // ROOT configuration: all of xRooFit is placed into a detail namespace
 #ifdef XROOFIT_NAMESPACE
 #undef XROOFIT_NAMESPACE
 #endif
 
-
-
-
-# ifdef XROOFIT_NAMESPACE
-#  define BEGIN_XROOFIT_NAMESPACE namespace XROOFIT_NAMESPACE {
-#  define END_XROOFIT_NAMESPACE } // namespace XROOFIT_NAMESPACE
-# else
+#ifdef XROOFIT_NAMESPACE
+#define BEGIN_XROOFIT_NAMESPACE namespace XROOFIT_NAMESPACE {
+#define END_XROOFIT_NAMESPACE } // namespace XROOFIT_NAMESPACE
+#else
 #ifdef BEGIN_XROOFIT_NAMESPACE
 #undef BEGIN_XROOFIT_NAMESPACE
 #endif
-#  define BEGIN_XROOFIT_NAMESPACE
+#define BEGIN_XROOFIT_NAMESPACE
 #ifdef END_XROOFIT_NAMESPACE
 #undef END_XROOFIT_NAMESPACE
 #endif
-#  define END_XROOFIT_NAMESPACE
-# endif
+#define END_XROOFIT_NAMESPACE
+#endif
 
 #endif
