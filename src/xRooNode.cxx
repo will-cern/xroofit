@@ -1495,7 +1495,8 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             return xRooNode(*_ws->data(asi.first->GetName()), fParent);
          }
 
-         auto _obs = fParent->obs().argList();
+         auto parentObs = fParent->obs(); // may own globs so keep alive
+         auto _obs = parentObs.argList();
          // put globs in a snapshot
          std::unique_ptr<RooAbsCollection> _globs(_obs.selectByAttrib("global", true));
          // RooArgSet _tmp; _tmp.add(*_globs);_ws->saveSnapshot(child.GetName(),_tmp);
@@ -5620,7 +5621,8 @@ xRooNode xRooNode::factors() const
       // if workspace, return all functions (not pdfs) that have a RooProduct as one of their clients
       // or not clients
       // exclude obs and globs
-      auto _obs = obs().argList();
+      auto oo = obs(); // need to keep alive as may contain owning globs
+      auto& _obs = *(oo.get<RooArgList>());
       for (auto a : w->allFunctions()) {
          if (_obs.contains(*a))
             continue;
@@ -5760,7 +5762,8 @@ xRooNode xRooNode::datasets() const
           (!get() && fParent &&
            fParent->get<RooAbsPdf>())) { // second condition handles 'bins' nodes of pdf, which have null ptr
          // only add datasets that have observables that cover all our observables
-         RooArgSet _obs(obs().argList());
+         auto oo = obs(); // must keep alive in case is owning the globs
+         RooArgSet _obs(*oo.get<RooArgList>());
          //_obs.add(coords(true).argList(), true); // include coord observables too, and current xaxis if there's one -
          // added in loop below
 
@@ -5897,10 +5900,18 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
                      theHist->GetXaxis()->SetBinLabel(i + 1, cat->getLabel());
                   }
                } else {
-                  theHist = new TH1D(
-                     TString::Format("%s_%s", GetName(), vo->GetName()),
-                     TString::Format("my temp hist;%s", strlen(vo->GetTitle()) ? vo->GetTitle() : vo->GetName()),
-                     v->numBins(), v->getBinningPtr(nullptr)->lowBound(), v->getBinningPtr(nullptr)->highBound());
+                  auto _binning = v->getBinningPtr(nullptr);
+                  if(_binning->isUniform()) {
+                     theHist = new TH1D(
+                        TString::Format("%s_%s", GetName(), vo->GetName()),
+                        TString::Format("my temp hist;%s", strlen(vo->GetTitle()) ? vo->GetTitle() : vo->GetName()),
+                        v->numBins(), _binning->lowBound(), _binning->highBound());
+                  } else {
+                     theHist = new TH1D(
+                        TString::Format("%s_%s", GetName(), vo->GetName()),
+                        TString::Format("my temp hist;%s", strlen(vo->GetTitle()) ? vo->GetTitle() : vo->GetName()),
+                        v->numBins(), _binning->array());
+                  }
                }
             } else {
                throw std::runtime_error("Cannot draw dataset without parent PDF");
@@ -6008,7 +6019,8 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
                                 (xvar && val) ? xPos->GetBinContent(i + 1) : theHist->GetBinCenter(i + 1), val);
 
             // x-error will be the (weighted) standard deviation of the x values ...
-            double xErr = sqrt(xPos2->GetBinContent(i + 1) - pow(xPos->GetBinContent(i + 1), 2));
+            double xErr = xPos2->GetBinContent(i + 1) - pow(xPos->GetBinContent(i + 1), 2);
+            xErr = (xErr <= 0) ? 0. : sqrt(xErr); // protects against floating point rounding effects
 
             if (xErr || val) {
                dataGraph->SetPointError(dataGraph->GetN() - 1, xErr, xErr,
