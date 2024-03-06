@@ -5861,7 +5861,7 @@ xRooNode xRooNode::datasets() const
                   // TODO: Could consider using a 'filter' node (see filter() method) applied to the dataset instead
                   // of creating and using a reduced dataset here
                   out.emplace_back(std::make_shared<xRooNode>(
-                     std::shared_ptr<RooAbsData>(d->get<RooAbsData>()->reduce(_obs,cutFormula)), *this));
+                     std::shared_ptr<RooAbsData>(d->get<RooAbsData>()->reduce(*std::unique_ptr<RooAbsCollection>(d->robs().get<RooArgList>()->selectCommon(_obs)),cutFormula)), *this));
                   // put a subset of the globs in the returned dataset too
                   out.back()->get<RooAbsData>()->setGlobalObservables(*std::unique_ptr<RooAbsCollection>(d->globs().get<RooArgList>()->selectCommon(*globs().get<RooArgList>())));
                   if (d->get()->TestBit(1 << 20))
