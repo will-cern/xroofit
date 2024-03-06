@@ -227,6 +227,14 @@ const T &_or_func(const T &a, const T &b)
    return b;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// Create new object of type classname, with given name and title, and own-wrap it
+/// i.e. the xRooNode will delete the object when the node (and any that reference it) is destroyed
+///
+/// \param classname : the type of the object to create
+/// \param name : the name to give the object
+/// \param title : the title to give the object
+
 xRooNode::xRooNode(const char *classname, const char *name, const char *title)
    : xRooNode(name, std::shared_ptr<TObject>(TClass::GetClass(classname)
                                                 ? reinterpret_cast<TObject *>(TClass::GetClass(classname)->New())
@@ -4097,6 +4105,9 @@ std::shared_ptr<xRooNode> xRooNode::at(const std::string &name, bool browseResul
    return res;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// The RooWorkspace this node belong to, if any
+
 RooWorkspace *xRooNode::ws() const
 {
    if (auto _w = get<RooWorkspace>(); _w)
@@ -5113,6 +5124,9 @@ xRooNode &xRooNode::browse()
    return *this;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// List of observables (global and regular) of this node.
+
 xRooNode xRooNode::obs() const
 {
    xRooNode out(".obs", std::make_shared<RooArgList>(), *this);
@@ -5125,6 +5139,9 @@ xRooNode xRooNode::obs() const
    }
    return out;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+/// List of global observables of this node.
 
 xRooNode xRooNode::globs() const
 {
@@ -5139,6 +5156,9 @@ xRooNode xRooNode::globs() const
    return out;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// List of regular observables of this node.
+
 xRooNode xRooNode::robs() const
 {
    xRooNode out(".robs", std::make_shared<RooArgList>(), *this);
@@ -5151,6 +5171,9 @@ xRooNode xRooNode::robs() const
    }
    return out;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+/// List of parameters (non-observables) of this node.
 
 xRooNode xRooNode::pars() const
 {
@@ -5165,6 +5188,9 @@ xRooNode xRooNode::pars() const
    return out;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// List of parameters that are currently constant
+
 xRooNode xRooNode::consts() const
 {
    xRooNode out(".consts", std::make_shared<RooArgList>(), *this);
@@ -5177,6 +5203,10 @@ xRooNode xRooNode::consts() const
    }
    return out;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+/// List of parameters that are currently non-constant
+/// These parameters do not have the "Constant" attribute
 
 xRooNode xRooNode::floats() const
 {
@@ -5191,6 +5221,10 @@ xRooNode xRooNode::floats() const
    return out;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// List of parameters of interest: parameters marked as "of interest"
+/// These parameters have the "poi" attribute
+
 xRooNode xRooNode::poi() const
 {
    xRooNode out(".poi", std::make_shared<RooArgList>(), *this);
@@ -5203,6 +5237,10 @@ xRooNode xRooNode::poi() const
    }
    return out;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+/// List of nuisance parameters: non-constant parameters that are not marked of interest,
+///  as well as any parameters that have been marked by the "np" attribute
 
 xRooNode xRooNode::np() const
 {
@@ -5219,6 +5257,9 @@ xRooNode xRooNode::np() const
    return out;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// List of prespecified parameters: non-floatable parameters
+
 xRooNode xRooNode::pp() const
 {
    xRooNode out(".pp", std::make_shared<RooArgList>(), *this);
@@ -5232,6 +5273,9 @@ xRooNode xRooNode::pp() const
    }
    return out;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+/// List of variables (observables and parameters) of this node
 
 xRooNode xRooNode::vars() const
 {
@@ -5468,6 +5512,9 @@ xRooNode xRooNode::components() const
 
    return out;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+/// bins of a channel or sample, or channels of a multi-channel pdf
 
 xRooNode xRooNode::bins() const
 {
