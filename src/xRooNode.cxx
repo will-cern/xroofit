@@ -16,6 +16,30 @@
 The xRooNode class is designed to wrap over a TObject and provide functionality to aid with interacting with that
 object, particularly in the case where the object is a RooFit class instance. It is a smart pointer to the object, so
 you have access to all the methods of the object too.
+
+xRooNode is designed to work in both python and C++, but examples below are given in python because that is imagined
+  be the most common way to use the xRooFit API.
+
+-# [Exploring workspaces](\ref exploring-workspaces)
+
+\anchor exploring-workspaces
+## Exploring workspaces
+
+An existing workspace file (either a ROOT file containing a RooWorkspace, or a json HS3 file) can be opened using
+ xRooNode like this:
+
+\code{.py}
+from ROOT.Experimental import XRooFit
+w = XRooFit.xRooNode("workspace.root") # or can use workspace.json for HS3
+\endcode
+
+ You can explore the content of the workspace somewhat like you would a file system: each node contains sub-nodes,
+ which you can interact with to explore ever deeper. The most relevant methods for navigating the workspace and exploring
+ the content are:
+
+
+
+
  */
 
 #include "RVersion.h"
@@ -182,6 +206,8 @@ auto GETLISTTREE(TGFileBrowser *b)
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
 #include "RooNaNPacker.h"
 #endif
+
+
 
 BEGIN_XROOFIT_NAMESPACE;
 
@@ -2016,9 +2042,18 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
    } else if (auto w = get<RooWorkspace>(); w) {
       child.convertForAcquisition(*this);
       if (child.get()) {
-         auto out = acquire(child.fComp);
-         if (out)
-            return xRooNode(child.GetName(), out, *this);
+         if(auto _d = child.get<RooAbsData>()) {
+            // don't use acquire method to import, because that adds datasets as Embeddded
+            if (!w->import(*_d)) {
+               return xRooNode(child.GetName(), *w->data(child.GetName()),*this);
+            } else {
+               throw std::runtime_error(TString::Format("Could not import dataset %s into workspace %s",child.GetName(),w->GetName()).Data());
+            }
+         } else {
+            auto out = acquire(child.fComp);
+            if (out)
+               return xRooNode(child.GetName(), out, *this);
+         }
       }
 
       if (!child.empty() || child.fFolder == "!models") {
@@ -5800,14 +5835,14 @@ xRooNode xRooNode::datasets() const
                   hasMissing = true;
                } else {
                   if (extraCut != "")
-                     extraCut += " && ";
+                     extraCut += " || ";
                   extraCut += TString::Format("%s==%d", s->indexCat().GetName(), cat.second);
                }
             }
             if (hasMissing) {
                if (cut != "")
                   cut += " && ";
-               cut += extraCut;
+               cut += "(" + extraCut + ")";
                cutobs.add(s->indexCat());
             }
          }
@@ -5828,7 +5863,7 @@ xRooNode xRooNode::datasets() const
                   out.emplace_back(std::make_shared<xRooNode>(
                      std::shared_ptr<RooAbsData>(d->get<RooAbsData>()->reduce(cutFormula)), *this));
                   // put a subset of the globs in the returned dataset too
-                  out.back()->get<RooAbsData>()->setGlobalObservables(*globs().get<RooArgList>());
+                  out.back()->get<RooAbsData>()->setGlobalObservables(*std::unique_ptr<RooAbsCollection>(d->globs().get<RooArgList>()->selectCommon(*globs().get<RooArgList>())));
                   if (d->get()->TestBit(1 << 20))
                      out.back()->get()->SetBit(1 << 20);
                   // need to attach the original dataset so that things like SetBinContent can interact with it
@@ -10571,6 +10606,34 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
          res *= ax->GetBinWidth(bin);
       }
       out.push_back(res);
+   }
+
+   return out;
+}
+
+
+   std::string cling::printValue( const xRooNode *v ) {
+   if(!v) return "nullptr\n";
+   if(!v->empty()) {
+      std::string out;
+      size_t left = v->size();
+      for(auto n : *v) {
+         left--;
+         if(!out.empty()) out += ","; else out += "{";
+         out += n->GetName();
+         if(out.length()>100 && left > 0) {
+            out += TString::Format(",... and %lu more",left);
+            break;
+         }
+      }
+      out += "}\n";
+      return out;
+   }
+   std::string out;
+   if(!(*v)) {
+      return "<empty node>";
+   } else {
+      return Form("Name: %s",v->GetName());
    }
 
    return out;
