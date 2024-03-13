@@ -1789,8 +1789,12 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
       std::shared_ptr<TObject> out;
       auto cc = child.fComp;
       bool isConverted = (cc != child.convertForAcquisition(*this, sOpt));
-      if (child.get<RooAbsReal>())
+      if (child.get<RooAbsReal>()) {
          out = acquire(child.fComp);
+         if(std::dynamic_pointer_cast<TH1>(cc) && !TString(cc->GetOption()).Contains("nostyle")) {
+            xRooNode(out, *this).style(cc.get()); // transfer style if adding a histogram
+         }
+      }
       if (!child.fComp && getObject<RooAbsReal>(child.GetName())) {
          Info("Add", "Adding existing function %s to %s", child.GetName(), p->GetName());
          out = getObject<RooAbsReal>(child.GetName());
@@ -3680,6 +3684,7 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
             } else {
                h.reset(new TH1D(GetName(), GetTitle(), _b->numBins(), _b->array()));
             }
+            h->SetOption("nostyle"); // don't transfer style when added
             h->SetDirectory(nullptr);
             TH1::AddDirectory(t);
             h->GetXaxis()->SetName(TString::Format("%s;%s", ax->GetParent()->GetName(), ax->GetName()));
