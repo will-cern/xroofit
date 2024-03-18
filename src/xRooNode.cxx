@@ -10664,7 +10664,7 @@ std::vector<double> xRooNode::GetBinErrors(int binStart, int binEnd, const xRooN
 }
 
 
-   std::string cling::printValue( const xRooNode *v ) {
+std::string cling::printValue( const xRooNode *v ) {
    if(!v) return "nullptr\n";
    if(!v->empty()) {
       std::string out;

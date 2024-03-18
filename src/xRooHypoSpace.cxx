@@ -398,7 +398,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
    return out;
 }
 
-std::map<std::string, std::pair<double, double>>
+std::map<std::string, xRooNLLVar::xValueWithError>
 xRooNLLVar::xRooHypoSpace::limits(const char *opt, const std::vector<double> &nSigmas, double relUncert)
 {
 
@@ -410,7 +410,7 @@ xRooNLLVar::xRooHypoSpace::limits(const char *opt, const std::vector<double> &nS
 
    scan(opt, nSigmas, relUncert);
 
-   std::map<std::string, std::pair<double, double>> out;
+   std::map<std::string, xRooNLLVar::xValueWithError> out;
    for (auto nSigma : nSigmas) {
       auto lim = limit(opt, nSigma);
       if (lim.second < 0)
@@ -1283,7 +1283,7 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
    return out;
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pValues, double target)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pValues, double target)
 {
 
    if (std::isnan(target)) {
@@ -1311,7 +1311,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pVal
 
    // simple linear extrapolation to critical value ... return nan if problem
    if (gr->GetN() < 2) {
-      return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::pair<double,double>(std::numeric_limits<double>::quiet_NaN(), 0);
    }
 
    double alpha = log(target);

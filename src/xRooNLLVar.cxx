@@ -1195,7 +1195,7 @@ RooConstraintSum *xRooNLLVar::constraintTerm() const
     return *fFunc;
 }*/
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::getVal(const char *what)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::getVal(const char *what)
 {
    TString sWhat(what);
    sWhat.ToLower();
@@ -1494,13 +1494,13 @@ std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(boo
    return fAsimov;
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma)
 {
    if (fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma).first == 0)
-      return std::pair(1, 0);
+      return std::pair<double, double>(1, 0);
    auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
    if (!first_poi)
-      return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    auto _sigma_mu = sigma_mu();
    double nom = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first, fNullVal(), fNullVal(), _sigma_mu.first,
                                              first_poi->getMin("physical"), first_poi->getMax("physical"));
@@ -1513,13 +1513,13 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma)
    return std::pair(nom, std::max(std::abs(up - nom), std::abs(down - nom)));
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma)
 {
    if (fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma).first == 0)
-      return std::pair(1, 0);
+      return std::pair<double, double>(1, 0);
    auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
    if (!first_poi)
-      return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    auto _sigma_mu = sigma_mu();
    double nom = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first, fNullVal(), fAltVal(), _sigma_mu.first,
                                              first_poi->getMin("physical"), first_poi->getMax("physical"));
@@ -1533,16 +1533,16 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pAlt_asymp(double nSigma)
    return std::pair(nom, std::max(std::abs(up - nom), std::abs(down - nom)));
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma)
 {
    if (fNullVal() == fAltVal())
-      return std::pair(1, 0); // by construction
+      return std::pair<double, double>(1, 0); // by construction
 
    if (fPllType != xRooFit::Asymptotics::Uncapped && ts_asymp(nSigma).first == 0)
-      return std::pair(1, 0);
+      return std::pair<double, double>(1, 0);
    auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
    if (!first_poi)
-      return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
 
    auto _ts_asymp = ts_asymp(nSigma);
    auto _sigma_mu = sigma_mu();
@@ -1570,14 +1570,14 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma)
    return std::make_pair(nom, std::max(std::abs(up - nom), std::abs(down - nom)));
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma)
 {
    if (std::isnan(nSigma))
       return pll();
    auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
    auto _sigma_mu = sigma_mu();
    if (!first_poi || (!std::isnan(nSigma) && std::isnan(_sigma_mu.first)))
-      return std::pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    double nom = xRooFit::Asymptotics::k(fPllType, ROOT::Math::gaussian_cdf(nSigma), fNullVal(), fAltVal(),
                                         _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
    double up = xRooFit::Asymptotics::k(fPllType, ROOT::Math::gaussian_cdf(nSigma), fNullVal(), fAltVal(),
@@ -1589,7 +1589,7 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma)
    return std::pair<double, double>(nom, std::max(std::abs(nom - up), std::abs(nom - down)));
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
 {
    if (std::isnan(nSigma))
       return pll();
@@ -1607,16 +1607,16 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
          2.);
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
 {
    auto _ufit = ufit(readOnly);
    if (!_ufit) {
       if (hypoTestResult)
-         return std::make_pair(hypoTestResult->GetTestStatisticData(), 0);
-      return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+         return std::make_pair<double, double>(hypoTestResult->GetTestStatisticData(), 0);
+      return std::make_pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    }
    if (allowedStatusCodes.find(_ufit->status()) == allowedStatusCodes.end()) {
-      return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::make_pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    }
    if (auto _first_poi = dynamic_cast<RooRealVar *>(poi().first());
        _first_poi && _first_poi->getMin("physical") > _first_poi->getMin() &&
@@ -1624,16 +1624,16 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
       // replace _ufit with fit "boundary" conditional fit
       _ufit = cfit_lbound(readOnly);
       if (!_ufit) {
-         return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+         return std::make_pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
       }
    }
    auto cFactor = (fPllType == xRooFit::Asymptotics::TwoSided)
                      ? 1.
                      : xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
    if (cFactor == 0)
-      return std::make_pair(0, 0);
+      return std::make_pair<double, double>(0, 0);
    if (!cfit_null(readOnly) || allowedStatusCodes.find(cfit_null(readOnly)->status()) == allowedStatusCodes.end())
-      return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::make_pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    // std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
    return std::make_pair(2. * cFactor * (cfit_null(readOnly)->minNll() - _ufit->minNll()),
                          2. * cFactor * sqrt(pow(cfit_null(readOnly)->edm(), 2) + pow(_ufit->edm(), 2)));
@@ -1930,13 +1930,13 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::cfit_alt(bool rea
    return (fAlt_cfit = nllVar->minimize());
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::sigma_mu(bool readOnly)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::sigma_mu(bool readOnly)
 {
 
    auto asi = asimov(readOnly);
 
    if (!asi) {
-      return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::make_pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    }
 
    auto out = asi->pll(readOnly);
@@ -1944,13 +1944,13 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::sigma_mu(bool readOnly)
                          out.second * 0.5 * std::abs(fNullVal() - fAltVal()) / (out.first * sqrt(out.first)));
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::pX_toys(bool alt, double nSigma)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pX_toys(bool alt, double nSigma)
 {
    auto _ts = ts_toys(nSigma);
    if (std::isnan(_ts.first))
       return _ts;
    if (fPllType != xRooFit::Asymptotics::Uncapped && _ts.first == 0)
-      return std::pair(1, 0); // don't need toys to compute this point!
+      return std::pair<double, double>(1, 0); // don't need toys to compute this point!
 
    TEfficiency eff("", "", 1, 0, 1);
 
@@ -2000,15 +2000,15 @@ std::pair<double, double> xRooNLLVar::xRooHypoPoint::pX_toys(bool alt, double nS
    return std::make_pair(result, result_err);
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::pNull_toys(double nSigma)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pNull_toys(double nSigma)
 {
    return pX_toys(false, nSigma);
 }
 
-std::pair<double, double> xRooNLLVar::xRooHypoPoint::pAlt_toys(double nSigma)
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pAlt_toys(double nSigma)
 {
    if (!std::isnan(nSigma)) {
-      return std::pair(ROOT::Math::gaussian_cdf(nSigma), 0); // by construction
+      return std::pair<double, double>(ROOT::Math::gaussian_cdf(nSigma), 0); // by construction
    }
    return pX_toys(true, nSigma);
 }
@@ -2953,6 +2953,20 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       nllVar->get()->setAttribute("readOnly", false);
    }
 
+   return out;
+}
+
+std::string cling::printValue( const xRooNLLVar::xValueWithError *v ) {
+   if(!v) return "xValueWithError: nullptr\n";
+   return Form("%f +/- %f",v->first,v->second);
+}
+std::string cling::printValue( const std::map<std::string, xRooNLLVar::xValueWithError>* m) {
+   if(!m) return "nullptr\n";
+   std::string out = "{\n";
+   for(auto [k,v] : *m) {
+      out += "\"" + k + "\" => " + printValue(&v) + "\n";
+   }
+   out += "}\n";
    return out;
 }
 
