@@ -293,14 +293,16 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       sType.ReplaceAll("plr", "ts");
    }
 
-   if (p && high <= low) {
+   if (high <= low) {
       // take from parameter
       low = p->getMin("scan");
       high = p->getMax("scan");
-      ::Info("xRooHypoSpace::scan", "Using %s range: %g - %g", p->GetName(), low, high);
    }
    if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
       p->setRange("scan", low, high);
+   }
+   if(p->hasRange("scan")) {
+      ::Info("xRooHypoSpace::scan", "Using %s scan range: %g - %g", p->GetName(), p->getMin("scan"), p->getMax("scan"));
    }
 
    bool doObs = false;
