@@ -8156,6 +8156,7 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
       p->cd();
       l = new TLegend(gPad->GetLeftMargin(), 1. - gPad->GetTopMargin(), 1. - gPad->GetRightMargin(),
                       gPad->GetBottomMargin());
+      l->SetBorderSize(1); // ensure has a border
    } else {
       if (!create)
          return nullptr;
@@ -8194,9 +8195,13 @@ void addLegendEntry(TObject *o, const char *title, const char *opt)
       nn *= (nn + 4);
       if (nObj > 1 && (nObj % nn) == 1) {
          l->SetNColumns(l->GetNColumns() + 1);
-         l->SetX1NDC(l->GetX2NDC() - 0.15 * l->GetNColumns());
+         if(l->GetBorderSize()==0) {
+            l->SetX1NDC(l->GetX2NDC() - 0.15 * l->GetNColumns());
+         }
       }
-      l->SetY1NDC(l->GetY2NDC() - 0.05 * gPad->GetHNDC() * std::ceil((double(nObj) / l->GetNColumns())));
+      if(l->GetBorderSize()==0) {
+         l->SetY1NDC(l->GetY2NDC() - 0.05 * gPad->GetHNDC() * std::ceil((double(nObj) / l->GetNColumns())));
+      }
    }
 
    getLegend(); // to mark modified
@@ -8659,13 +8664,17 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    if (auto _simPdf = get<RooSimultaneous>(); _simPdf) {
-      int _size = 0;
       auto _channels = bins();
+      int _size = 0;
       for (auto &_v : _channels) {
          if (!_v->IsHidden())
             _size++;
       }
       if (!hasSame) {
+         if(_size>2) {
+            // add a pad for the common legends
+            _size++;
+         }
          clearPad();
          pad->SetBorderSize(0);
          //            if (pad->GetCanvas() == pad) {
@@ -8690,6 +8699,9 @@ void xRooNode::Draw(Option_t *opt)
          //                }
          //            }
          dynamic_cast<TPad *>(pad)->DivideSquare(_size, 1e-9, 1e-9);
+         if(_size>3) {
+            pad->GetPad(_size)->SetName("legend");
+         }
       }
       int i = 0;
       auto &chanVar = const_cast<RooAbsCategoryLValue &>(_simPdf->indexCat());
