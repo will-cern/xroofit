@@ -451,6 +451,8 @@ public:
    double saturatedNllTerm() const;
    double pgof() const; // a goodness-of-fit pvalue based on profile likelihood of a saturated model
 
+   std::set<std::string> binnedChannels() const;
+
    // change the dataset - will check globs are the same
    bool setData(const std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>> &_data);
    bool setData(const std::shared_ptr<RooAbsData> &data, const std::shared_ptr<const RooAbsCollection> &globs)

@@ -691,6 +691,48 @@ double xRooNLLVar::getEntryVal(size_t entry) const
    return -_data->weight() * _pdf->getLogVal(_data->get());
 }
 
+std::set<std::string> xRooNLLVar::binnedChannels() const {
+   std::set<std::string> out;
+
+   auto binnedOpt = dynamic_cast<RooCmdArg *>(fOpts->find("Binned")); // the binned option, if explicitly specified
+
+   if (auto s = dynamic_cast<RooSimultaneous*>(pdf().get())) {
+      xRooNode simPdf(*s);
+      bool allChannels = true;
+      for(auto c : simPdf.bins()) {
+         // see if there's a RooRealSumPdf in the channel - if there is, if it has BinnedLikelihood set
+         // then assume is a BinnedLikelihood channel
+         RooArgSet nodes;
+         c->get<RooAbsArg>()->treeNodeServerList(&nodes, nullptr, true, false);
+         bool isBinned=false;
+         for(auto a : nodes) {
+            if(a->InheritsFrom("RooRealSumPdf") && ( (binnedOpt && binnedOpt->getInt(0)) || (!binnedOpt && a->getAttribute("BinnedLikelihood")) ) ) {
+               TString chanName(c->GetName());
+               out.insert( chanName(chanName.Index("=")+1,chanName.Length()).Data() );
+               isBinned=true;
+               break;
+            }
+         }
+         if(!isBinned) {
+            allChannels = false;
+         }
+      }
+      if(allChannels) {
+         out.clear(); out.insert("*");
+      }
+   } else {
+      RooArgSet nodes;
+      pdf()->treeNodeServerList(&nodes, nullptr, true, false);
+      for(auto a : nodes) {
+         if(a->InheritsFrom("RooRealSumPdf") && ( (binnedOpt && binnedOpt->getInt(0)) || (!binnedOpt && a->getAttribute("BinnedLikelihood")) ) ) {
+            out.insert("*");
+            break;
+         }
+      }
+   }
+   return out;
+}
+
 double xRooNLLVar::getEntryBinWidth(size_t entry) const
 {
 
@@ -700,11 +742,11 @@ double xRooNLLVar::getEntryBinWidth(size_t entry) const
    if (size_t(_data->numEntries()) <= entry)
       return 0;
    auto _pdf = pdf().get();
-   *std::unique_ptr<RooAbsCollection>(_pdf->getObservables(_data->get())) = *_data->get(entry); // only set robs
+   std::unique_ptr<RooAbsCollection> _robs(_pdf->getObservables(_data->get()));
+   *_robs = *_data->get(entry); // only set robs
    if (auto s = dynamic_cast<RooSimultaneous *>(_pdf); s) {
       _pdf = s->getPdf(s->indexCat().getCurrentLabel());
    }
-   std::unique_ptr<RooAbsCollection> _robs(_pdf->getObservables(_data->get()));
    double volume = 1.;
    for (auto o : *_robs) {
 
@@ -794,10 +836,8 @@ double xRooNLLVar::saturatedNllTerm() const
    if (!_data)
       return std::numeric_limits<double>::quiet_NaN();
 
-   bool isBinned = false;
-   if (auto a = dynamic_cast<RooCmdArg *>(fOpts->find("Binned")); a) {
-      isBinned = a->getInt(0);
-   }
+   std::set<std::string> _binnedChannels = binnedChannels();
+
 
    // for binned case each entry is: -(-N + Nlog(N) - TMath::LnGamma(N+1))
    // for unbinned case each entry is: -(N*log(N/(sumN*binW))) = -N*logN + N*log(sumN) + N*log(binW)
@@ -805,15 +845,27 @@ double xRooNLLVar::saturatedNllTerm() const
    // so resulting sum is just sumN - sum[ N*logN - N*log(binW) ]
    // which is the same as the binned case without the LnGamma part and with the extra sum[N*log(binW)] part
 
+   const RooAbsCategoryLValue* cat = (dynamic_cast<RooSimultaneous*>(pdf().get())) ? &dynamic_cast<RooSimultaneous*>(pdf().get())->indexCat() : nullptr;
+
+
    double out = _data->sumEntries();
    for (int i = 0; i < _data->numEntries(); i++) {
       _data->get(i);
       double w = _data->weight();
       out -= w * std::log(w);
-      if (isBinned) {
+      if (_binnedChannels.count("*")) {
          out += TMath::LnGamma(w + 1);
-      } else {
+      } else if(_binnedChannels.empty()) {
          out += w * std::log(getEntryBinWidth(i));
+      } else if(cat) {
+         // need to determine which channel we are in for this entry to decide if binned or unbinned active
+         if(_binnedChannels.count(_data->get()->getCatLabel(cat->GetName()))) {
+            out += TMath::LnGamma(w + 1);
+         } else {
+            out += w * std::log(getEntryBinWidth(i));
+         }
+      } else {
+         throw std::runtime_error("Cannot determine category of RooSimultaneous pdf");
       }
    }
 
