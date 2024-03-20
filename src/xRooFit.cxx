@@ -62,6 +62,8 @@
 #include "xRooFitVersion.h"
 
 #include <csignal>
+#include "TROOT.h"
+#include "TBrowser.h"
 
 BEGIN_XROOFIT_NAMESPACE;
 
@@ -579,12 +581,14 @@ public:
       if (s.RealTime() > fInterval) {
          double evalRate = (counter - prevCounter) / s.RealTime();
          s.Reset();
-         std::cerr << (counter) << ") (" << evalRate << "Hz) " << TDatime().AsString();
+         std::stringstream sout;
+
+         sout << (counter) << ") (" << evalRate << "Hz) " << TDatime().AsString();
          if (!fState.empty())
-            std::cerr << " : " << fState;
-         std::cerr << " : " << minVal << " Delta = " << (minVal - prevMin);
+            sout << " : " << fState;
+         sout << " : " << minVal << " Delta = " << (minVal - prevMin);
          if (minVal < prevMin) {
-            std::cerr << " : ";
+            sout << " : ";
             // compare minPars and prevPars, print biggest deltas
             std::vector<std::pair<double, std::string>> parDeltas;
             parDeltas.reserve(minPars.size());
@@ -599,16 +603,37 @@ public:
                if (parDeltas.at(i).first == 0)
                   break;
                if (i != 0)
-                  std::cerr << ",";
-               std::cerr << parDeltas.at(i).second << (parDeltas.at(i).first >= 0 ? "+" : "-") << "="
+                  sout << ",";
+               sout << parDeltas.at(i).second << (parDeltas.at(i).first >= 0 ? "+" : "-") << "="
                          << std::abs(parDeltas.at(i).first) << "("
                          << minPars.getRealValue(parDeltas.at(i).second.c_str()) << ")";
             }
             if (i < int(parDeltas.size()) && parDeltas.at(i).first != 0)
-               std::cerr << " ...";
+               sout << " ...";
             prevPars.assignFast(minPars);
          }
-         std::cerr << std::endl;
+
+         if (gROOT->FromPopUp() && gROOT->GetListOfBrowsers()->At(0)) {
+            auto browser = dynamic_cast<TBrowser*>(gROOT->GetListOfBrowsers()->At(0));
+            std::string status = sout.str();
+            int col=0;
+            while(col < 4) {
+               std::string status_part;
+               if(status.find(" : ")!=std::string::npos) {
+                  status_part = status.substr(0,status.find(" : "));
+                  status = status.substr(status.find(" : ")+3);
+               } else {
+                  status_part = status;
+                  status = "";
+               }
+               browser->SetStatusText(status_part.c_str(),col);
+               col++;
+
+            }
+            gSystem->ProcessEvents();
+         }
+         std::cerr << sout.str() << std::endl;
+
          prevMin = minVal;
          prevCounter = counter;
       } else {
@@ -944,6 +969,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             algo = "migradImproved";
          } else if (m_strategy(sIdx) == 's') {
             algo = "Scan";
+         } else if (m_strategy(sIdx) == 'h') {
+            break; // jumping straight to a hesse evaluation
          } else {
             strategy = int(m_strategy(sIdx) - '0');
             _minimizer.setStrategy(strategy);
@@ -996,7 +1023,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             }
          }
 
-         // NOTE: minuit2 seems to distort the tolerance in a weird way, so that tol becomes 100 times smaller than
+         // NOTE: minuit2 seems to distort the tolerance in a weird way, so that tol becomes 1000 times smaller than
          // specified Also note that if fits are failing because of edm over max, it can be a good idea to activate the
          // Offset option when building nll
          if (printLevel >= -1) {
@@ -1046,7 +1073,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       // only do hesse if was a valid min and not strat2 or above (since such strat already ran hesse, albeit with
       // allowing for forced pos-def) or if requested hesse strategy is different to the strategy that minimization ran
       // at
-      if (hesse && (strategy < 2 || strategy != hesseStrategy) && _minimizer.fitter()->Result().IsValid()) {
+      if (hesse && (m_strategy(sIdx) == 'h' || ((strategy < 2 || strategy != hesseStrategy) && _minimizer.fitter()->Result().IsValid()))) {
          // Note: minima where the covariance was made posdef are deemed 'valid' ...
 
          // remove limits on pars before calculation - CURRENTLY HAS NO EFFECT, minuit still holds the state as
