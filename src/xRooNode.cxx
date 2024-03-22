@@ -3493,6 +3493,7 @@ void xRooNode::_fit_(const char *constParValues)
       auto _pars = pars();
       // std::unique_ptr<RooAbsCollection> snap(_pars.argList().snapshot());
       TStringToken pattern(constParValues, ",");
+      std::map<RooAbsRealLValue*,double> valsToSet;
       while (pattern.NextToken()) {
          auto idx = pattern.Index('=');
          TString pat = (idx == -1) ? TString(pattern) : TString(pattern(0, idx));
@@ -3502,7 +3503,8 @@ void xRooNode::_fit_(const char *constParValues)
             if (TString(p->GetName()).Contains(TRegexp(pat, true))) {
                p->setAttribute("Constant", true);
                if (!std::isnan(val)) {
-                  dynamic_cast<RooAbsRealLValue *>(p)->setVal(val);
+                  valsToSet[dynamic_cast<RooAbsRealLValue *>(p)] = val;
+                  //dynamic_cast<RooAbsRealLValue *>(p)->setVal(val); // don't set yet, to allow for asimov dataset creation based on current values
                }
             }
          }
@@ -3517,6 +3519,10 @@ void xRooNode::_fit_(const char *constParValues)
          }
       }
       auto _nll = nll(dsetName.Data());
+      // can now set the values
+      for(auto [p,v] : valsToSet) {
+         p->setVal(v);
+      }
       _nll.fitConfigOptions()->SetValue("LogSize", 65536);
       _nll.fitConfig()->MinimizerOptions().SetPrintLevel(0);
       auto fr = _nll.minimize();
