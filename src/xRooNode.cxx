@@ -93,6 +93,8 @@ w = XRooFit.xRooNode("workspace.root") # or can use workspace.json for HS3
 #include "RooProdPdf.h"
 #include "TRootBrowser.h"
 #include "TGFileBrowser.h"
+#include "TF1.h"
+#include "TFitParametersDialog.h"
 
 RooWorkspace *GETWS(RooAbsArg *a)
 {
@@ -3659,6 +3661,60 @@ void xRooNode::_SetBinContent_(int bin, double value, const char *par, double pa
 void xRooNode::_SetContent_(double value)
 {
    try {
+
+      // if this is a collection of values, populate a TF1 and display as a dialog
+      if(!get() && TString(GetName()).BeginsWith("!")) {
+         browse();
+         RooArgList args;
+         for(auto a : *this) {
+            if(auto arg = a->get<RooRealVar>()) args.add(*arg);
+         }
+         TF1 f(GetName(),0.0,1.0,std::min(int(args.size()),10));
+         int i=0;int j=0;
+         for(auto c : args) {
+            j++;
+            if(j < value) {
+               continue;
+            }
+            auto v = dynamic_cast<RooRealVar*>(c);
+            f.SetParName(i,c->GetName());
+            if(v) {
+               f.SetParLimits(i, v->getMin(),v->getMax());
+               if(v->isConstant()) f.FixParameter(i,v->getVal());
+               else {
+                  f.SetParameter(i,v->getVal());
+                  f.SetParError(i,v->getError());
+               }
+            }
+            i++;
+            if(i==10) {
+               break; // max 10 pars shown
+            }
+         }
+         int ret = 0;
+         new TFitParametersDialog(gClient->GetDefaultRoot(),
+                                  (gROOT->GetListOfBrowsers()->At(0))
+                                     ? dynamic_cast<TGWindow *>(static_cast<TBrowser *>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp())
+                                     : gClient->GetDefaultRoot(),&f,nullptr,&ret);
+         if(ret) {
+            // user has changed parameter values etc, propagate back to parameters
+            for(i=0;i<f.GetNpar();i++) {
+               auto c = args.find(f.GetParName(i));
+               auto v = dynamic_cast<RooRealVar*>(c);
+               if(v) {
+                  v->setVal(f.GetParameter(i));
+                  double low,high; f.GetParLimits(i,low,high);
+                  if(low==high) {
+                     v->setConstant(low); // if low==high==0 then is not marked constant
+                  } else {
+                     v->setRange(low, high);
+                  }
+               }
+            }
+         }
+         return;
+      }
+
       if (!SetContent(value))
          throw std::runtime_error("Failed to SetContent");
    } catch (const std::exception &e) {
