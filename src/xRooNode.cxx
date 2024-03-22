@@ -415,7 +415,7 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
             // get the first top-level pdf
             browse();
             for (auto &a : *this) {
-               if (a->fFolder == "!models") {
+               if (a->fFolder == "!pdfs") {
                   try {
                      auto fr = a->floats().reduced(parNames).fitResult("prefit");
                      if (auto _fr = fr.get<RooFitResult>(); _fr) {
@@ -605,7 +605,7 @@ void xRooNode::Browse(TBrowser *b)
    browse();
 
    // for top-level pdfs default to having the .vars browsable too
-   if (get<RooAbsPdf>() && fFolder == "!models" && !_IsShowVars_()) {
+   if (get<RooAbsPdf>() && fFolder == "!pdfs" && !_IsShowVars_()) {
       fBrowsables.push_back(std::make_shared<xRooNode>(vars()));
    }
 
@@ -2070,7 +2070,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          }
       }
 
-      if (!child.empty() || child.fFolder == "!models") {
+      if (!child.empty() || child.fFolder == "!pdfs") {
          // create a RooSimultaneous using the children as the channels
          // children either have "=" in name if specifying channel cat name or otherwise assume
          std::string catName = "channelCat";
@@ -2087,10 +2087,10 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
       }
    }
 
-   if (sOpt == "model") {
-      // can only add a model to a workspace
+   if (sOpt == "pdf") {
+      // can only add a pdf to a workspace
       if (get<RooWorkspace>()) {
-         const_cast<xRooNode &>(child).fFolder = "!models";
+         const_cast<xRooNode &>(child).fFolder = "!pdfs";
          return Add(child);
       }
    } else if (sOpt == "channel") {
@@ -5505,7 +5505,7 @@ xRooNode xRooNode::components() const
             continue;
          out.emplace_back(std::make_shared<xRooNode>(*o, *this));
          if (o->InheritsFrom("RooAbsPdf")) {
-            out.back()->fFolder = "!models";
+            out.back()->fFolder = "!pdfs";
          } else {
             out.back()->fFolder = "!scratch";
          }
