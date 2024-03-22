@@ -8273,6 +8273,14 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
    return l;
 };
 
+std::string formatLegendString(const std::string& s) {
+   auto i = s.find("\n");
+   if(i==std::string::npos) {
+      return s;
+   }
+   return std::string("#splitline{") + s.substr(0,i) + "}{" + formatLegendString(s.substr(i+1)) + "}";
+}
+
 void addLegendEntry(TObject *o, const char *title, const char *opt)
 {
    auto l = getLegend();
@@ -8280,13 +8288,14 @@ void addLegendEntry(TObject *o, const char *title, const char *opt)
       return;
    // check for entry already existing with same title
    for (auto a : *l->GetListOfPrimitives()) {
-      if (!strcmp(dynamic_cast<TLegendEntry *>(a)->GetLabel(), title))
+      if (formatLegendString(title) == dynamic_cast<TLegendEntry *>(a)->GetLabel())
          return;
    }
    if (l->GetListOfPrimitives()->GetEntries() > 20)
       return; // todo: create an 'other' entry?
 
-   l->AddEntry(o, title, opt);
+
+   l->AddEntry(o, formatLegendString(title).c_str(), opt);
    if (auto nObj = l->GetListOfPrimitives()->GetEntries(); nObj > 0) {
       // each entry takes up 0.05 ... maximum of N*(N+4) (where N is # cols) before next column
       int nn = l->GetNColumns();
