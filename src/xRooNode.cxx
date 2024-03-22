@@ -1502,33 +1502,25 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
 
          if (sOpt == "asimov" || sOpt == "toy") {
             // generate expected dataset - note that globs will be frozen at this time
-            auto _fr = std::dynamic_pointer_cast<const RooFitResult>(fParent->fitResult().fComp);
-            if (strlen(_fr->GetName()) == 0)
-               std::const_pointer_cast<RooFitResult>(_fr)->SetName(TUUID().AsString());
-            auto asi = xRooFit::generateFrom(*fParent->get<RooAbsPdf>(), *_fr, sOpt == "asimov");
-            if (strlen(child.GetName()))
-               asi.first->SetName(child.GetName());
-            if (asi.first) {
-               _ws->import(*asi.first);
+            auto _fr = fParent->fitResult();
+            if (strlen(_fr->GetName()) == 0) { // ensure fit result has a name so that name is saved inside dataset
+               _fr.get<RooFitResult>()->SetName(TUUID().AsString());
             }
-            if (_fr->numStatusHistory() == 0) {
+            auto ds = fParent->generate(_fr,sOpt=="asimov");
+            if (strlen(child.GetName())) {
+               ds.SetName(child.GetName());ds.get<TNamed>()->SetName(child.GetName());
+            }
+            if (auto _ds = ds.get<RooAbsData>()) {
+               _ws->import(*_ds);
+            }
+            if (_fr.get<RooFitResult>()->numStatusHistory() == 0) {
                if (!GETWSSNAPSHOTS(_ws).find(_fr->GetName())) {
                   const_cast<RooLinkedList &>(GETWSSNAPSHOTS(_ws)).Add(_fr->Clone());
                }
             } else if (!_ws->obj(_fr->GetName())) {
-               _ws->import(const_cast<RooFitResult &>(*_fr));
+               _ws->import((*_fr.get<RooFitResult>()));
             } // save fr to workspace, for later retrieval
-            if (asi.second) {
-#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
-               _ws->saveSnapshot(asi.first->GetName(), *asi.second,
-                                 true); // TODO: Migrate to using globs inside datasets
-#else
-               RooArgSet _tmp;
-               _tmp.add(*asi.second);
-               _ws->saveSnapshot(asi.first->GetName(), _tmp, true);
-#endif
-            }
-            return xRooNode(*_ws->data(asi.first->GetName()), fParent);
+            return xRooNode(*_ws->data(ds.GetName()), fParent);
          }
 
          auto parentObs = fParent->obs(); // may own globs so keep alive
@@ -1618,8 +1610,8 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             if (auto g = _globs.find(glob->GetName()); !g) {
                globsToAdd.addClone(*glob->get<RooAbsArg>());
             } else if (g->GetContent() != glob->GetContent()) {
-               Warning("Add", "Global observable %s=%g in dataset mismatches child value %g ... ignoring child",
-                       g->GetName(), g->GetContent(), glob->GetContent());
+               Warning("Add", "Global observable %s=%g in dataset %s mismatches %s value %g ... ignoring latter",
+                       g->GetName(), g->GetContent(), GetName(),child.GetName(), glob->GetContent());
             }
          }
          // add any existing globs to list then set the list
@@ -1639,6 +1631,8 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             }
          }
          ds->append(*_data);
+         ds->SetTitle(TString(ds->GetTitle()) + " + " + _data->GetTitle());
+         SetTitle(TString(GetTitle()) + " + " + child.GetTitle());
          return *this;
       }
       auto _h = child.get<TH1>();
@@ -6594,6 +6588,54 @@ xRooNode xRooNode::generate(const xRooNode &fr, bool expected, int seed)
       throw std::runtime_error(TString::Format("%s is not a pdf", GetName()));
    }
    auto _fr = fr.get<RooFitResult>();
+
+   // when generating, will only include channels that are selected
+   // any unselected but not hidden channel will have data from the only selected dataset added to it
+   if (get<RooSimultaneous>()) {
+      std::string selected;
+      std::string fromds; // list of channels to take from selected ds
+      bool hasDeselected = false;
+      for (auto c : bins()) {
+         TString cName(c->GetName());
+         cName = cName(cName.Index('=') + 1, cName.Length());
+         if (!c->get<RooAbsReal>()->isSelectedComp()) {
+            hasDeselected = true;
+            if(!c->get<RooAbsArg>()->getAttribute("hidden")) {
+               if (!fromds.empty())
+                  fromds += ",";
+               fromds += cName.Data();
+            }
+         } else {
+            if (!selected.empty())
+               selected += ",";
+            selected += cName.Data();
+         }
+      }
+      if (hasDeselected) {
+         std::string dsetName = "";
+         if(!fromds.empty()) {
+            // use the first selected dataset as protodata
+            auto _dsets = datasets();
+            for (auto &d : _dsets) {
+               if (d->get()->TestBit(1 << 20)) {
+                  dsetName = d->get()->GetName();
+                  break;
+               }
+            }
+            if(dsetName.empty()) {
+               throw std::runtime_error("Need at least one dataset selected (SetChecked) to use for deselected regions");
+            }
+         }
+         auto result = reduced(selected).generate(fr,expected,seed);
+         if(!fromds.empty()) {
+            auto ds = reduced(fromds).datasets()[dsetName];
+            result.Add( *ds );
+            result.SetName( TString(result.GetName()) + "_and_" + dsetName.c_str() );
+         }
+         return result;
+      }
+   }
+
    return xRooNode(
       xRooFit::generateFrom(*get<RooAbsPdf>(), (_fr ? *_fr : *(fitResult().get<RooFitResult>())), expected, seed).first,
       *this);
