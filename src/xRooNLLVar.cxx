@@ -1728,6 +1728,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
          rfit->setStatus(fit->getRealValue("status"));
          rfit->setMinNLL(fit->getRealValue("minNll"));
          rfit->setEDM(fit->getRealValue("edm"));
+         rfit->setCovQual(fit->getRealValue("covQual"));
          if (type == 0) {
             std::unique_ptr<RooAbsCollection> par_hats(
                hypoTestResult->GetFitInfo()->getGlobalObservables()->selectByName(coords->contentsString().c_str()));
@@ -2886,6 +2887,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
                                     {"cfit_lbound", 6}}));
    // fitDetails.addClone(RooStringVar("name", "Fit Name", "")); -- not supported properly in ROOT yet
    fitDetails.addClone(RooRealVar("status", "status", 0));
+   fitDetails.addClone(RooRealVar("covQual", "covQual", 0));
    fitDetails.addClone(RooRealVar("minNll", "minNll", 0));
    fitDetails.addClone(RooRealVar("edm", "edm", 0));
    auto fitDS = new RooDataSet("fits", "fit summary data", fitDetails);
@@ -2910,6 +2912,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
          fitDetails.setRealValue("status", fit->status());
          fitDetails.setRealValue("minNll", fit->minNll());
          fitDetails.setRealValue("edm", fit->edm());
+         fitDetails.setRealValue("covQual",fit->covQual());
          fitDS->add(fitDetails);
       }
    }
