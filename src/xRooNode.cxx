@@ -6374,9 +6374,12 @@ xRooNode xRooNode::fitResult(const char *opt) const
             // check all pars match final/const values ... if mismatch need to create a new RooFitResult
             bool match = true;
             for (auto p : pars()) {
-               if (!p->get<RooAbsReal>())
-                  continue;
-               if (p->get<RooAbsArg>()->getAttribute("Constant")) {
+               if (!p->get<RooAbsReal>()) {
+                  if(auto cat = p->get<RooAbsCategory>(); cat && cat->getCurrentIndex() == _fr->floatParsFinal().getCatIndex(cat->GetName(),std::numeric_limits<int>().max())) {
+                     match = false;
+                     break;
+                  }
+               } else if (p->get<RooAbsArg>()->getAttribute("Constant")) {
                   if (_fr->floatParsFinal().find(p->GetName()) ||
                       std::abs(_fr->constPars().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
                                p->get<RooAbsReal>()->getVal()) > 1e-15) {

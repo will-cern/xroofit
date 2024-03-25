@@ -513,6 +513,9 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
              v && std::abs(v->getVal() - out.alt_poi().getRealValue(v->GetName())) > 1e-12) {
             match = false;
             break;
+         } else if(auto cat = dynamic_cast<RooAbsCategory*>(c); cat && cat->getCurrentIndex() == out.alt_poi().getCatIndex(cat->GetName(),std::numeric_limits<int>().max())) {
+            match = false;
+            break;
          }
       }
       if (!match)
@@ -525,6 +528,9 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
          }
          if (auto v = dynamic_cast<RooAbsReal *>(c);
              v && std::abs(v->getVal() - out.coords->getRealValue(v->GetName())) > 1e-12) {
+            match = false;
+            break;
+         } else if(auto cat = dynamic_cast<RooAbsCategory*>(c); cat && cat->getCurrentIndex() == out.alt_poi().getCatIndex(cat->GetName(),std::numeric_limits<int>().max())) {
             match = false;
             break;
          }

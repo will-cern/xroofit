@@ -756,8 +756,15 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
                         for (auto &p : *constPars) {
                            auto v = dynamic_cast<RooAbsReal *>(p);
                            if (!v) {
-                              match = false;
-                              break;
+                              if(auto c = dynamic_cast<RooAbsCategory*>(p)) {
+                                 if (auto _p = dynamic_cast<RooAbsCategory *>(cachedFit->constPars().find(p->GetName())); _p && !_p->getAttribute("global") && _p->getCurrentIndex()!=c->getCurrentIndex()) {
+                                    match=false;
+                                    break;
+                                 }
+                              } else {
+                                 match = false;
+                                 break;
+                              }
                            };
                            if (auto _p = dynamic_cast<RooAbsReal *>(cachedFit->constPars().find(p->GetName())); _p) {
                               // note: do not need global observable values to match (globals currently added to
