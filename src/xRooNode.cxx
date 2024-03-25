@@ -1101,14 +1101,21 @@ TAxis *xRooNode::GetXaxis() const
          } else {
             fXAxis = std::make_shared<Axis2>(x->numBins(binningName), r->getBinning(binningName).array());
          }
-      } else if (dynamic_cast<RooAbsCategory *>(x)) {
+      } else if (auto cat = dynamic_cast<RooCategory *>(x)) {
          std::vector<double> bins = {};
          for (int i = 0; i <= x->numBins(binningName); i++)
             bins.push_back(i);
          fXAxis = std::make_shared<Axis2>(x->numBins(binningName), &bins[0]);
          // TODO have to load current state of bin labels if was a category (sadly not a virtual method)
-         for (int i = 0; i < x->numBins(binningName); i++) {
-            fXAxis->SetBinLabel(i + 1, dynamic_cast<RooAbsCategory *>(x)->lookupName(i).c_str());
+         int i=1;
+         std::map<int, std::string> cats; // fill into a map to preserve index ordering
+         for (auto &c : *cat) {
+            if (cat->isStateInRange(binningName, c.first.c_str())) {
+               cats[c.second] = c.first;
+            }
+         }
+         for(auto& [_,label] : cats) {
+            fXAxis->SetBinLabel(i++, label.c_str());
          }
       }
    }
@@ -6038,9 +6045,13 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
                      TString::Format("%s_%s", GetName(), vo->GetName()),
                      TString::Format("my temp hist;%s", strlen(vo->GetTitle()) ? vo->GetTitle() : vo->GetName()),
                      cat->numTypes(), 0, cat->numTypes());
-                  for (int i = 0; i < cat->numTypes(); i++) {
-                     cat->setBin(i);
-                     theHist->GetXaxis()->SetBinLabel(i + 1, cat->getLabel());
+                  int i=1;
+                  std::map<int, std::string> cats; // fill into a map to preserve index ordering
+                  for(auto &c : *cat) {
+                     cats[c.second] = c.first;
+                  }
+                  for(auto& [_,label] : cats) {
+                     theHist->GetXaxis()->SetBinLabel(i++, label.c_str());
                   }
                } else {
                   auto _binning = v->getBinningPtr(nullptr);
@@ -7715,9 +7726,13 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    } else if (!h) {
       h = new TH1D(rar->GetName(), rar->GetTitle(), v->numBins(rar->GetName()), 0, v->numBins(rar->GetName()));
       if (auto cat = dynamic_cast<RooAbsCategoryLValue *>(v)) {
-         for (int i = 0; i < cat->numTypes(); i++) {
-            cat->setBin(i);
-            h->GetXaxis()->SetBinLabel(i + 1, cat->getLabel());
+         int i=1;
+         std::map<int, std::string> cats; // fill into a map to preserve index ordering
+         for (auto &c : *cat) {
+            cats[c.second] = c.first;
+         }
+         for(auto& [_,label] : cats) {
+            h->GetXaxis()->SetBinLabel(i++, label.c_str());
          }
       }
    }
@@ -7938,10 +7953,13 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    if (binStart == -1 && binEnd == -1) {
       binEnd = 1;
    }
+   auto cat = (!x) ? dynamic_cast<RooAbsCategoryLValue*>(v) : nullptr;
    for (int i = std::max(1, binStart); i <= std::min(h->GetNbinsX(), binEnd); i++) {
       timeIt.Start(true);
       if (x) {
          x->setVal(h->GetBinCenter(i));
+      } else if(cat) {
+         cat->setLabel(h->GetXaxis()->GetBinLabel(i)); // because order might not match "binning" order
       } else if (v) {
          v->setBin(i - 1);
       }
@@ -8478,12 +8496,11 @@ void xRooNode::Draw(Option_t *opt)
          } else if (nBins == 1)
             xPoints.push_back((min + max) / 2.);
       }
-      v = getObject<RooAbsRealLValue>(varName.Data()).get();
+      v = getObject<RooAbsLValue>(varName.Data()).get();
       if (!v) {
-         Error("Draw", "Could not find variable %s", varName.Data());
-         return; // don't throw because if happens in browser will cause ROOT to exit
+         throw std::runtime_error(TString::Format("Could not find variable %s", varName.Data()));
       }
-      if (xPoints.empty() && !obs().find(varName.Data())) { // will draw obs as regular (e.g. hist)
+      if (xPoints.empty() && !obs().find(varName.Data()) && dynamic_cast<RooAbsRealLValue*>(v)) { // will draw obs as regular (e.g. hist)
          double tmp = static_cast<RooAbsRealLValue *>(v)->getVal();
          for (int i = 0; i < v->numBins(GetName()); i++) {
             v->setBin(i, GetName());
@@ -8546,10 +8563,14 @@ void xRooNode::Draw(Option_t *opt)
    bool hasFR = sOpt.Contains("pull") && !get<RooFitResult>();
    sOpt.ReplaceAll("pull", "");
    bool hasText = sOpt.Contains("text");
+   bool hasTexte = sOpt.Contains("texte");
    bool hasErrorOpt = sOpt.Contains("e");
    sOpt.ReplaceAll("e", "");
-   if (hasText)
+   if (hasTexte) {
+      sOpt.ReplaceAll("txt","texte");
+   } else if (hasText) {
       sOpt.ReplaceAll("txt", "text");
+   }
    if (auxPlotTitle == "Signif")
       hasErrorOpt = true; // must calculate error to calculate significance
    if (hasOverlay)
@@ -8779,7 +8800,7 @@ void xRooNode::Draw(Option_t *opt)
       return;
    }
 
-   if (auto _simPdf = get<RooSimultaneous>(); _simPdf) {
+   if (auto _simPdf = get<RooSimultaneous>(); _simPdf && !(v && strcmp(_simPdf->indexCat().GetName(),dynamic_cast<TObject*>(v)->GetName())==0)) {
       auto _channels = bins();
       int _size = 0;
       for (auto &_v : _channels) {
@@ -9631,6 +9652,8 @@ void xRooNode::Draw(Option_t *opt)
       auto s = parentPdf();
       if (s && s->get<RooSimultaneous>()) {
          // drawing dataset associated to a simultaneous means must find subpads with variation names
+         // may not have subpads if drawning a "Yield" plot ...
+         bool doneDraw = false;
          for (auto c : s->bins()) {
             auto _pad = dynamic_cast<TPad *>(gPad->GetPrimitive(c->GetName()));
             if (!_pad)
@@ -9643,10 +9666,13 @@ void xRooNode::Draw(Option_t *opt)
             auto tmp = gPad;
             _pad->cd();
             ds->Draw(opt);
+            doneDraw = true;
             tmp->cd();
          }
-         gPad->Modified();
-         return;
+         if(doneDraw) {
+            gPad->Modified();
+            return;
+         }
       }
 
       if (!s && hasSame) {
@@ -9890,7 +9916,7 @@ void xRooNode::Draw(Option_t *opt)
       h->GetXaxis()->SetName("xaxis"); // WARNING -- this messes up anywhere we GetXaxis()->GetName()
    }
 
-   if (rar->InheritsFrom("RooAbsPdf") && !(rar->InheritsFrom("RooRealSumPdf") || rar->InheritsFrom("RooAddPdf"))) {
+   if (rar->InheritsFrom("RooAbsPdf") && !(rar->InheritsFrom("RooRealSumPdf") || rar->InheritsFrom("RooAddPdf") || rar->InheritsFrom("RooSimultaneous"))) {
       // append parameter values to title if has such
       RooArgSet s;
       rar->leafNodeServerList(&s);
@@ -9924,7 +9950,7 @@ void xRooNode::Draw(Option_t *opt)
          gPad->SetGrid(1, 1);
       }
    }
-   TString dOpt = (TString(rar->ClassName()).Contains("Hist") || rar->isBinnedDistribution(*vv) ||
+   TString dOpt = (TString(rar->ClassName()).Contains("Hist") || vv->isCategory() || rar->isBinnedDistribution(*vv) ||
                    h->GetNbinsX() == 1 || rar->getAttribute("BinnedLikelihood") ||
                    (dynamic_cast<RooAbsRealLValue *>(vv) &&
                     std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue *>(vv),
@@ -10104,7 +10130,7 @@ void xRooNode::Draw(Option_t *opt)
       h->Draw(dOpt + sOpt);
    }
 
-   if (!hasOverlay && (rarNode->get()->InheritsFrom("RooRealSumPdf") || rarNode->get()->InheritsFrom("RooAddPdf"))) {
+   if (!hasOverlay && (rarNode->get()->InheritsFrom("RooRealSumPdf") || rarNode->get()->InheritsFrom("RooAddPdf") || (rarNode->get()->InheritsFrom("RooSimultaneous")&& strcmp(vv->GetName(),rarNode->get<RooSimultaneous>()->indexCat().GetName())==0))) {
       // build a stack unless not requested
       if (!nostack) {
          THStack *stack = new THStack(TString::Format("%s_stack", rar->GetName()),
@@ -10152,6 +10178,26 @@ void xRooNode::Draw(Option_t *opt)
                hhs.push_back(hh);
                prevHist = nextHist;
             }
+         } else if(auto simPdf = get<RooSimultaneous>()) {
+            // need to create a histogram for each sample across all the channels - will rely on functionality below to merge them based on titles
+
+            for(auto &chan : bins()) {
+               TString chanName(chan->GetName());
+               chanName = chanName(chanName.Index("=")+1,chanName.Length());
+               for(auto &samp : chan->mainChild().components()) {
+                  auto hh = static_cast<TH1*>(h->Clone(samp->GetName()));
+                  hh->Reset();
+                  hh->SetTitle(samp->GetTitle());
+                  if(strlen(hh->GetTitle())==0) {
+                     hh->SetTitle(samp->GetName());
+                  }
+                  hh->SetTitle( TString(hh->GetTitle()).ReplaceAll(TString(chan->get()->GetName())+"_","")); // remove occurance of channelname_ in title (usually prefix)
+                  titleMatchName &= (TString(samp->GetName()) == hh->GetTitle() ||
+                                     TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
+                  hh->SetBinContent(hh->GetXaxis()->FindFixBin(chanName),samp->GetContent());
+                  hhs.push_back(hh);
+               }
+            }
          } else {
             for (auto &samp : rarNode->components()) {
                auto hh = samp->BuildHistogram(v);
@@ -10164,46 +10210,11 @@ void xRooNode::Draw(Option_t *opt)
                                   TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
             }
          }
-         for (auto &hh : hhs) {
-            // automatically group hists that all have the same title
-            if (histGroups.find(hh->GetTitle()) == histGroups.end()) {
-               histGroups[hh->GetTitle()] = hh;
-            } else {
-               // add it into this group
-               histGroups[hh->GetTitle()]->Add(hh);
-               delete hh;
-               continue;
-            }
-            auto hhMin = (hh->GetMinimum() == 0) ? hh->GetMinimum(1e-9) : hh->GetMinimum();
-            if (!stack->GetHists() && h->GetMinimum() > hhMin) {
-               auto newMin = hhMin - (h->GetMaximum() - hhMin) * gStyle->GetHistTopMargin();
-               if (hhMin >= 0 && newMin < 0)
-                  newMin = hhMin * 0.99;
-               adjustYRange(newMin, h->GetMaximum());
-            }
 
-            /*if(stack->GetHists() && stack->GetHists()->GetEntries()>0) {
-                // to remove rounding effects on bin boundaries, see if binnings compatible
-                auto _h1 = dynamic_cast<TH1*>(stack->GetHists()->At(0));
-                if(_h1->GetNbinsX()==hh->GetNbinsX()) TODO ... finish dealing with silly rounding effects
-            }*/
-            TString thisOpt = dOpt;
-            // uncomment next line to blend continuous with discrete components .. get some unpleasant "poke through"
-            // effects though
-            // if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ?
-            // "" : "LF2";
-            stack->Add(hh, thisOpt);
-            allTitles.insert(hh->GetTitle());
-         }
-         stack->SetBit(kCanDelete); // should delete its sub histograms
-         stack->Draw("noclear same");
-         h->Draw(
-            dOpt + sOpt +
-            "same"); // overlay again ..  if stack would cover original hist (negative components) we still see integral
-         h->Draw("axissame"); // redraws axis
-
-         TList *ll = stack->GetHists();
-         if (ll && ll->GetEntries()) {
+         if(!hhs.empty()) {
+            for (auto &hh : hhs) {
+               allTitles.insert(hh->GetTitle());
+            }
 
             // get common prefix to strip off only if all titles match names and
             // any title is longer than 10 chars
@@ -10211,7 +10222,7 @@ void xRooNode::Draw(Option_t *opt)
             size_t ii = 0;
             bool goodPrefix = false;
             std::string commonSuffix;
-            if (titleMatchName && ll->GetEntries() > 1) {
+            if (titleMatchName && hhs.size() > 1) {
                while (ii < e - 1 && allTitles.begin()->at(ii) == allTitles.rbegin()->at(ii)) {
                   ii++;
                   if (allTitles.begin()->at(ii) == '_' || allTitles.begin()->at(ii) == ' ')
@@ -10259,16 +10270,56 @@ void xRooNode::Draw(Option_t *opt)
             }
 
             // strip common prefix and suffix before adding
-            for (int i = ll->GetEntries() - 1; i >= 0; i--) { // go in reverse order
-               auto _title = (ll->GetEntries() > 5) ? reducedTitles[ll->At(i)->GetTitle()] : ll->At(i)->GetTitle();
+            for (auto ritr = hhs.rbegin();ritr!=hhs.rend();++ritr) { // go in reverse order
+               auto _title = (hhs.size() > 5) ? reducedTitles[(*ritr)->GetTitle()] : (*ritr)->GetTitle();
                _title = _title.substr(ii < _title.size() ? ii : 0);
                if (!commonSuffix.empty() && TString(_title).EndsWith(commonSuffix.c_str()))
                   _title = _title.substr(0, _title.length() - commonSuffix.length());
-
-               // style hists according to available styles ... creating if necessary
-               dynamic_cast<TNamed *>(ll->At(i))->SetTitle(_title.c_str());
-               addLegendEntry(ll->At(i), _title.c_str(), "f");
+               (*ritr)->SetTitle(_title.c_str());
             }
+         }
+
+         for (auto &hh : hhs) {
+            // automatically group hists that all have the same title
+            if (histGroups.find(hh->GetTitle()) == histGroups.end()) {
+               histGroups[hh->GetTitle()] = hh;
+            } else {
+               // add it into this group
+               histGroups[hh->GetTitle()]->Add(hh);
+               delete hh; hh = nullptr;
+               continue;
+            }
+            auto hhMin = (hh->GetMinimum() == 0) ? hh->GetMinimum(1e-9) : hh->GetMinimum();
+            if (!stack->GetHists() && h->GetMinimum() > hhMin) {
+               auto newMin = hhMin - (h->GetMaximum() - hhMin) * gStyle->GetHistTopMargin();
+               if (hhMin >= 0 && newMin < 0)
+                  newMin = hhMin * 0.99;
+               adjustYRange(newMin, h->GetMaximum());
+            }
+
+            /*if(stack->GetHists() && stack->GetHists()->GetEntries()>0) {
+                // to remove rounding effects on bin boundaries, see if binnings compatible
+                auto _h1 = dynamic_cast<TH1*>(stack->GetHists()->At(0));
+                if(_h1->GetNbinsX()==hh->GetNbinsX()) TODO ... finish dealing with silly rounding effects
+            }*/
+            TString thisOpt = dOpt;
+            // uncomment next line to blend continuous with discrete components .. get some unpleasant "poke through"
+            // effects though
+            // if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ?
+            // "" : "LF2";
+            stack->Add(hh, thisOpt);
+         }
+         stack->SetBit(kCanDelete); // should delete its sub histograms
+         stack->Draw("noclear same");
+         h->Draw(
+            dOpt + sOpt +
+            "same"); // overlay again ..  if stack would cover original hist (negative components) we still see integral
+         h->Draw("axissame"); // redraws axis
+
+         TList *ll = stack->GetHists();
+         if (ll && ll->GetEntries()) {
+
+
             // finally, ensure all hists are styled
             for (auto ho : *ll) {
                TH1 *hh = dynamic_cast<TH1 *>(ho);
@@ -10280,7 +10331,7 @@ void xRooNode::Draw(Option_t *opt)
                   // give hist a color, that isn't the same as any other hists color
                   bool used = false;
                   do {
-                     hh->SetFillColor((count++) % 100);
+                     hh->SetFillColor((count++));
                      // check not already used this color
                      used = false;
                      for (auto ho2 : *ll) {
@@ -10302,6 +10353,7 @@ void xRooNode::Draw(Option_t *opt)
                   *dynamic_cast<TAttFill *>(hh) = *_style;
                   *dynamic_cast<TAttMarker *>(hh) = *_style;
                }
+               addLegendEntry(hh, hh->GetTitle(), "f");
             }
          }
       }
