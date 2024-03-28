@@ -10178,7 +10178,7 @@ void xRooNode::Draw(Option_t *opt)
                hhs.push_back(hh);
                prevHist = nextHist;
             }
-         } else if(auto simPdf = get<RooSimultaneous>()) {
+         } else if(get<RooSimultaneous>()) {
             // need to create a histogram for each sample across all the channels - will rely on functionality below to merge them based on titles
 
             for(auto &chan : bins()) {
