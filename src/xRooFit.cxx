@@ -563,6 +563,16 @@ public:
    }
    TObject *clone(const char *newname) const override { return new ProgressMonitor(*this, newname); }
 
+   // required forwarding methods for RooEvaluatorWrapper in 6.32 onwards
+   double defaultErrorLevel() const override { return fFunc->defaultErrorLevel(); }
+   bool getParameters(const RooArgSet *observables, RooArgSet &outputSet, bool stripDisconnected) const override { return fFunc->getParameters(observables,outputSet,stripDisconnected); }
+   bool setData(RooAbsData &data, bool cloneData) override { return fFunc->setData(data,cloneData); }
+   double getValV(const RooArgSet *) const override { return evaluate(); }
+   void applyWeightSquared(bool flag) override { fFunc->applyWeightSquared(flag); }
+   void printMultiline(std::ostream &os, Int_t contents, bool verbose = false, TString indent = "") const override { fFunc->printMultiline(os,contents,verbose,indent); }
+   void constOptimizeTestStatistic(ConstOpCode opcode, bool doAlsoTrackingOpt) override { fFunc->constOptimizeTestStatistic(opcode,doAlsoTrackingOpt); }
+
+
    double evaluate() const override
    {
       if (fInterrupt) {
