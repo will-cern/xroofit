@@ -293,7 +293,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       sType.ReplaceAll("plr", "ts");
    }
 
-   if (high <= low) {
+   if (high < low || (high==low && nPoints!=1)) {
       // take from parameter
       low = p->getMin("scan");
       high = p->getMax("scan");

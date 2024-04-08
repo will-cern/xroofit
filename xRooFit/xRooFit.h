@@ -128,7 +128,8 @@ public:
          qmutilde = -3,
          // discovery test statistics
          q0 = -4,
-         uncappedq0 = -5
+         uncappedq0 = -5,
+         u0 = -5
       };
    };
 
