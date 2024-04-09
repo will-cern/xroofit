@@ -74,7 +74,7 @@ double xRooFit::Asymptotics::k(const IncompatFunc &compatRegions, double pValue,
       if (currVal > 1e-4) {
          _pll = 2. * (_pll + 1.); // goto bigger pll scale
       } else if (currVal < -1e-4) {
-         _pll /= 2.;              // goto smaller pll scale
+         _pll /= 2.; // goto smaller pll scale
       }
       // std::cout << "pll = " << _pll << " currVal = " << currVal << std::endl;
       brf.SetFunction(wf, 0, _pll);

@@ -60,7 +60,7 @@ class xRooNLLVar : public std::shared_ptr<RooAbsReal> {
 
 public:
    struct xValueWithError : public std::pair<double, double> {
-      xValueWithError(const std::pair<double, double> &in = {0,0}) : std::pair<double, double>(in) {}
+      xValueWithError(const std::pair<double, double> &in = {0, 0}) : std::pair<double, double>(in) {}
       double value() const { return std::pair<double, double>::first; }
       double error() const { return std::pair<double, double>::second; }
    };
@@ -100,10 +100,7 @@ public:
       operator const RooFitResult *() const;
       void Draw(Option_t *opt = "");
 
-      std::shared_ptr<xRooNLLVar> nll() const
-      {
-         return fNll;
-      }
+      std::shared_ptr<xRooNLLVar> nll() const { return fNll; }
 
       RooArgList poi()
       {
@@ -187,15 +184,14 @@ public:
       xValueWithError pNull_asymp(double nSigma = std::numeric_limits<double>::quiet_NaN());
       xValueWithError pAlt_asymp(double nSigma = std::numeric_limits<double>::quiet_NaN());
       xValueWithError pCLs_asymp(double nSigma = std::numeric_limits<double>::quiet_NaN());
-      xValueWithError
-      ts_asymp(double nSigma = std::numeric_limits<double>::quiet_NaN()); // test statistic value
+      xValueWithError ts_asymp(double nSigma = std::numeric_limits<double>::quiet_NaN()); // test statistic value
 
       xValueWithError pNull_toys(double nSigma = std::numeric_limits<double>::quiet_NaN());
       xValueWithError pAlt_toys(double nSigma = std::numeric_limits<double>::quiet_NaN());
       xValueWithError pCLs_toys(double nSigma = std::numeric_limits<double>::quiet_NaN())
       {
          if (fNullVal() == fAltVal())
-            return std::pair<double,double>(1, 0); // by construction
+            return std::pair<double, double>(1, 0); // by construction
          auto null = pNull_toys(nSigma);
          auto alt = pAlt_toys(nSigma);
          double nom = (null.first == 0) ? 0 : null.first / alt.first;
@@ -210,8 +206,7 @@ public:
                                        : (sqrt(pow(null.second, 2) + pow(alt.second * nom, 2)) / alt.first));
          // return std::pair(nom,std::max(std::abs(up - nom), std::abs(down - nom)));
       }
-      xValueWithError
-      ts_toys(double nSigma = std::numeric_limits<double>::quiet_NaN()); // test statistic value
+      xValueWithError ts_toys(double nSigma = std::numeric_limits<double>::quiet_NaN()); // test statistic value
 
       // Create a HypoTestResult representing the current state of this hypoPoint
       RooStats::HypoTestResult result();
@@ -361,8 +356,7 @@ public:
       // estimates where corresponding pValues graph becomes equal to 0.05
       // linearly interpolates log(pVal) when obtaining limits.
       // returns value and error
-      static xValueWithError
-      GetLimit(const TGraph &pValues, double target = std::numeric_limits<double>::quiet_NaN());
+      static xValueWithError GetLimit(const TGraph &pValues, double target = std::numeric_limits<double>::quiet_NaN());
 
       static RooArgList toArgs(const char *str);
 
@@ -479,9 +473,9 @@ public:
 };
 
 namespace cling {
-std::string printValue(const xRooNLLVar::xValueWithError* val);
-std::string printValue(const std::map<std::string, xRooNLLVar::xValueWithError>* m);
-}
+std::string printValue(const xRooNLLVar::xValueWithError *val);
+std::string printValue(const std::map<std::string, xRooNLLVar::xValueWithError> *m);
+} // namespace cling
 
 END_XROOFIT_NAMESPACE;
 

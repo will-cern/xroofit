@@ -293,7 +293,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       sType.ReplaceAll("plr", "ts");
    }
 
-   if (high < low || (high==low && nPoints!=1)) {
+   if (high < low || (high == low && nPoints != 1)) {
       // take from parameter
       low = p->getMin("scan");
       high = p->getMax("scan");
@@ -301,7 +301,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
    if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
       p->setRange("scan", low, high);
    }
-   if(p->hasRange("scan")) {
+   if (p->hasRange("scan")) {
       ::Info("xRooHypoSpace::scan", "Using %s scan range: %g - %g", p->GetName(), p->getMin("scan"), p->getMax("scan"));
    }
 
@@ -513,7 +513,9 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
              v && std::abs(v->getVal() - out.alt_poi().getRealValue(v->GetName())) > 1e-12) {
             match = false;
             break;
-         } else if(auto cat = dynamic_cast<RooAbsCategory*>(c); cat && cat->getCurrentIndex() == out.alt_poi().getCatIndex(cat->GetName(),std::numeric_limits<int>().max())) {
+         } else if (auto cat = dynamic_cast<RooAbsCategory *>(c);
+                    cat && cat->getCurrentIndex() ==
+                              out.alt_poi().getCatIndex(cat->GetName(), std::numeric_limits<int>().max())) {
             match = false;
             break;
          }
@@ -530,7 +532,9 @@ xRooNLLVar::xRooHypoPoint &xRooNLLVar::xRooHypoSpace::AddPoint(const char *coord
              v && std::abs(v->getVal() - out.coords->getRealValue(v->GetName())) > 1e-12) {
             match = false;
             break;
-         } else if(auto cat = dynamic_cast<RooAbsCategory*>(c); cat && cat->getCurrentIndex() == out.alt_poi().getCatIndex(cat->GetName(),std::numeric_limits<int>().max())) {
+         } else if (auto cat = dynamic_cast<RooAbsCategory *>(c);
+                    cat && cat->getCurrentIndex() ==
+                              out.alt_poi().getCatIndex(cat->GetName(), std::numeric_limits<int>().max())) {
             match = false;
             break;
          }
@@ -1319,7 +1323,7 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pV
 
    // simple linear extrapolation to critical value ... return nan if problem
    if (gr->GetN() < 2) {
-      return std::pair<double,double>(std::numeric_limits<double>::quiet_NaN(), 0);
+      return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    }
 
    double alpha = log(target);

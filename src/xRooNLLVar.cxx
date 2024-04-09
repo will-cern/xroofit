@@ -691,40 +691,44 @@ double xRooNLLVar::getEntryVal(size_t entry) const
    return -_data->weight() * _pdf->getLogVal(_data->get());
 }
 
-std::set<std::string> xRooNLLVar::binnedChannels() const {
+std::set<std::string> xRooNLLVar::binnedChannels() const
+{
    std::set<std::string> out;
 
    auto binnedOpt = dynamic_cast<RooCmdArg *>(fOpts->find("Binned")); // the binned option, if explicitly specified
 
-   if (auto s = dynamic_cast<RooSimultaneous*>(pdf().get())) {
+   if (auto s = dynamic_cast<RooSimultaneous *>(pdf().get())) {
       xRooNode simPdf(*s);
       bool allChannels = true;
-      for(auto c : simPdf.bins()) {
+      for (auto c : simPdf.bins()) {
          // see if there's a RooRealSumPdf in the channel - if there is, if it has BinnedLikelihood set
          // then assume is a BinnedLikelihood channel
          RooArgSet nodes;
          c->get<RooAbsArg>()->treeNodeServerList(&nodes, nullptr, true, false);
-         bool isBinned=false;
-         for(auto a : nodes) {
-            if(a->InheritsFrom("RooRealSumPdf") && ( (binnedOpt && binnedOpt->getInt(0)) || (!binnedOpt && a->getAttribute("BinnedLikelihood")) ) ) {
+         bool isBinned = false;
+         for (auto a : nodes) {
+            if (a->InheritsFrom("RooRealSumPdf") &&
+                ((binnedOpt && binnedOpt->getInt(0)) || (!binnedOpt && a->getAttribute("BinnedLikelihood")))) {
                TString chanName(c->GetName());
-               out.insert( chanName(chanName.Index("=")+1,chanName.Length()).Data() );
-               isBinned=true;
+               out.insert(chanName(chanName.Index("=") + 1, chanName.Length()).Data());
+               isBinned = true;
                break;
             }
          }
-         if(!isBinned) {
+         if (!isBinned) {
             allChannels = false;
          }
       }
-      if(allChannels) {
-         out.clear(); out.insert("*");
+      if (allChannels) {
+         out.clear();
+         out.insert("*");
       }
    } else {
       RooArgSet nodes;
       pdf()->treeNodeServerList(&nodes, nullptr, true, false);
-      for(auto a : nodes) {
-         if(a->InheritsFrom("RooRealSumPdf") && ( (binnedOpt && binnedOpt->getInt(0)) || (!binnedOpt && a->getAttribute("BinnedLikelihood")) ) ) {
+      for (auto a : nodes) {
+         if (a->InheritsFrom("RooRealSumPdf") &&
+             ((binnedOpt && binnedOpt->getInt(0)) || (!binnedOpt && a->getAttribute("BinnedLikelihood")))) {
             out.insert("*");
             break;
          }
@@ -838,15 +842,15 @@ double xRooNLLVar::saturatedNllTerm() const
 
    std::set<std::string> _binnedChannels = binnedChannels();
 
-
    // for binned case each entry is: -(-N + Nlog(N) - TMath::LnGamma(N+1))
    // for unbinned case each entry is: -(N*log(N/(sumN*binW))) = -N*logN + N*log(sumN) + N*log(binW)
    // but unbinned gets extendedTerm = sumN - sumN*log(sumN)
    // so resulting sum is just sumN - sum[ N*logN - N*log(binW) ]
    // which is the same as the binned case without the LnGamma part and with the extra sum[N*log(binW)] part
 
-   const RooAbsCategoryLValue* cat = (dynamic_cast<RooSimultaneous*>(pdf().get())) ? &dynamic_cast<RooSimultaneous*>(pdf().get())->indexCat() : nullptr;
-
+   const RooAbsCategoryLValue *cat = (dynamic_cast<RooSimultaneous *>(pdf().get()))
+                                        ? &dynamic_cast<RooSimultaneous *>(pdf().get())->indexCat()
+                                        : nullptr;
 
    double out = _data->sumEntries();
    for (int i = 0; i < _data->numEntries(); i++) {
@@ -855,11 +859,11 @@ double xRooNLLVar::saturatedNllTerm() const
       out -= w * std::log(w);
       if (_binnedChannels.count("*")) {
          out += TMath::LnGamma(w + 1);
-      } else if(_binnedChannels.empty()) {
+      } else if (_binnedChannels.empty()) {
          out += w * std::log(getEntryBinWidth(i));
-      } else if(cat) {
+      } else if (cat) {
          // need to determine which channel we are in for this entry to decide if binned or unbinned active
-         if(_binnedChannels.count(_data->get()->getCatLabel(cat->GetName()))) {
+         if (_binnedChannels.count(_data->get()->getCatLabel(cat->GetName()))) {
             out += TMath::LnGamma(w + 1);
          } else {
             out += w * std::log(getEntryBinWidth(i));
@@ -2763,7 +2767,6 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints
 
       auto out = hypoSpace(parName, pllType, alt_val);
 
-
       // TODO: things like the physical range and alt value can't be stored on the poi
       // because if they change they will change for all hypoSpaces at once, so cannot have
       // two hypoSpace with e.g. different physical ranges.
@@ -2772,12 +2775,12 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints
          if (tsType == xRooFit::TestStatistic::qmutilde) {
             dynamic_cast<RooRealVar *>(p)->setRange("physical", 0, std::numeric_limits<double>::infinity());
             Info("xRooNLLVar::hypoSpace", "Setting physical range of %s to [0,inf]", p->GetName());
-         } else if(dynamic_cast<RooRealVar *>(p)->hasRange("physical")) {
+         } else if (dynamic_cast<RooRealVar *>(p)->hasRange("physical")) {
             dynamic_cast<RooRealVar *>(p)->removeRange("physical");
-            Info("xRooNLLVar::hypoSpace", "Setting physical range of %s to [-inf,inf] (i.e. removed range)", p->GetName());
+            Info("xRooNLLVar::hypoSpace", "Setting physical range of %s to [-inf,inf] (i.e. removed range)",
+                 p->GetName());
          }
       }
-
 
       // ensure pll type is set explicitly if known at this point
       if (tsType == xRooFit::TestStatistic::qmutilde || tsType == xRooFit::TestStatistic::qmu) {
@@ -2912,7 +2915,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
          fitDetails.setRealValue("status", fit->status());
          fitDetails.setRealValue("minNll", fit->minNll());
          fitDetails.setRealValue("edm", fit->edm());
-         fitDetails.setRealValue("covQual",fit->covQual());
+         fitDetails.setRealValue("covQual", fit->covQual());
          fitDS->add(fitDetails);
       }
    }
@@ -3011,14 +3014,18 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    return out;
 }
 
-std::string cling::printValue( const xRooNLLVar::xValueWithError *v ) {
-   if(!v) return "xValueWithError: nullptr\n";
-   return Form("%f +/- %f",v->first,v->second);
+std::string cling::printValue(const xRooNLLVar::xValueWithError *v)
+{
+   if (!v)
+      return "xValueWithError: nullptr\n";
+   return Form("%f +/- %f", v->first, v->second);
 }
-std::string cling::printValue( const std::map<std::string, xRooNLLVar::xValueWithError>* m) {
-   if(!m) return "nullptr\n";
+std::string cling::printValue(const std::map<std::string, xRooNLLVar::xValueWithError> *m)
+{
+   if (!m)
+      return "nullptr\n";
    std::string out = "{\n";
-   for(auto [k,v] : *m) {
+   for (auto [k, v] : *m) {
       out += "\"" + k + "\" => " + printValue(&v) + "\n";
    }
    out += "}\n";
