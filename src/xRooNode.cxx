@@ -3670,7 +3670,7 @@ void xRooNode::_SetBinContent_(int bin, double value, const char *par, double pa
 void xRooNode::_SetContent_(double value)
 {
    try {
-
+#if ROOT_VERSION_CODE > ROOT_VERSION(6, 29, 00)
       // if this is a collection of values, populate a TF1 and display as a dialog
       if (!get() && TString(GetName()).BeginsWith("!")) {
          browse();
@@ -3729,6 +3729,7 @@ void xRooNode::_SetContent_(double value)
          }
          return;
       }
+#endif
 
       if (!SetContent(value))
          throw std::runtime_error("Failed to SetContent");
@@ -7253,7 +7254,7 @@ public:
 
       // Strip out parameters with zero error
       RooArgList fpf_stripped;
-      for (auto *frv : static_range_cast<RooRealVar *>(fi.floatParsFinal())) {
+      for (auto *frv : static_range_cast<RooRealVar *>(fr.floatParsFinal())) {
          if (frv->getError() > 1e-20) {
             fpf_stripped.add(*frv);
          }
