@@ -7763,8 +7763,14 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    }
    TH1::AddDirectory(t);
    h->Sumw2();
-   if (v)
+   if (v) {
+      if(h->GetXaxis()->IsAlphanumeric()) {
+         // store the variable name in the TimeFormat property as well, b.c. alphanumeric requires axis name to be "xaxis"
+         h->GetXaxis()->SetTimeFormat(dynamic_cast<TObject *>(v)->GetName());
+      }
       h->GetXaxis()->SetName(dynamic_cast<TObject *>(v)->GetName()); // WARNING: messes up display of bin labels
+   }
+
    if (auto s = style(nullptr, false); s) {
       static_cast<TAttLine &>(*h) = *s;
       static_cast<TAttFill &>(*h) = *s;
@@ -7935,7 +7941,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                if (hasRange) {
                   dynamic_cast<RooAbsPdf *>(_pdf)->setNormRange("coordRange");
                }
-               newrar->addPdf(*_pdf, pdf->coords()["channelCat"]->get<RooCategory>()->getLabel());
+               newrar->addPdf(*_pdf, pdf->coords()[s->indexCat().GetName()]->get<RooCategory>()->getLabel());
             }
             rar = newrar;
          } else {
@@ -8633,7 +8639,7 @@ void xRooNode::Draw(Option_t *opt)
          }
       }
       if (hAxis && !v) {
-         v = getObject<RooAbsLValue>(hAxis->GetXaxis()->GetName()).get();
+         v = getObject<RooAbsLValue>(hAxis->GetXaxis()->IsAlphanumeric() ? hAxis->GetXaxis()->GetTimeFormatOnly() : hAxis->GetXaxis()->GetName()).get();
       }
    }
 
@@ -9933,7 +9939,7 @@ void xRooNode::Draw(Option_t *opt)
    h->SetBit(kCanDelete);
 
    if (!v)
-      v = getObject<RooAbsLValue>(h->GetXaxis()->GetName()).get();
+      v = getObject<RooAbsLValue>(h->GetXaxis()->IsAlphanumeric() ? h->GetXaxis()->GetTimeFormatOnly() : h->GetXaxis()->GetName()).get();
    RooAbsArg *vv = (v) ? dynamic_cast<RooAbsArg *>(v) : rar;
    if (h->GetXaxis()->IsAlphanumeric()) {
       // do this to get bin labels
@@ -10218,7 +10224,9 @@ void xRooNode::Draw(Option_t *opt)
             for (auto &chan : bins()) {
                TString chanName(chan->GetName());
                chanName = chanName(chanName.Index("=") + 1, chanName.Length());
-               for (auto &samp : chan->mainChild().components()) {
+               auto samps = chan->mainChild();
+               if(!samps) samps = *chan;
+               for (auto &samp : samps.components()) {
                   auto hh = static_cast<TH1 *>(h->Clone(samp->GetName()));
                   hh->Reset();
                   hh->SetTitle(samp->GetTitle());
@@ -10915,13 +10923,14 @@ std::string cling::printValue(const xRooNode *v)
          }
       }
       out += "}\n";
+      out = std::string(Form(" %s", v->GetName())) + out;
       return out;
    }
    std::string out;
    if (!(*v)) {
       return "<empty node>";
    } else {
-      return Form("Name: %s", v->GetName());
+      return Form(" %s", v->GetName());
    }
 
    return out;
