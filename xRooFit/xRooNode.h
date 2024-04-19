@@ -348,7 +348,7 @@ public:
       operator=(obj);
       return true;
    } // populates the node's comp (creating if necessary)  from given object
-   bool SetData(const TObject &obj, const char *dataName = "obsData");
+   bool SetData(const TObject &obj, const xRooNode& data = "obsData");
 
    bool SetContent(double value);                                     // uses a RooConst
    bool SetContent(double value, const char *par, double parVal = 1); // shortcut to setting a variation content
@@ -359,7 +359,7 @@ public:
    }
    bool SetBinError(int bin, double value);
    bool SetBinContent(int bin, double value, const char *par = nullptr, double parVal = 1);
-   bool SetBinData(int bin, double value, const char *dataName = "obsData"); // only valid for pdf nodes
+   bool SetBinData(int bin, double value, const xRooNode& data = "obsData"); // only valid for pdf nodes
 
    /** @private */
    void _SetContent_(double value); // *MENU*
@@ -382,7 +382,7 @@ public:
 
    TAxis *GetXaxis() const;
 
-   double GetBinData(int bin, const char *dataName = "obsData");
+   double GetBinData(int bin, const xRooNode& data = "obsData");
    double GetBinContent(int bin) const { return GetBinContents(bin, bin).at(0); }
    std::vector<double> GetBinContents(int binStart = 1, int binEnd = 0) const; // default will get all bins
    double GetBinError(int bin, const xRooNode &fr = "") const;
@@ -395,7 +395,7 @@ public:
    {
       return (fBinNumber == -1) ? IntegralAndError(fr).second : GetBinError(fBinNumber, fr);
    }
-   double GetData(const char *dataName = "obsData") { return GetBinData(fBinNumber, dataName); }
+   double GetData(const xRooNode& data = "obsData") { return GetBinData(fBinNumber, data); }
 
    xRooNLLVar nll(const xRooNode &_data, std::initializer_list<RooCmdArg> nllOpts) const;
    xRooNLLVar nll(const xRooNode &_data, const RooLinkedList &nllOpts) const;

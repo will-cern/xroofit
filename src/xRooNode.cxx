@@ -4003,14 +4003,32 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
    throw std::runtime_error(TString::Format("unable to set bin content of %s", GetPath().c_str()));
 }
 
-bool xRooNode::SetBinData(int bin, double value, const char *dataName)
+bool xRooNode::SetBinData(int bin, double value, const xRooNode& data)
 {
-   return datasets()[dataName]->SetBinContent(bin, value);
+   if(data.get<RooAbsData>()) {
+      // attach as a child before calling datasets(), so that is included in the list
+      push_back(std::make_shared<xRooNode>(data));
+   }
+   auto node = datasets()[data.GetName()];
+   if(data.get<RooAbsData>()) {
+      // remove the child we attached
+      resize(size()-1);
+   }
+   return node->SetBinContent(bin, value);
 }
 
-bool xRooNode::SetData(const TObject &obj, const char *dataName)
+bool xRooNode::SetData(const TObject &obj, const xRooNode& data)
 {
-   return datasets()[dataName]->SetContents(obj);
+   if(data.get<RooAbsData>()) {
+      // attach as a child before calling datasets(), so that is included in the list
+      push_back(std::make_shared<xRooNode>(data));
+   }
+   auto node = datasets()[data.GetName()];
+   if(data.get<RooAbsData>()) {
+      // remove the child we attached
+      resize(size()-1);
+   }
+   return node->SetContents(obj);
 }
 
 bool xRooNode::SetBinError(int bin, double value)
@@ -5923,92 +5941,101 @@ xRooNode xRooNode::datasets() const
          out.emplace_back(std::make_shared<xRooNode>(*d, *this));
          out.back()->fFolder = "!datasets";
       }
-   } else if (auto __ws = ws(); __ws) {
-      if (get<RooAbsPdf>() ||
-          (!get() && fParent &&
-           fParent->get<RooAbsPdf>())) { // second condition handles 'bins' nodes of pdf, which have null ptr
-         // only add datasets that have observables that cover all our observables
-         auto oo = obs(); // must keep alive in case is owning the globs
-         RooArgSet _obs(*oo.get<RooArgList>());
-         //_obs.add(coords(true).argList(), true); // include coord observables too, and current xaxis if there's one -
-         // added in loop below
+   } else if (get<RooAbsPdf>() ||
+       (!get() && fParent &&
+        fParent->get<RooAbsPdf>())) { // second condition handles 'bins' nodes of pdf, which have null ptr
+      // only add datasets that have observables that cover all our observables
+      auto oo = obs(); // must keep alive in case is owning the globs
+      RooArgSet _obs(*oo.get<RooArgList>());
+      //_obs.add(coords(true).argList(), true); // include coord observables too, and current xaxis if there's one -
+      // added in loop below
 
-         TString cut;
-         RooArgSet cutobs;
-         for (auto _c : coords()) { // coords() moves vars to their respective coordinates too
-            if (auto _cat = _c->get<RooAbsCategoryLValue>(); _cat) {
-               if (cut != "")
-                  cut += " && ";
-               cut += TString::Format("%s==%d", _cat->GetName(), _cat->getCurrentIndex());
-               _obs.add(*_cat,
-                        true); // note: if we ever changed coords to return clones, would need to keep coords alive
-               cutobs.add(*_cat);
-            } else if (auto _rv = _c->get<RooAbsRealLValue>(); _rv) {
-               // todo: check coordRange is a single range rather than multirange
-               if (cut != "")
-                  cut += " && ";
-               cut +=
-                  TString::Format("%s>=%f&&%s<%f", _rv->GetName(), _rv->getMin(_rv->getStringAttribute("coordRange")),
-                                  _rv->GetName(), _rv->getMax(_rv->getStringAttribute("coordRange")));
-               _obs.add(*_rv,
-                        true); // note: if we ever changed coords to return clones, would need to keep coords alive
-               cutobs.add(*_rv);
+      TString cut;
+      RooArgSet cutobs;
+      for (auto _c : coords()) { // coords() moves vars to their respective coordinates too
+         if (auto _cat = _c->get<RooAbsCategoryLValue>(); _cat) {
+            if (cut != "")
+               cut += " && ";
+            cut += TString::Format("%s==%d", _cat->GetName(), _cat->getCurrentIndex());
+            _obs.add(*_cat,
+                     true); // note: if we ever changed coords to return clones, would need to keep coords alive
+            cutobs.add(*_cat);
+         } else if (auto _rv = _c->get<RooAbsRealLValue>(); _rv) {
+            // todo: check coordRange is a single range rather than multirange
+            if (cut != "")
+               cut += " && ";
+            cut +=
+               TString::Format("%s>=%f&&%s<%f", _rv->GetName(), _rv->getMin(_rv->getStringAttribute("coordRange")),
+                               _rv->GetName(), _rv->getMax(_rv->getStringAttribute("coordRange")));
+            _obs.add(*_rv,
+                     true); // note: if we ever changed coords to return clones, would need to keep coords alive
+            cutobs.add(*_rv);
+         } else {
+            throw std::runtime_error("datasets(): Unsupported coordinate type");
+         }
+      }
+      if (auto s = get<RooSimultaneous>()) {
+         // check if we have a pdf for every category ... if not then add to cut
+         bool hasMissing = false;
+         TString extraCut = "";
+         for (auto cat : s->indexCat()) {
+            if (!s->getPdf(cat.first.c_str())) {
+               hasMissing = true;
             } else {
-               throw std::runtime_error("datasets(): Unsupported coordinate type");
+               if (extraCut != "")
+                  extraCut += " || ";
+               extraCut += TString::Format("%s==%d", s->indexCat().GetName(), cat.second);
             }
          }
-         if (auto s = get<RooSimultaneous>()) {
-            // check if we have a pdf for every category ... if not then add to cut
-            bool hasMissing = false;
-            TString extraCut = "";
-            for (auto cat : s->indexCat()) {
-               if (!s->getPdf(cat.first.c_str())) {
-                  hasMissing = true;
-               } else {
-                  if (extraCut != "")
-                     extraCut += " || ";
-                  extraCut += TString::Format("%s==%d", s->indexCat().GetName(), cat.second);
-               }
-            }
-            if (hasMissing) {
-               if (cut != "")
-                  cut += " && ";
-               cut += "(" + extraCut + ")";
-               cutobs.add(s->indexCat());
-            }
+         if (hasMissing) {
+            if (cut != "")
+               cut += " && ";
+            cut += "(" + extraCut + ")";
+            cutobs.add(s->indexCat());
          }
+      }
 
-         if (auto ax = GetXaxis(); ax && dynamic_cast<RooAbsArg *>(ax->GetParent())->getAttribute("obs")) {
-            auto a = dynamic_cast<RooAbsArg *>(ax->GetParent());
-            _obs.add(*a, true);
-         }
+      if (auto ax = GetXaxis(); ax && dynamic_cast<RooAbsArg *>(ax->GetParent())->getAttribute("obs")) {
+         auto a = dynamic_cast<RooAbsArg *>(ax->GetParent());
+         _obs.add(*a, true);
+      }
+      xRooNode _datasets; // will be any child datasets, along with datasets of the workspace
+      for(auto& child : *this) {
+         if(child->get<RooAbsData>()) _datasets.push_back(child);
+      }
+      if (auto __ws = ws(); __ws) {
          xRooNode _wsNode(*__ws, *this);
          for (auto &d : _wsNode.datasets()) {
-            if (std::unique_ptr<RooAbsCollection>(d->obs().argList().selectCommon(_obs))->size() == _obs.size()) {
-               // all obs present .. include
+            _datasets.push_back(d);
+         }
+      }
 
-               if (cut != "") {
-                  RooFormulaVar cutFormula("cut1", cut, cutobs); // doing this to avoid complaints about unused vars
-                  // TODO: Could consider using a 'filter' node (see filter() method) applied to the dataset instead
-                  // of creating and using a reduced dataset here
-                  out.emplace_back(std::make_shared<xRooNode>(
-                     std::shared_ptr<RooAbsData>(d->get<RooAbsData>()->reduce(
-                        *std::unique_ptr<RooAbsCollection>(d->robs().get<RooArgList>()->selectCommon(_obs)),
-                        cutFormula)),
-                     *this));
-                  // put a subset of the globs in the returned dataset too
-                  out.back()->get<RooAbsData>()->setGlobalObservables(*std::unique_ptr<RooAbsCollection>(
-                     d->globs().get<RooArgList>()->selectCommon(*globs().get<RooArgList>())));
-                  if (d->get()->TestBit(1 << 20))
-                     out.back()->get()->SetBit(1 << 20);
-                  // need to attach the original dataset so that things like SetBinContent can interact with it
-                  out.back()->fBrowsables.emplace_back(std::make_shared<xRooNode>(".sourceds", d->fComp, *this));
-               } else {
-                  out.emplace_back(std::make_shared<xRooNode>(d->fComp, *this));
-               }
+      for (auto &d : _datasets) {
+         if (std::unique_ptr<RooAbsCollection>(d->obs().argList().selectCommon(_obs))->size() == _obs.size()) {
+            // all obs present .. include
+
+            if (cut != "") {
+               RooFormulaVar cutFormula("cut1", cut, cutobs); // doing this to avoid complaints about unused vars
+               // TODO: Could consider using a 'filter' node (see filter() method) applied to the dataset instead
+               // of creating and using a reduced dataset here
+               out.emplace_back(std::make_shared<xRooNode>(
+                  std::shared_ptr<RooAbsData>(d->get<RooAbsData>()->reduce(
+                     *std::unique_ptr<RooAbsCollection>(d->robs().get<RooArgList>()->selectCommon(_obs)),
+                     cutFormula)),
+                  *this));
+               // put a subset of the globs in the returned dataset too
+               out.back()->get<RooAbsData>()->setGlobalObservables(*std::unique_ptr<RooAbsCollection>(
+                  d->globs().get<RooArgList>()->selectCommon(*globs().get<RooArgList>())));
+               if (d->get()->TestBit(1 << 20))
+                  out.back()->get()->SetBit(1 << 20);
+               // need to attach the original dataset so that things like SetBinContent can interact with it
+               out.back()->fBrowsables.emplace_back(std::make_shared<xRooNode>(".sourceds", d->fComp, *this));
+            } else {
+               out.emplace_back(std::make_shared<xRooNode>(d->fComp, *this));
             }
          }
-      } /*else if(auto p = get<RooFitResult>(); p) {
+      }
+       /*else if(auto p = get<RooFitResult>(); p) {
           // look for datasets in workspace that match the fit result name after hashing
           for(auto& _d : xRooNode(*_ws,*this).datasets()) {
               auto _hash = RooAbsTree::nameToHash(_d->get()->GetName());
@@ -6742,6 +6769,12 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
          throw std::runtime_error(TString::Format("Cannot find dataset %s", _data.GetName()));
       }
       return nll(*_d, opts);
+   } else if(!_data.fParent || _data.fParent->fComp != fComp) {
+      // dataset is not parented by this node ... meaning it may need to be reduced,
+      // do this via the datasets() method by attaching and detaching the dataset
+      xRooNode me(*this); // since we are in a const method, need to create a copy node.
+      me.push_back(std::make_shared<xRooNode>(_data));
+      return nll(*me.datasets().at(_data.GetName()),opts);
    }
 
    auto _globs = _data.globs(); // keep alive because may own the globs
@@ -8112,9 +8145,17 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    return h;
 }
 
-double xRooNode::GetBinData(int bin, const char *dataName)
+double xRooNode::GetBinData(int bin, const xRooNode& data)
 {
-   auto node = datasets().find(dataName);
+   if(data.get<RooAbsData>()) {
+      // attach as a child before calling datasets(), so that is included in the list
+      push_back(std::make_shared<xRooNode>(data));
+   }
+   auto node = datasets().find(data.GetName());
+   if(data.get<RooAbsData>()) {
+      // remove the child we attached
+      resize(size()-1);
+   }
    if (!node)
       return std::numeric_limits<double>::quiet_NaN();
    return node->GetBinContent(bin);
