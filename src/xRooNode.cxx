@@ -5304,6 +5304,10 @@ xRooNode xRooNode::robs() const
 
 xRooNode xRooNode::pars() const
 {
+   if(strcmp(GetName(),".bins")==0 && fParent) {
+      // return pars of the parent - this method is used by covariances() if e.g. do node.bins().covariances()
+      return fParent->pars();
+   }
    xRooNode out(".pars", std::make_shared<RooArgList>(), *this);
    out.get<RooArgList>()->setName((GetPath() + ".pars").c_str());
    for (auto o : vars()) {
@@ -10766,6 +10770,61 @@ double xRooNode::GetBinError(int bin, const xRooNode &fr) const
    if (res.empty())
       return std::numeric_limits<double>::quiet_NaN();
    return res.at(0);
+}
+
+std::vector<double> xRooNode::contents() const {
+   std::vector<double> out; out.reserve(size());
+   for(auto child : *this) {
+      out.push_back(child->GetContent());
+   }
+   return out;
+}
+
+TMatrixDSym xRooNode::covariances(const xRooNode &fr) const {
+
+   auto _fr = fr.get<RooFitResult>();
+
+   if(!_fr) {
+      return covariances(fitResult());
+   }
+
+   auto rho = _fr->correlationMatrix();
+
+   TMatrixDSym out(size());
+
+   auto _pars = pars();
+
+   for(int m=0;m<rho.GetNrows();m++) {
+      auto p_m = dynamic_cast<RooRealVar*>(_fr->floatParsFinal().at(m));
+      if(!p_m) continue; // skip categoricals
+      auto _p = dynamic_cast<RooAbsRealLValue*>(_pars.get<RooArgList>()->find(p_m->GetName()));
+      if(!_p) continue;
+      auto tmp = _p->getVal();
+      _p->setVal(p_m->getVal()+p_m->getErrorHi());
+      auto nu_m = contents();
+      _p->setVal(p_m->getVal()+p_m->getErrorLo());
+      auto nu_m2 = contents();
+      _p->setVal(tmp);
+      for(int n=0;n<rho.GetNrows();n++) {
+         auto p_n = dynamic_cast<RooRealVar*>(_fr->floatParsFinal().at(n));
+         if(!p_n) continue; // skip categoricals
+         auto _p2 = dynamic_cast<RooAbsRealLValue*>(_pars.get<RooArgList>()->find(p_n->GetName()));
+         if(!_p2) continue;
+         auto tmp2 = _p2->getVal();
+         _p2->setVal(p_n->getVal()+p_n->getErrorHi());
+         auto nu_n = (p_n==p_m) ? nu_m : contents();
+         _p2->setVal(p_n->getVal()+p_n->getErrorLo());
+         auto nu_n2 = (p_n==p_m) ? nu_m2 : contents();
+         _p2->setVal(tmp2);
+         for(int i=0;i<out.GetNrows();i++) {
+            for(int j=0;j<out.GetNrows();j++) {
+               out(i,j) += 0.25*(nu_m[i] - nu_m2[i])*rho(m,n)*(nu_n[j] - nu_n2[j]);
+            }
+         }
+      }
+   }
+   return out;
+
 }
 
 std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const char *rangeName) const

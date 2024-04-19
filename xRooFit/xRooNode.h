@@ -42,6 +42,7 @@ class TStyle;
 #include "RooLinkedList.h"
 #include "RooCmdArg.h"
 #include "TQObject.h"
+#include "TMatrixDSym.h"
 
 BEGIN_XROOFIT_NAMESPACE;
 
@@ -396,6 +397,10 @@ public:
       return (fBinNumber == -1) ? IntegralAndError(fr).second : GetBinError(fBinNumber, fr);
    }
    double GetData(const xRooNode& data = "obsData") { return GetBinData(fBinNumber, data); }
+
+   // methods to access content and covariances of the CHILDREN of a node
+   std::vector<double> contents() const;
+   TMatrixDSym covariances(const xRooNode &fr = "") const;
 
    xRooNLLVar nll(const xRooNode &_data, std::initializer_list<RooCmdArg> nllOpts) const;
    xRooNLLVar nll(const xRooNode &_data, const RooLinkedList &nllOpts) const;
