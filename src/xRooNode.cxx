@@ -1250,7 +1250,32 @@ xRooNode xRooNode::coords(bool setVals) const
    auto _p = std::shared_ptr<xRooNode>(const_cast<xRooNode *>(this), [](xRooNode *) {});
    while (_p) {
       TString pName(_p->GetName());
-      if (auto pos = pName.Index('='); pos != -1) {
+      // following is commented out while still considering, but idea is to include category in coords
+      /*if (auto s = _p->get<RooSimultaneous>(); s && s->indexCat().InheritsFrom("RooCategory") && !out.find(s->indexCat().GetName())) {
+         auto cat = const_cast<RooCategory*>(dynamic_cast<const RooCategory*>(&s->indexCat()));
+         // check if we have a pdf for every category ... if not then add to cut
+         cat->clearRange("coordRange",true);
+         bool hasMissing = false;
+         std::string includedStates;
+         for (auto state : *cat) {
+            if (!s->getPdf(state.first.c_str())) {
+               hasMissing = true;
+            } else {
+               if (!includedStates.empty()) {
+                  includedStates += ",";
+               }
+               includedStates += state.first;
+            }
+         }
+         if (hasMissing) {
+            if(includedStates.find(",") != std::string::npos) {
+               cat->addToRange("coordRange",includedStates.c_str());
+            } else {
+               cat->setLabel(includedStates);
+            }
+            out.emplace_back(std::make_shared<xRooNode>(cat->GetName(),_p->getObject<RooAbsArg>(cat->GetName()),_p));
+         }
+      } else*/ if (auto pos = pName.Index('='); pos != -1) {
          if (pos > 0 && pName(pos - 1) == '<') {
             // should be a range on a real lvalue, of form low<=name<high
             double low = TString(pName(0, pos - 1)).Atof();
