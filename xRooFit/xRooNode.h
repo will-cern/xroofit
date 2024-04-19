@@ -170,7 +170,7 @@ public:
          : std::vector<std::shared_ptr<xRooNode>>::const_iterator(itr)
       {
       }
-      decltype(auto) operator*() const
+      const std::shared_ptr<xRooNode>& operator*() const
       {
          const std::shared_ptr<xRooNode> &out = std::vector<std::shared_ptr<xRooNode>>::const_iterator::operator*();
          if (out->get() && out->empty()) {
