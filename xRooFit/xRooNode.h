@@ -171,7 +171,7 @@ public:
          : std::vector<std::shared_ptr<xRooNode>>::const_iterator(itr)
       {
       }
-      const std::shared_ptr<xRooNode>& operator*() const
+      std::iterator_traits<const std::shared_ptr<xRooNode>*>::reference operator*() const
       {
          const std::shared_ptr<xRooNode> &out = std::vector<std::shared_ptr<xRooNode>>::const_iterator::operator*();
          if (out->get() && out->empty()) {
