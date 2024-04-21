@@ -10794,6 +10794,9 @@ TMatrixDSym xRooNode::covariances(const xRooNode &fr) const {
 
    auto _pars = pars();
 
+   // formula for covariance is: C_ij = sum_m[sum_n[ (1/2)(nu[theta_m_up] - nu[theta_m_down])rho_mn(1/2)(nu[theta_n_up] - nu[theta_n_down])
+   // consistent with propagatedError formula
+
    for(int m=0;m<rho.GetNrows();m++) {
       auto p_m = dynamic_cast<RooRealVar*>(_fr->floatParsFinal().at(m));
       if(!p_m) continue; // skip categoricals
