@@ -4656,7 +4656,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
          }
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject *) {});
-      } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class()) {
+      } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class() || arg->InheritsFrom("RooStats::HypoTestInverterResult") || arg->InheritsFrom("RooStats::HypoTestResult")) {
          // ensure will have a unique name for import if must be new
          TNamed *aNamed = dynamic_cast<TNamed *>(arg.get());
          TString aName = arg->GetName();
