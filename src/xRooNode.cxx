@@ -9568,41 +9568,26 @@ void xRooNode::Draw(Option_t *opt)
 
          TGaxis *axis =
             new TGaxis(_axis->GetXmin(), -4, _axis->GetXmin(), 4, -1.2 * maxImpact, 1.2 * maxImpact, 510, "-S");
-         axis->SetTextFont(_axis->GetTitleFont());
-         axis->SetLabelFont(_axis->GetLabelFont());
-         axis->SetTextSize((axis->GetTextFont() % 10 > 2) ? (10 / factor)
-                                                          : ((gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10 / factor)) /
-                                                             (gPad->GetY2() - gPad->GetY1())));
-         axis->SetTitle(TString::Format("#Delta %s", fr->floatParsFinal().find(poiName.c_str())->GetTitle()));
-         axis->SetTickSize(axis->GetTickSize() * factor);
 
          if (doHorizontal) {
-            axis->SetLabelSize(
-               (axis->GetLabelFont() % 10 > 2)
-                  ? (10 / factor)
-                  : ((gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10 / factor)) / (gPad->GetY2() - gPad->GetY1())));
-            // axis->SetTextSize(axis->GetTextSize()*factor);
-            axis->SetTitleSize(
-               (axis->GetTextFont() % 10 > 2)
-                  ? (10 / factor)
-                  : ((gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10 / factor)) / (gPad->GetY2() - gPad->GetY1())));
-            axis->SetTitleOffset(axis->GetTitleOffset() * factor);
-            // axis->SetLabelOffset(axis->GetLabelOffset()*factor);
-            _axis->SetLabelSize(
-               (_axis->GetLabelFont() % 10 > 2)
-                  ? (10 / factor)
-                  : ((gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10 / factor)) / (gPad->GetY2() - gPad->GetY1())));
-            histCopy->GetXaxis()->SetTickLength(histCopy->GetXaxis()->GetTickLength() * factor);
-            hist->GetXaxis()->SetTickLength(hist->GetXaxis()->GetTickLength() * factor);
-            histCopy->GetYaxis()->SetTickLength(histCopy->GetYaxis()->GetTickLength() * factor);
-            hist->GetYaxis()->SetTickLength(hist->GetYaxis()->GetTickLength() * factor);
-            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset() * factor);
-            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset() * factor);
-            hist->GetXaxis()->SetTitleOffset(hist->GetXaxis()->GetTitleOffset() * factor);
-            hist->GetXaxis()->SetLabelOffset(hist->GetXaxis()->GetLabelOffset() * factor);
-            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset() * factor);
-            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset() * factor);
+//            _axis->SetLabelSize(
+//               (_axis->GetLabelFont() % 10 > 2)
+//                  ? (20 / factor)
+//                  : ((gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(20 / factor)) / (gPad->GetY2() - gPad->GetY1())));
+//            histCopy->GetXaxis()->SetTickLength(histCopy->GetXaxis()->GetTickLength() * factor);
+//            hist->GetXaxis()->SetTickLength(hist->GetXaxis()->GetTickLength() * factor);
+//            histCopy->GetYaxis()->SetTickLength(histCopy->GetYaxis()->GetTickLength() * factor);
+//            hist->GetYaxis()->SetTickLength(hist->GetYaxis()->GetTickLength() * factor);
+//            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset() * factor);
+//            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset() * factor);
+//            hist->GetXaxis()->SetTitleOffset(hist->GetXaxis()->GetTitleOffset() * factor);
+//            hist->GetXaxis()->SetLabelOffset(hist->GetXaxis()->GetLabelOffset() * factor);
+//            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset() * factor);
+//            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset() * factor);
          }
+         // copy attributes from TAxis to TGaxis
+         axis->ImportAxisAttributes((doHorizontal) ? histCopy->GetXaxis() : histCopy->GetYaxis());
+         axis->SetTitle(TString::Format("#Delta %s", fr->floatParsFinal().find(poiName.c_str())->GetTitle()));
 
          // create impact bar charts
          for (int tt = 0; tt < 2; tt++) {
@@ -9657,9 +9642,7 @@ void xRooNode::Draw(Option_t *opt)
          leg1->SetMargin(0.25);
          leg1->SetNColumns(2);
 
-         leg1->SetTextSize((leg1->GetTextFont() % 10 > 2) ? (10 / factor)
-                                                          : ((gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(10 / factor)) /
-                                                             (gPad->GetY2() - gPad->GetY1())));
+         leg1->SetTextSize(_axis->GetLabelSize());
          // leg1.SetTextFont(gStyle->GetTextFont());
          // leg1.SetTextSize(gStyle->GetTextSize());
          leg1->AddEntry((TObject *)nullptr, "Hessian Pre-fit", "");
