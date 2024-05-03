@@ -10466,6 +10466,7 @@ void xRooNode::Draw(Option_t *opt)
 
                if (createdStyle) {
                   // give hist a color, that isn't the same as any other hists color
+                  hh->SetFillStyle(1001); // solid fill style
                   bool used = false;
                   do {
                      hh->SetFillColor((count++));
