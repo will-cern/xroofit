@@ -8396,8 +8396,11 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
          return nullptr;
       l = new TLegend(0.6, 1. - gPad->GetTopMargin() - 0.08, 0.75, 1. - gPad->GetTopMargin() - 0.08);
       l->SetBorderSize(0);
-      if (l->GetTextSize() == 0)
+      //legend text will be required to match y-axis
+      if (l->GetTextSize() == 0) {
          l->SetTextSize(gStyle->GetTitleYSize());
+         l->SetTextFont(gStyle->GetTitleFont("Y"));
+      }
    }
    l->SetBit(kCanDelete);
    // l->SetMargin(0);
@@ -8727,7 +8730,9 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    if (!hasSame) {
-      gPad->SetName(GetName());
+      if(gPad != gPad->GetCanvas()) {
+         gPad->SetName(GetName()); // only rename the pad if its not the parent canvas
+      }
       gPad->SetTitle(GetTitle());
    }
 
@@ -8950,7 +8955,16 @@ void xRooNode::Draw(Option_t *opt)
          //            }
          dynamic_cast<TPad *>(pad)->DivideSquare(_size, 1e-9, 1e-9);
          if (_size > 3) {
-            pad->GetPad(_size)->SetName("legend");
+            auto _pad = pad->GetPad(_size); // will use as the legend pad
+            _pad->SetName("legend");
+            // stretch the pad all the way to the left
+            _pad->SetPad( _pad->GetAbsXlowNDC(), _pad->GetAbsYlowNDC(), 1.0, _pad->GetAbsYlowNDC()+_pad->GetAbsHNDC() );
+            // and make all the remaining pads transparent
+            int x = _size;
+            while(pad->GetPad(x+1)) {
+               pad->GetPad(x+1)->SetFillStyle(0);
+               x++;
+            }
          }
       }
       int i = 0;
