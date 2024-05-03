@@ -9657,8 +9657,7 @@ void xRooNode::Draw(Option_t *opt)
          leg1->SetNColumns(2);
 
          leg1->SetTextSize(_axis->GetLabelSize());
-         // leg1.SetTextFont(gStyle->GetTextFont());
-         // leg1.SetTextSize(gStyle->GetTextSize());
+         leg1->SetTextFont(_axis->GetLabelFont());
          leg1->AddEntry((TObject *)nullptr, "Hessian Pre-fit", "");
          leg1->AddEntry((TObject *)nullptr, "Impact:", "");
          leg1->AddEntry(hist->FindObject("prefit_impact+"), "#theta = #hat{#theta}+#Delta#theta", "f");
