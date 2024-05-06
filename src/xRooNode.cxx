@@ -7982,8 +7982,14 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
    for (auto o : _obs) {
       if (auto rr = o->get<RooRealVar>(); rr && rr->hasRange("coordRange")) {
-         rr->removeRange("coordRange");
+         rr->removeRange("coordRange"); // doesn't actually remove, just sets to -inf->+inf
+         rr->setStringAttribute("coordRange",nullptr); // removes the attribute
       }
+   }
+   // probably should also remove any range on the x-axis variable too, if there is one
+   if(auto rr = dynamic_cast<RooRealVar*>(v); rr && rr->hasRange("coordRange")) {
+      rr->removeRange("coordRange"); // doesn't actually remove, just sets to -inf->+inf
+      rr->setStringAttribute("coordRange",nullptr); // removes the attribute
    }
    coords(); // loads current coordinates and populates coordRange, if any
 
@@ -7995,7 +8001,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       // check if any obs are restricted range
       bool hasRange = false;
       for (auto o : normSet) {
-         if (auto rr = dynamic_cast<RooRealVar *>(o); rr && rr->hasRange("coordRange")) {
+         if (auto rr = dynamic_cast<RooRealVar *>(o); rr && (rr->getStringAttribute("coordRange")) && strlen(rr->getStringAttribute("coordRange"))) {
             hasRange = true;
             break;
          }
