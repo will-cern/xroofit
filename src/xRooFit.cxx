@@ -70,8 +70,14 @@ BEGIN_XROOFIT_NAMESPACE;
 std::shared_ptr<RooLinkedList> xRooFit::sDefaultNLLOptions = nullptr;
 std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::sDefaultFitConfig = nullptr;
 
-const char* xRooFit::GetVersion() { return GIT_COMMIT_HASH; }
-const char* xRooFit::GetVersionDate() { return GIT_COMMIT_DATE; }
+const char *xRooFit::GetVersion()
+{
+   return GIT_COMMIT_HASH;
+}
+const char *xRooFit::GetVersionDate()
+{
+   return GIT_COMMIT_DATE;
+}
 
 RooCmdArg xRooFit::ReuseNLL(bool flag)
 {

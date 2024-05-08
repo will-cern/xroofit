@@ -4656,7 +4656,9 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
          }
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject *) {});
-      } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class() || arg->InheritsFrom("RooStats::HypoTestInverterResult") || arg->InheritsFrom("RooStats::HypoTestResult")) {
+      } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class() ||
+                 arg->InheritsFrom("RooStats::HypoTestInverterResult") ||
+                 arg->InheritsFrom("RooStats::HypoTestResult")) {
          // ensure will have a unique name for import if must be new
          TNamed *aNamed = dynamic_cast<TNamed *>(arg.get());
          TString aName = arg->GetName();
@@ -7982,14 +7984,14 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
    for (auto o : _obs) {
       if (auto rr = o->get<RooRealVar>(); rr && rr->hasRange("coordRange")) {
-         rr->removeRange("coordRange"); // doesn't actually remove, just sets to -inf->+inf
-         rr->setStringAttribute("coordRange",nullptr); // removes the attribute
+         rr->removeRange("coordRange");                 // doesn't actually remove, just sets to -inf->+inf
+         rr->setStringAttribute("coordRange", nullptr); // removes the attribute
       }
    }
    // probably should also remove any range on the x-axis variable too, if there is one
-   if(auto rr = dynamic_cast<RooRealVar*>(v); rr && rr->hasRange("coordRange")) {
-      rr->removeRange("coordRange"); // doesn't actually remove, just sets to -inf->+inf
-      rr->setStringAttribute("coordRange",nullptr); // removes the attribute
+   if (auto rr = dynamic_cast<RooRealVar *>(v); rr && rr->hasRange("coordRange")) {
+      rr->removeRange("coordRange");                 // doesn't actually remove, just sets to -inf->+inf
+      rr->setStringAttribute("coordRange", nullptr); // removes the attribute
    }
    coords(); // loads current coordinates and populates coordRange, if any
 
@@ -8001,7 +8003,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       // check if any obs are restricted range
       bool hasRange = false;
       for (auto o : normSet) {
-         if (auto rr = dynamic_cast<RooRealVar *>(o); rr && (rr->getStringAttribute("coordRange")) && strlen(rr->getStringAttribute("coordRange"))) {
+         if (auto rr = dynamic_cast<RooRealVar *>(o);
+             rr && (rr->getStringAttribute("coordRange")) && strlen(rr->getStringAttribute("coordRange"))) {
             hasRange = true;
             break;
          }
@@ -8402,7 +8405,7 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
          return nullptr;
       l = new TLegend(0.6, 1. - gPad->GetTopMargin() - 0.08, 0.75, 1. - gPad->GetTopMargin() - 0.08);
       l->SetBorderSize(0);
-      //legend text will be required to match y-axis
+      // legend text will be required to match y-axis
       if (l->GetTextSize() == 0) {
          l->SetTextSize(gStyle->GetTitleYSize());
          l->SetTextFont(gStyle->GetTitleFont("Y"));
@@ -8736,7 +8739,7 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    if (!hasSame) {
-      if(gPad != gPad->GetCanvas()) {
+      if (gPad != gPad->GetCanvas()) {
          gPad->SetName(GetName()); // only rename the pad if its not the parent canvas
       }
       gPad->SetTitle(GetTitle());
@@ -8964,11 +8967,11 @@ void xRooNode::Draw(Option_t *opt)
             auto _pad = pad->GetPad(_size); // will use as the legend pad
             _pad->SetName("legend");
             // stretch the pad all the way to the left
-            _pad->SetPad( _pad->GetAbsXlowNDC(), _pad->GetAbsYlowNDC(), 1.0, _pad->GetAbsYlowNDC()+_pad->GetAbsHNDC() );
+            _pad->SetPad(_pad->GetAbsXlowNDC(), _pad->GetAbsYlowNDC(), 1.0, _pad->GetAbsYlowNDC() + _pad->GetAbsHNDC());
             // and make all the remaining pads transparent
             int x = _size;
-            while(pad->GetPad(x+1)) {
-               pad->GetPad(x+1)->SetFillStyle(0);
+            while (pad->GetPad(x + 1)) {
+               pad->GetPad(x + 1)->SetFillStyle(0);
                x++;
             }
          }
@@ -9590,20 +9593,21 @@ void xRooNode::Draw(Option_t *opt)
             new TGaxis(_axis->GetXmin(), -4, _axis->GetXmin(), 4, -1.2 * maxImpact, 1.2 * maxImpact, 510, "-S");
 
          if (doHorizontal) {
-//            _axis->SetLabelSize(
-//               (_axis->GetLabelFont() % 10 > 2)
-//                  ? (20 / factor)
-//                  : ((gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(20 / factor)) / (gPad->GetY2() - gPad->GetY1())));
-//            histCopy->GetXaxis()->SetTickLength(histCopy->GetXaxis()->GetTickLength() * factor);
-//            hist->GetXaxis()->SetTickLength(hist->GetXaxis()->GetTickLength() * factor);
-//            histCopy->GetYaxis()->SetTickLength(histCopy->GetYaxis()->GetTickLength() * factor);
-//            hist->GetYaxis()->SetTickLength(hist->GetYaxis()->GetTickLength() * factor);
-//            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset() * factor);
-//            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset() * factor);
-//            hist->GetXaxis()->SetTitleOffset(hist->GetXaxis()->GetTitleOffset() * factor);
-//            hist->GetXaxis()->SetLabelOffset(hist->GetXaxis()->GetLabelOffset() * factor);
-//            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset() * factor);
-//            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset() * factor);
+            //            _axis->SetLabelSize(
+            //               (_axis->GetLabelFont() % 10 > 2)
+            //                  ? (20 / factor)
+            //                  : ((gPad->AbsPixeltoY(0) - gPad->AbsPixeltoY(20 / factor)) / (gPad->GetY2() -
+            //                  gPad->GetY1())));
+            //            histCopy->GetXaxis()->SetTickLength(histCopy->GetXaxis()->GetTickLength() * factor);
+            //            hist->GetXaxis()->SetTickLength(hist->GetXaxis()->GetTickLength() * factor);
+            //            histCopy->GetYaxis()->SetTickLength(histCopy->GetYaxis()->GetTickLength() * factor);
+            //            hist->GetYaxis()->SetTickLength(hist->GetYaxis()->GetTickLength() * factor);
+            //            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset() * factor);
+            //            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset() * factor);
+            //            hist->GetXaxis()->SetTitleOffset(hist->GetXaxis()->GetTitleOffset() * factor);
+            //            hist->GetXaxis()->SetLabelOffset(hist->GetXaxis()->GetLabelOffset() * factor);
+            //            histCopy->GetXaxis()->SetTitleOffset(histCopy->GetXaxis()->GetTitleOffset() * factor);
+            //            histCopy->GetXaxis()->SetLabelOffset(histCopy->GetXaxis()->GetLabelOffset() * factor);
          }
          // copy attributes from TAxis to TGaxis
          axis->ImportAxisAttributes((doHorizontal) ? histCopy->GetXaxis() : histCopy->GetYaxis());
