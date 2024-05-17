@@ -210,10 +210,11 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
                      bool foundServer = false;
                      // note : this will work only for this type of constraints
                      // expressed as RooPoisson, RooGaussian, RooLognormal, RooGamma
+                     // SimpleGaussianConstraint is CMS's own version of a RooGaussian, which also works.
                      TClass *cClass = thePdf->IsA();
                      if (cClass != RooGaussian::Class() && cClass != RooPoisson::Class() &&
                          cClass != RooGamma::Class() && cClass != RooLognormal::Class() &&
-                         cClass != RooBifurGauss::Class()) {
+                         cClass != RooBifurGauss::Class() && !(cClass && strcmp(cClass->GetName(),"SimpleGaussianConstraint")==0)) {
                         TString className = (cClass) ? cClass->GetName() : "undefined";
                         oocoutW((TObject *)nullptr, Generation)
                            << "AsymptoticCalculator::MakeAsimovData:constraint term " << thePdf->GetName()
