@@ -11080,14 +11080,14 @@ std::string cling::printValue(const xRooNode *v)
          }
       }
       out += "}\n";
-      out = std::string(Form(" %s", v->GetName())) + out;
+      out = std::string(Form("<%s> %s", v->get() ? v->get()->ClassName() : "nullptr", v->GetName())) + out;
       return out;
    }
    std::string out;
    if (!(*v)) {
-      return "<empty node>";
+      return "<nullptr>";
    } else {
-      return Form(" %s", v->GetName());
+      return Form("<%s> %s", v->get() ? v->get()->ClassName() : "nullptr", v->GetName());
    }
 
    return out;
