@@ -970,6 +970,14 @@ std::shared_ptr<TObject> xRooNode::getObject(const std::string &name, const std:
       }
       return out;
    }
+   if (auto arg = get<RooAbsArg>()) {
+      // can try all nodes
+      RooArgSet nodes;
+      arg->treeNodeServerList(&nodes);
+      if(auto server = nodes.find(name.c_str())) {
+         return std::shared_ptr<TObject>(server, [](TObject *) {});
+      }
+   }
    return nullptr;
 }
 
