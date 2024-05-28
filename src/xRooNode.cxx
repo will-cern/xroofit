@@ -8967,7 +8967,7 @@ void xRooNode::Draw(Option_t *opt)
             auto _pad = pad->GetPad(_size); // will use as the legend pad
             _pad->SetName("legend");
             // stretch the pad all the way to the left
-            _pad->SetPad(_pad->GetAbsXlowNDC(), _pad->GetAbsYlowNDC(), 1.0, _pad->GetAbsYlowNDC() + _pad->GetAbsHNDC());
+            _pad->SetPad(_pad->GetXlowNDC(), _pad->GetYlowNDC(), 1.0, _pad->GetYlowNDC() + _pad->GetHNDC());
             // and make all the remaining pads transparent
             int x = _size;
             while (pad->GetPad(x + 1)) {
@@ -10072,7 +10072,10 @@ void xRooNode::Draw(Option_t *opt)
          gPad->SetGrid(1, 1);
       }
    }
-   TString dOpt = (TString(rar->ClassName()).Contains("Hist") || vv->isCategory() || rar->isBinnedDistribution(*vv) ||
+   // need to strip namespace to discount the "HistFactory" namespace classes from all being treated as binned
+   TString clNameNoNamespace = rar->ClassName();
+   clNameNoNamespace = clNameNoNamespace(clNameNoNamespace.Last(':')+1,clNameNoNamespace.Length());
+   TString dOpt = (clNameNoNamespace.Contains("Hist") || vv->isCategory() || rar->isBinnedDistribution(*vv) ||
                    h->GetNbinsX() == 1 || rar->getAttribute("BinnedLikelihood") ||
                    (dynamic_cast<RooAbsRealLValue *>(vv) &&
                     std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue *>(vv),
@@ -10088,7 +10091,9 @@ void xRooNode::Draw(Option_t *opt)
       // if so then dOpt="";
       bool allHist = true;
       for (auto &s : components()) {
-         if (!(s->get() && TString(s->get()->ClassName()).Contains("Hist"))) {
+         TString _clName = s->get()->ClassName();
+         _clName = _clName(_clName.Last(':')+1,_clName.Length());
+         if (!(s->get() && _clName.Contains("Hist"))) {
             allHist = false;
             break;
          }
