@@ -754,7 +754,7 @@ double xRooNLLVar::getEntryBinWidth(size_t entry) const
    double volume = 1.;
    for (auto o : *_robs) {
 
-      if (auto a = dynamic_cast<RooAbsRealLValue *>(o); a) {
+      if (auto a = dynamic_cast<RooAbsRealLValue *>(o); a && _pdf->dependsOn(*a)) { // dependsOn check needed until ParamHistFunc binBoundaries method fixed
          std::unique_ptr<std::list<double>> bins(
             _pdf->binBoundaries(*a, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()));
          if (bins) {
