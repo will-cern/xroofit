@@ -788,6 +788,11 @@ double xRooNLLVar::saturatedConstraintTerm() const
       return 0;
 
    for (auto c : cTerm->list()) {
+      if(std::string(c->ClassName())=="RooAbsPdf") {
+         // in ROOT 6.32 the constraintTerm is full of RooNormalizedPdfs which aren't public
+         // in that case use the first server
+         c = c->servers()[0];
+      }
       if (auto gaus = dynamic_cast<RooGaussian *>(c)) {
          auto v = dynamic_cast<RooAbsReal *>(fGlobs->find(gaus->getX().GetName()));
          if (!v) {
