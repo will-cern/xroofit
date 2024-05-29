@@ -1115,7 +1115,7 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
    }
 
    try {
-      if (!kReuseNLL || nllTerm()->operMode() == RooAbsTestStatistic::MPMaster) {
+      if (!kReuseNLL || !nllTerm() || nllTerm()->operMode() == RooAbsTestStatistic::MPMaster) {
          throw std::runtime_error("not supported");
       }
       bool out = false;
@@ -1134,6 +1134,7 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
       return out;
    } catch (std::runtime_error &) {
       // happens when using MP need to rebuild the nll instead
+      // also happens if there's no nllTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
       AutoRestorer snap(*fFuncVars);
       // ensure the const state is back where it was at nll construction time;
       fFuncVars->setAttribAll("Constant", false);
@@ -1241,6 +1242,11 @@ RooConstraintSum *xRooNLLVar::constraintTerm() const
    for (auto s : _func->servers()) {
       if (auto a = dynamic_cast<RooConstraintSum *>(s); a)
          return a;
+      // allow one more depth to support 6.32 (where sum is hidden inside the first server)
+      for (auto s2 : s->servers()) {
+         if (auto a2 = dynamic_cast<RooConstraintSum *>(s2); a2)
+            return a2;
+      }
    }
    return nullptr;
 }
