@@ -4549,15 +4549,15 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode &acquirer, con
 
 std::shared_ptr<TStyle> xRooNode::style(TObject *initObject, bool autoCreate) const
 {
+   TString t = GetTitle();
 
    auto arg = get<RooAbsArg>();
-   if (!initObject && !arg) {
+   if (!initObject && !arg && !gROOT->GetStyle(t)) {
       return nullptr;
    }
 
    std::unique_ptr<TObject> argInitObject;
 
-   TString t = GetTitle();
    if (initObject) {
       t = (strlen(initObject->GetTitle())) ? initObject->GetTitle() : initObject->GetName();
    } else if (arg) {
