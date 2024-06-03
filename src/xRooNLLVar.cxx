@@ -1121,7 +1121,17 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
 
    try {
       if (!kReuseNLL || !nllTerm() || nllTerm()->operMode() == RooAbsTestStatistic::MPMaster) {
-         throw std::runtime_error("not supported");
+         // happens when using MP need to rebuild the nll instead
+         // also happens if there's no nllTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
+         AutoRestorer snap(*fFuncVars);
+         // ensure the const state is back where it was at nll construction time;
+         fFuncVars->setAttribAll("Constant", false);
+         fConstVars->setAttribAll("Constant", true);
+         std::shared_ptr<RooAbsData> __data = fData; // do this just to keep fData alive while killing previous NLLVar
+                                                     // (can't kill data while NLL constructed with it)
+         fData = _data.first;
+         reinitialize();
+         return true;
       }
       bool out = false;
       if (_data.first) {
