@@ -5976,7 +5976,9 @@ RooArgList xRooNode::argList() const
 xRooNode xRooNode::datasets() const
 {
    xRooNode out(".datasets()", nullptr, *this);
-   out.fBrowseOperation = [](xRooNode *f) { return f->fParent->datasets(); };
+   // removed the browse operation since no longer showing '.datasets()' in browser
+   // and otherwise this means dataset reduction operation will be called every time we 'browse()' the datasets node
+   // out.fBrowseOperation = [](xRooNode *f) { return f->fParent->datasets(); };
 
    if (auto _ws = get<RooWorkspace>(); _ws) {
       for (auto &d : _ws->allData()) {
@@ -9785,9 +9787,13 @@ void xRooNode::Draw(Option_t *opt)
             auto _pad = dynamic_cast<TPad *>(gPad->GetPrimitive(c->GetName()));
             if (!_pad)
                continue; // channel was hidden?
+            // attach as a child before calling datasets(), so that if this dataset is external to workspace it is included still
+            // attaching the dataset ensures dataset reduction for the channel is applied
+            c->push_back(std::make_shared<xRooNode>(*this));
             auto ds = c->datasets().find(GetName());
+            c->resize(c->size()-1); // remove the child we attached
             if (!ds) {
-               std::cout << " no ds " << GetName() << std::endl;
+               std::cout << " no ds " << GetName() << " - this should never happen!" << std::endl;
                continue;
             }
             auto tmp = gPad;
