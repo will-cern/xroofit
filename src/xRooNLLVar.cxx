@@ -293,7 +293,7 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf,
    //        fGlobs->setAttribAll("Constant",true);
    //        const_cast<RooArgSet*>(globs->getSet(0))->replace(*fGlobs);*/
    //    }
-};
+}
 
 xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf, const std::shared_ptr<RooAbsData> &data,
                        const RooLinkedList &opts)

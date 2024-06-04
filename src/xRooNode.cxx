@@ -8429,7 +8429,7 @@ TLegend *getLegend(bool create = true, bool doPaint = false)
    l->ConvertNDCtoPad();
    tmpPad->cd();
    return l;
-};
+}
 
 std::string formatLegendString(const std::string &s)
 {

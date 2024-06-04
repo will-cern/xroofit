@@ -1957,7 +1957,7 @@ double round_to_digits(double value, int digits)
       return 0.0;
    double factor = pow(10.0, digits - ceil(log10(std::abs(value))));
    return std::round(value * factor) / factor;
-};
+}
 double round_to_decimal(double value, int decimal_places)
 {
    const double multiplier = std::pow(10.0, decimal_places);
