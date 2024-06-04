@@ -65,7 +65,7 @@
 #include "TROOT.h"
 #include "TBrowser.h"
 
-BEGIN_XROOFIT_NAMESPACE;
+BEGIN_XROOFIT_NAMESPACE
 
 std::shared_ptr<RooLinkedList> xRooFit::sDefaultNLLOptions = nullptr;
 std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::sDefaultFitConfig = nullptr;
@@ -1982,4 +1982,4 @@ std::pair<double, double> xRooFit::matchPrecision(const std::pair<double, double
    return out;
 }
 
-END_XROOFIT_NAMESPACE;
+END_XROOFIT_NAMESPACE

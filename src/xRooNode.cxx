@@ -209,7 +209,7 @@ auto GETLISTTREE(TGFileBrowser *b)
 #include "RooNaNPacker.h"
 #endif
 
-BEGIN_XROOFIT_NAMESPACE;
+BEGIN_XROOFIT_NAMESPACE
 
 xRooNode::InteractiveObject *xRooNode::gIntObj = nullptr;
 std::map<std::string, std::tuple<std::function<double(double, double, double)>, bool>> xRooNode::auxFunctions;
@@ -11112,4 +11112,4 @@ std::string cling::printValue(const xRooNode *v)
    return out;
 }
 
-END_XROOFIT_NAMESPACE;
+END_XROOFIT_NAMESPACE

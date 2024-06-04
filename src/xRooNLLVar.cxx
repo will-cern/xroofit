@@ -93,7 +93,7 @@ This xRooNLLVar object has several special methods, e.g. for fitting and toy dat
 #include "TKey.h"
 #include "TRegexp.h"
 
-BEGIN_XROOFIT_NAMESPACE;
+BEGIN_XROOFIT_NAMESPACE
 
 std::set<int> xRooNLLVar::xRooHypoPoint::allowedStatusCodes = {0};
 
@@ -3057,4 +3057,4 @@ std::string cling::printValue(const std::map<std::string, xRooNLLVar::xValueWith
    return out;
 }
 
-END_XROOFIT_NAMESPACE;
+END_XROOFIT_NAMESPACE
