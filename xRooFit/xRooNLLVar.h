@@ -52,7 +52,7 @@ class HypoTestResult;
 class HypoTestInverterResult;
 } // namespace RooStats
 
-BEGIN_XROOFIT_NAMESPACE;
+BEGIN_XROOFIT_NAMESPACE
 
 class xRooNode;
 
@@ -477,6 +477,6 @@ std::string printValue(const xRooNLLVar::xValueWithError *val);
 std::string printValue(const std::map<std::string, xRooNLLVar::xValueWithError> *m);
 } // namespace cling
 
-END_XROOFIT_NAMESPACE;
+END_XROOFIT_NAMESPACE
 
 #endif // include guard
