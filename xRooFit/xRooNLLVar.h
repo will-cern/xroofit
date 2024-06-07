@@ -444,6 +444,8 @@ public:
    double saturatedConstraintTerm() const;
    double saturatedMainTerm() const;
    double pgof() const; // a goodness-of-fit pvalue based on profile likelihood of a saturated model
+   double mainTermPgof() const;
+   double mainTermNdof() const;
 
    std::set<std::string> binnedChannels() const;
 

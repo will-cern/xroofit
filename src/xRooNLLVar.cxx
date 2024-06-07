@@ -826,6 +826,26 @@ double xRooNLLVar::pgof() const
    return TMath::Prob(2. * (get()->getVal() - saturatedVal()), ndof());
 }
 
+double xRooNLLVar::mainTermNdof() const {
+   // need to count number of floating unconstrained parameters
+   // which are floating parameters not featured in the constraintTerm
+   std::unique_ptr<RooAbsCollection> _floats(pars()->selectByAttrib("Constant",false));
+   if(auto _constraintTerm = constraintTerm()) {
+      _floats->remove(*std::unique_ptr<RooAbsCollection>(_constraintTerm->getVariables()));
+   }
+   return data()->numEntries() - _floats->size();
+}
+
+double xRooNLLVar::mainTermPgof() const {
+   // using totVal - constraintTerm while new evalbackend causes mainTerm() to return nullptr
+   double val = get()->getVal();
+   if(auto _constraintTerm = constraintTerm()) {
+      val -= _constraintTerm->getVal();
+   }
+
+   return TMath::Prob(2.* (val - saturatedMainTerm()), mainTermNdof() );
+}
+
 double xRooNLLVar::saturatedVal() const
 {
    return saturatedMainTerm() + saturatedConstraintTerm();
