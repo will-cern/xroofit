@@ -828,17 +828,17 @@ double xRooNLLVar::pgof() const
 
 double xRooNLLVar::saturatedVal() const
 {
-   return saturatedNllTerm() + saturatedConstraintTerm();
+   return saturatedMainTerm() + saturatedConstraintTerm();
 }
 
-double xRooNLLVar::saturatedNllTerm() const
+double xRooNLLVar::saturatedMainTerm() const
 {
 
    // Use this term to create a goodness-of-fit metric, which is approx chi2 distributed with numEntries (data) d.o.f:
-   // prob = TMath::Prob( 2.*(nll.nllTerm()->getVal() - nll.saturatedNllTerm()), nll.data()->numEntries() )
+   // prob = TMath::Prob( 2.*(nll.mainTerm()->getVal() - nll.saturatedNllTerm()), nll.data()->numEntries() )
 
    // note that need to construct nll with explicit Binned(1 or 0) option otherwise will pick up nll eval
-   // from attributes in model already, so many get binned nllTerm eval when thinking not binned because didnt specify
+   // from attributes in model already, so many get binned mainTerm eval when thinking not binned because didnt specify
    // Binned(1)
 
    auto _data = data();
@@ -1120,9 +1120,9 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
    }
 
    try {
-      if (!kReuseNLL || !nllTerm() || nllTerm()->operMode() == RooAbsTestStatistic::MPMaster) {
+      if (!kReuseNLL || !mainTerm() || mainTerm()->operMode() == RooAbsTestStatistic::MPMaster) {
          // happens when using MP need to rebuild the nll instead
-         // also happens if there's no nllTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
+         // also happens if there's no mainTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
          AutoRestorer snap(*fFuncVars);
          // ensure the const state is back where it was at nll construction time;
          fFuncVars->setAttribAll("Constant", false);
@@ -1139,8 +1139,8 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
             // replace in all terms
             get()->setData(*_data.first, false);
          } else {
-            // replace just in nllTerm ... note to self: why not just replace in all like above? should test!
-            out = nllTerm()->setData(*_data.first, false /* clone data? */);
+            // replace just in mainTerm ... note to self: why not just replace in all like above? should test!
+            out = mainTerm()->setData(*_data.first, false /* clone data? */);
          }
       } else {
          reset();
@@ -1149,7 +1149,7 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
       return out;
    } catch (std::runtime_error &) {
       // happens when using MP need to rebuild the nll instead
-      // also happens if there's no nllTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
+      // also happens if there's no mainTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
       AutoRestorer snap(*fFuncVars);
       // ensure the const state is back where it was at nll construction time;
       fFuncVars->setAttribAll("Constant", false);
@@ -1199,7 +1199,7 @@ void xRooNLLVar::AddOption(const RooCmdArg &opt)
 
 RooAbsData *xRooNLLVar::data() const
 {
-   auto _nll = nllTerm();
+   auto _nll = mainTerm();
    if (!_nll)
       return fData.get();
    RooAbsData *out = &_nll->data();
@@ -1208,7 +1208,7 @@ RooAbsData *xRooNLLVar::data() const
    return out;
 }
 
-RooNLLVar *xRooNLLVar::nllTerm() const
+RooNLLVar *xRooNLLVar::mainTerm() const
 {
    auto _func = func();
    if (auto a = dynamic_cast<RooNLLVar *>(_func.get()); a)

@@ -424,13 +424,13 @@ public:
    RooAbsData *data() const; // returns the data hidden inside the NLLVar if there is some
    const RooAbsCollection *globs() const { return fGlobs.get(); }
 
-   // NLL = nllTerm + constraintTerm
-   // nllTerm = sum( entryVals ) + extendedTerm + simTerm [+ binnedDataTerm if activated binnedL option]
+   // NLL = mainTerm + constraintTerm
+   // mainTerm = sum( entryVals ) + extendedTerm + simTerm [+ binnedDataTerm if activated binnedL option]
    // this is what it should be, at least
 
    // total nll should be all these values + constraint term + extended term + simTerm [+binnedDataTerm if activated
    // binnedL option]
-   RooNLLVar *nllTerm() const;
+   RooNLLVar *mainTerm() const;
    RooConstraintSum *constraintTerm() const;
 
    double getEntryVal(size_t entry) const; // get the Nll value for a specific entry
@@ -442,7 +442,7 @@ public:
    double ndof() const;
    double saturatedVal() const;
    double saturatedConstraintTerm() const;
-   double saturatedNllTerm() const;
+   double saturatedMainTerm() const;
    double pgof() const; // a goodness-of-fit pvalue based on profile likelihood of a saturated model
 
    std::set<std::string> binnedChannels() const;
