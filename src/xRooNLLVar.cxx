@@ -815,7 +815,7 @@ double xRooNLLVar::saturatedConstraintTerm() const
 
 double xRooNLLVar::ndof() const
 {
-   return data()->numEntries() + (globs() ? globs()->size() : 0) -
+   return data()->numEntries() + (fFuncGlobs ? fFuncGlobs->size() : 0) -
           std::unique_ptr<RooAbsCollection>(pars()->selectByAttrib("Constant", false))->size();
 }
 
