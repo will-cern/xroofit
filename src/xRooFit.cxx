@@ -214,7 +214,8 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
                      TClass *cClass = thePdf->IsA();
                      if (cClass != RooGaussian::Class() && cClass != RooPoisson::Class() &&
                          cClass != RooGamma::Class() && cClass != RooLognormal::Class() &&
-                         cClass != RooBifurGauss::Class() && !(cClass && strcmp(cClass->GetName(),"SimpleGaussianConstraint")==0)) {
+                         cClass != RooBifurGauss::Class() &&
+                         !(cClass && strcmp(cClass->GetName(), "SimpleGaussianConstraint") == 0)) {
                         TString className = (cClass) ? cClass->GetName() : "undefined";
                         oocoutW((TObject *)nullptr, Generation)
                            << "AsymptoticCalculator::MakeAsimovData:constraint term " << thePdf->GetName()

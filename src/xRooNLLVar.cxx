@@ -754,7 +754,8 @@ double xRooNLLVar::getEntryBinWidth(size_t entry) const
    double volume = 1.;
    for (auto o : *_robs) {
 
-      if (auto a = dynamic_cast<RooAbsRealLValue *>(o); a && _pdf->dependsOn(*a)) { // dependsOn check needed until ParamHistFunc binBoundaries method fixed
+      if (auto a = dynamic_cast<RooAbsRealLValue *>(o);
+          a && _pdf->dependsOn(*a)) { // dependsOn check needed until ParamHistFunc binBoundaries method fixed
          std::unique_ptr<std::list<double>> bins(
             _pdf->binBoundaries(*a, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()));
          if (bins) {
@@ -788,7 +789,7 @@ double xRooNLLVar::saturatedConstraintTerm() const
       return 0;
 
    for (auto c : cTerm->list()) {
-      if(std::string(c->ClassName())=="RooAbsPdf") {
+      if (std::string(c->ClassName()) == "RooAbsPdf") {
          // in ROOT 6.32 the constraintTerm is full of RooNormalizedPdfs which aren't public
          // in that case use the first server
          c = c->servers()[0];
@@ -826,24 +827,26 @@ double xRooNLLVar::pgof() const
    return TMath::Prob(2. * (get()->getVal() - saturatedVal()), ndof());
 }
 
-double xRooNLLVar::mainTermNdof() const {
+double xRooNLLVar::mainTermNdof() const
+{
    // need to count number of floating unconstrained parameters
    // which are floating parameters not featured in the constraintTerm
-   std::unique_ptr<RooAbsCollection> _floats(pars()->selectByAttrib("Constant",false));
-   if(auto _constraintTerm = constraintTerm()) {
+   std::unique_ptr<RooAbsCollection> _floats(pars()->selectByAttrib("Constant", false));
+   if (auto _constraintTerm = constraintTerm()) {
       _floats->remove(*std::unique_ptr<RooAbsCollection>(_constraintTerm->getVariables()));
    }
    return data()->numEntries() - _floats->size();
 }
 
-double xRooNLLVar::mainTermPgof() const {
+double xRooNLLVar::mainTermPgof() const
+{
    // using totVal - constraintTerm while new evalbackend causes mainTerm() to return nullptr
    double val = get()->getVal();
-   if(auto _constraintTerm = constraintTerm()) {
+   if (auto _constraintTerm = constraintTerm()) {
       val -= _constraintTerm->getVal();
    }
 
-   return TMath::Prob(2.* (val - saturatedMainTerm()), mainTermNdof() );
+   return TMath::Prob(2. * (val - saturatedMainTerm()), mainTermNdof());
 }
 
 double xRooNLLVar::saturatedVal() const

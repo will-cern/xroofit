@@ -974,7 +974,7 @@ std::shared_ptr<TObject> xRooNode::getObject(const std::string &name, const std:
       // can try all nodes
       RooArgSet nodes;
       arg->treeNodeServerList(&nodes);
-      if(auto server = nodes.find(name.c_str())) {
+      if (auto server = nodes.find(name.c_str())) {
          return std::shared_ptr<TObject>(server, [](TObject *) {});
       }
    }
@@ -9787,11 +9787,11 @@ void xRooNode::Draw(Option_t *opt)
             auto _pad = dynamic_cast<TPad *>(gPad->GetPrimitive(c->GetName()));
             if (!_pad)
                continue; // channel was hidden?
-            // attach as a child before calling datasets(), so that if this dataset is external to workspace it is included still
-            // attaching the dataset ensures dataset reduction for the channel is applied
+            // attach as a child before calling datasets(), so that if this dataset is external to workspace it is
+            // included still attaching the dataset ensures dataset reduction for the channel is applied
             c->push_back(std::make_shared<xRooNode>(*this));
             auto ds = c->datasets().find(GetName());
-            c->resize(c->size()-1); // remove the child we attached
+            c->resize(c->size() - 1); // remove the child we attached
             if (!ds) {
                std::cout << " no ds " << GetName() << " - this should never happen!" << std::endl;
                continue;
@@ -10088,7 +10088,7 @@ void xRooNode::Draw(Option_t *opt)
    }
    // need to strip namespace to discount the "HistFactory" namespace classes from all being treated as binned
    TString clNameNoNamespace = rar->ClassName();
-   clNameNoNamespace = clNameNoNamespace(clNameNoNamespace.Last(':')+1,clNameNoNamespace.Length());
+   clNameNoNamespace = clNameNoNamespace(clNameNoNamespace.Last(':') + 1, clNameNoNamespace.Length());
    TString dOpt = (clNameNoNamespace.Contains("Hist") || vv->isCategory() || rar->isBinnedDistribution(*vv) ||
                    h->GetNbinsX() == 1 || rar->getAttribute("BinnedLikelihood") ||
                    (dynamic_cast<RooAbsRealLValue *>(vv) &&
@@ -10106,7 +10106,7 @@ void xRooNode::Draw(Option_t *opt)
       bool allHist = true;
       for (auto &s : components()) {
          TString _clName = s->get()->ClassName();
-         _clName = _clName(_clName.Last(':')+1,_clName.Length());
+         _clName = _clName(_clName.Last(':') + 1, _clName.Length());
          if (!(s->get() && _clName.Contains("Hist"))) {
             allHist = false;
             break;
