@@ -624,10 +624,10 @@ public:
          sout << (counter) << ") (" << evalRate << "Hz) " << TDatime().AsString();
          if (!fState.empty())
             sout << " : " << fState;
-         if(counter2) {
+         if (counter2) {
             // doing a hesse step, estimate progress based on evaluations
             int nRequired = prevPars.size();
-            if(nRequired>1) {
+            if (nRequired > 1) {
                nRequired *= (nRequired - 1) / 2;
                if (fState == "Hesse3") {
                   nRequired *= 4;
@@ -1133,7 +1133,9 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       // }
 
       // only do hesse if was a valid min and not full accurate cov matrix already (can happen if e.g. ran strat2)
-      if (hesse && (m_strategy(sIdx) == 'h' || ( (strategy < 2 || _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() != 3) && _minimizer.fitter()->Result().IsValid()))) {
+      if (hesse &&
+          (m_strategy(sIdx) == 'h' || ((strategy < 2 || _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() != 3) &&
+                                       _minimizer.fitter()->Result().IsValid()))) {
 
          // Note: minima where the covariance was made posdef are deemed 'valid' ...
 
