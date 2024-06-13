@@ -624,6 +624,17 @@ public:
          sout << (counter) << ") (" << evalRate << "Hz) " << TDatime().AsString();
          if (!fState.empty())
             sout << " : " << fState;
+         if(counter2) {
+            // doing a hesse step, estimate progress based on evaluations
+            int nRequired = prevPars.size();
+            if(nRequired>1) {
+               nRequired *= (nRequired - 1) / 2;
+               if (fState == "Hesse3") {
+                  nRequired *= 4;
+               }
+               sout << " (~" << int(100.0 * (counter - counter2) / nRequired) << "%)";
+            }
+         }
          sout << " : " << minVal << " Delta = " << (minVal - prevMin);
          if (minVal < prevMin) {
             sout << " : ";
@@ -680,10 +691,11 @@ public:
    }
 
    std::string fState;
+   mutable int counter = 0;
+   int counter2 = 0; // used to estimate progress of a Hesse calculation
 
 private:
    RooRealProxy fFunc;
-   mutable int counter = 0;
    mutable double minVal = std::numeric_limits<double>::infinity();
    mutable double prevMin = std::numeric_limits<double>::infinity();
    mutable RooArgList minPars;
@@ -1121,9 +1133,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       // }
 
       // only do hesse if was a valid min and not full accurate cov matrix already (can happen if e.g. ran strat2)
-      if (hesse &&
-          (m_strategy(sIdx) == 'h' || strategy < 2 || _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() != 3) &&
-          _minimizer.fitter()->Result().IsValid()) {
+      if (hesse && (m_strategy(sIdx) == 'h' || ( (strategy < 2 || _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() != 3) && _minimizer.fitter()->Result().IsValid()))) {
+
          // Note: minima where the covariance was made posdef are deemed 'valid' ...
 
          // remove limits on pars before calculation - CURRENTLY HAS NO EFFECT, minuit still holds the state as
@@ -1164,6 +1175,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
 
             if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
                fff->fState = TString::Format("Hesse%d", _minimizer.fitter()->Config().MinimizerOptions().Strategy());
+               fff->counter2 = fff->counter;
             }
 
             //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? -
