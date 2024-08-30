@@ -191,6 +191,8 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf,
          fitConfig()->MinimizerOptions().SetTolerance(dynamic_cast<RooCmdArg *>(opts.At(i))->getDouble(0));
       } else if (strcmp(opts.At(i)->GetName(), "MaxCalls") == 0) {
          fitConfig()->MinimizerOptions().SetMaxFunctionCalls(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
+      } else if (strcmp(opts.At(i)->GetName(), "MaxIterations") == 0) {
+         fitConfig()->MinimizerOptions().SetMaxIterations(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
       } else if (strcmp(opts.At(i)->GetName(), "PrintLevel") == 0) {
          fitConfig()->MinimizerOptions().SetPrintLevel(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
       } else {
