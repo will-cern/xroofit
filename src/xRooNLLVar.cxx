@@ -181,12 +181,16 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf,
          }
       } else if (strcmp(opts.At(i)->GetName(), "Hesse") == 0) {
          fitConfig()->SetParabErrors(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0)); // controls hesse
+      } else if (strcmp(opts.At(i)->GetName(), "Minos") == 0) {
+         fitConfig()->SetMinosErrors(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0)); // controls minos
       } else if (strcmp(opts.At(i)->GetName(), "Strategy") == 0) {
          fitConfig()->MinimizerOptions().SetStrategy(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
       } else if (strcmp(opts.At(i)->GetName(), "StrategySequence") == 0) {
          fitConfigOptions()->SetNamedValue("StrategySequence", dynamic_cast<RooCmdArg *>(opts.At(i))->getString(0));
       } else if (strcmp(opts.At(i)->GetName(), "Tolerance") == 0) {
-         fitConfig()->MinimizerOptions().SetTolerance(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
+         fitConfig()->MinimizerOptions().SetTolerance(dynamic_cast<RooCmdArg *>(opts.At(i))->getDouble(0));
+      } else if (strcmp(opts.At(i)->GetName(), "MaxCalls") == 0) {
+         fitConfig()->MinimizerOptions().SetMaxFunctionCalls(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
       } else if (strcmp(opts.At(i)->GetName(), "PrintLevel") == 0) {
          fitConfig()->MinimizerOptions().SetPrintLevel(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
       } else {
