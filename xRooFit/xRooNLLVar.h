@@ -38,7 +38,6 @@ class RooAbsReal;
 class RooAbsPdf;
 class RooAbsData;
 class RooAbsCollection;
-class RooNLLVar;
 class RooConstraintSum;
 class RooRealVar;
 class RooCmdArg;
@@ -430,7 +429,7 @@ public:
 
    // total nll should be all these values + constraint term + extended term + simTerm [+binnedDataTerm if activated
    // binnedL option]
-   RooNLLVar *mainTerm() const;
+   RooAbsReal *mainTerm() const;
    RooConstraintSum *constraintTerm() const;
 
    double getEntryVal(size_t entry) const; // get the Nll value for a specific entry

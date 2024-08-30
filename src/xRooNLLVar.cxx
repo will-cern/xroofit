@@ -22,8 +22,13 @@ This xRooNLLVar object has several special methods, e.g. for fitting and toy dat
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
 #define protected public
 #endif
+
 #include "RooFitResult.h"
+
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 33, 00)
 #include "RooNLLVar.h"
+#endif
+
 #ifdef protected
 #undef protected
 #endif
@@ -1149,7 +1154,7 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
    }
 
    try {
-      if (!kReuseNLL || !mainTerm() || mainTerm()->operMode() == RooAbsTestStatistic::MPMaster) {
+      if (!kReuseNLL || !mainTerm() /*|| mainTerm()->operMode() == RooAbsTestStatistic::MPMaster*/) { // lost access to RooAbsTestStatistic in 6.34, but MP-mode will still throw exception, so we will still catch it
          // happens when using MP need to rebuild the nll instead
          // also happens if there's no mainTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
          AutoRestorer snap(*fFuncVars);
@@ -1231,19 +1236,27 @@ RooAbsData *xRooNLLVar::data() const
    auto _nll = mainTerm();
    if (!_nll)
       return fData.get();
-   RooAbsData *out = &_nll->data();
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 33, 00)
+   RooAbsData *out = &static_cast<RooAbsOptTestStatistic*>(_nll)->data();
+#else
+   RooAbsData* out = nullptr; // this exists until `data()` method moved to RooAbsReal (alongside setData)
+#endif
    if (!out)
       return fData.get();
    return out;
 }
 
-RooNLLVar *xRooNLLVar::mainTerm() const
+RooAbsReal *xRooNLLVar::mainTerm() const
 {
+   //TODO: Will update this to check RooAbsArg::isReducerNode to detect NLL term even for new backends
+   // but must wait until setData method will throw exception in new backend, to indicate it is not supported
+   // (this exception is caught in xRooNLLVar::setData method)
+
    auto _func = func();
-   if (auto a = dynamic_cast<RooNLLVar *>(_func.get()); a)
-      return a;
+   if (_func && _func->InheritsFrom("RooAbsTestStatistic"))
+      return _func.get();
    for (auto s : _func->servers()) {
-      if (auto a = dynamic_cast<RooNLLVar *>(s); a)
+      if (auto a = dynamic_cast<RooAbsReal *>(s); a && a->InheritsFrom("RooAbsTestStatistic"))
          return a;
    }
    return nullptr;
