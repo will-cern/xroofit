@@ -1172,9 +1172,12 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
          if (_data.first->getGlobalObservables()) {
             // replace in all terms
             out = get()->setData(*_data.first, false);
+            get()->setValueDirty();
          } else {
             // replace just in mainTerm ... note to self: why not just replace in all like above? should test!
-            out = mainTerm()->setData(*_data.first, false /* clone data? */);
+            auto _mainTerm = mainTerm();
+            out = _mainTerm->setData(*_data.first, false /* clone data? */);
+            _mainTerm->setValueDirty();
          }
       } else {
          reset();
@@ -2957,7 +2960,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    fitDetails.addClone(RooRealVar("minNll", "minNll", 0));
    fitDetails.addClone(RooRealVar("edm", "edm", 0));
    auto fitDS = new RooDataSet("fits", "fit summary data", fitDetails);
-   fitDS->convertToTreeStore(); // strings not stored properly in vector store, so do convert!
+   //fitDS->convertToTreeStore(); // strings not stored properly in vector store, so do convert! - not needed since string var storage not properly supported - storing in globs list instead
 
    for (int i = 0; i < 7; i++) {
       std::shared_ptr<const RooFitResult> fit;
