@@ -97,6 +97,7 @@ This xRooNLLVar object has several special methods, e.g. for fitting and toy dat
 #include "TROOT.h"
 #include "TKey.h"
 #include "TRegexp.h"
+#include "TStopwatch.h"
 
 BEGIN_XROOFIT_NAMESPACE
 
