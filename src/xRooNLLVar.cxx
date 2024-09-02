@@ -1171,7 +1171,7 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
       if (_data.first) {
          if (_data.first->getGlobalObservables()) {
             // replace in all terms
-            get()->setData(*_data.first, false);
+            out = get()->setData(*_data.first, false);
          } else {
             // replace just in mainTerm ... note to self: why not just replace in all like above? should test!
             out = mainTerm()->setData(*_data.first, false /* clone data? */);
@@ -1239,7 +1239,7 @@ RooAbsData *xRooNLLVar::data() const
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 33, 00)
    RooAbsData *out = &static_cast<RooAbsOptTestStatistic*>(_nll)->data();
 #else
-   RooAbsData* out = nullptr; // this exists until `data()` method moved to RooAbsReal (alongside setData)
+   RooAbsData* out = nullptr; // new backends not conducive to having a reference to a RooAbsData in them (they use buffers instead)
 #endif
    if (!out)
       return fData.get();
@@ -1248,15 +1248,11 @@ RooAbsData *xRooNLLVar::data() const
 
 RooAbsReal *xRooNLLVar::mainTerm() const
 {
-   //TODO: Will update this to check RooAbsArg::isReducerNode to detect NLL term even for new backends
-   // but must wait until setData method will throw exception in new backend, to indicate it is not supported
-   // (this exception is caught in xRooNLLVar::setData method)
-
    auto _func = func();
-   if (_func && _func->InheritsFrom("RooAbsTestStatistic"))
+   if (_func && (_func->isReducerNode() || _func->InheritsFrom("RooAbsTestStatistic")))
       return _func.get();
    for (auto s : _func->servers()) {
-      if (auto a = dynamic_cast<RooAbsReal *>(s); a && a->InheritsFrom("RooAbsTestStatistic"))
+      if (auto a = dynamic_cast<RooAbsReal *>(s); a && (a->isReducerNode() || a->InheritsFrom("RooAbsTestStatistic")))
          return a;
    }
    return nullptr;
