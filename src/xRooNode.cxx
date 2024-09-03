@@ -10952,7 +10952,7 @@ void xRooNode::Draw(Option_t *opt)
       TH1 *ratioHist = dynamic_cast<TH1 *>((errHist) ? errHist->Clone("auxHist") : h->Clone("auxHist"));
       ratioHist->Reset(); ratioHist->Add(h); // removes function list
       ratioHist->SetDirectory(nullptr);
-      ratioHist->SetTitle((errHist) ? errHist->dGetName()
+      ratioHist->SetTitle((errHist) ? errHist->GetName()
                                     : h->GetName()); // abuse the title string to hold the name of the main hist
 
       ratioHist->GetYaxis()->SetNdivisions(5, 0, 0);
