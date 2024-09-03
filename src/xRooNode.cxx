@@ -1837,7 +1837,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
       if (child.get<RooAbsReal>()) {
          out = acquire(child.fComp);
          if (std::dynamic_pointer_cast<TH1>(cc) && !TString(cc->GetOption()).Contains("nostyle")) {
-            xRooNode(out, *this).style(cc.get()); // transfer style if adding a histogram
+            xRooNode(out, *this).styles(cc.get()); // transfer style if adding a histogram
          }
       }
       if (!child.fComp && getObject<RooAbsReal>(child.GetName())) {
@@ -4547,7 +4547,7 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode &acquirer, con
    return fComp;
 }
 
-std::shared_ptr<TStyle> xRooNode::style(TObject *initObject, bool autoCreate) const
+xRooNode xRooNode::styles(TObject *initObject, bool autoCreate) const
 {
    TString t = GetTitle();
 
@@ -4601,7 +4601,7 @@ std::shared_ptr<TStyle> xRooNode::style(TObject *initObject, bool autoCreate) co
       arg->setStringAttribute("style", style->GetName());
    }
 
-   return style;
+   return xRooNode(style,*this);
 }
 
 std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, bool checkFactory, bool mustBeNew)
@@ -6306,8 +6306,8 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
       //                gROOT->GetListOfStyles()->Add(style.get());
       //            }
       //        }
-      auto _style = style(dataGraph);
-      if (_style) {
+      auto _styleNode = styles(dataGraph);
+      if (auto _style = _styleNode.get<TStyle>()) {
          *dynamic_cast<TAttLine *>(dataGraph) = *_style;
          *dynamic_cast<TAttFill *>(dataGraph) = *_style;
          *dynamic_cast<TAttMarker *>(dataGraph) = *_style;
@@ -7845,8 +7845,8 @@ xRooNode xRooNode::histo(const xRooNode &vars, const xRooNode &fr, bool content,
                dynamic_cast<TNamed *>(ll->At(i))->SetTitle(_title.c_str());
 
                // style hists according to available styles ... creating if necessary
-               auto _style = xRooNode(*ll->At(i), *this).style(ll->At(i));
-               if (_style) {
+               auto _styleNode = xRooNode(*ll->At(i), *this).styles(ll->At(i));
+               if (auto _style = _styleNode.get<TStyle>()) {
                   *dynamic_cast<TAttLine *>(ll->At(i)) = *_style;
                   *dynamic_cast<TAttFill *>(ll->At(i)) = *_style;
                   *dynamic_cast<TAttMarker *>(ll->At(i)) = *_style;
@@ -7999,10 +7999,11 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       h->GetXaxis()->SetName(dynamic_cast<TObject *>(v)->GetName()); // WARNING: messes up display of bin labels
    }
 
-   if (auto s = style(nullptr, false); s) {
-      static_cast<TAttLine &>(*h) = *s;
-      static_cast<TAttFill &>(*h) = *s;
-      static_cast<TAttMarker &>(*h) = *s;
+   if (auto s = styles(nullptr, false); s) {
+      auto _style = s.get<TStyle>();
+      static_cast<TAttLine &>(*h) = *_style;
+      static_cast<TAttFill &>(*h) = *_style;
+      static_cast<TAttMarker &>(*h) = *_style;
    }
    if (strlen(h->GetXaxis()->GetTitle()) == 0)
       h->GetXaxis()->SetTitle(vv->GetTitle());
@@ -10514,9 +10515,9 @@ void xRooNode::Draw(Option_t *opt)
          //            (TAttLine&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          //            (TAttFill&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          //            (TAttMarker&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
-         auto _style = style(h);
+         auto _styleNode = styles(h);
          rar->setStringAttribute("style", oldStyle == "" ? nullptr : oldStyle.Data()); // restores old style
-         if (_style) {
+         if (auto _style = _styleNode.get<TStyle>()) {
             (TAttLine &)(*h) = *_style;
             (TAttFill &)(*h) = *_style;
             (TAttMarker &)(*h) = *_style;
@@ -10529,8 +10530,8 @@ void xRooNode::Draw(Option_t *opt)
          }
       }
    } else {
-      auto _style = style(h);
-      if (_style) {
+      auto _styleNode = styles(h);
+      if (auto _style = _styleNode.get<TStyle>()) {
          (TAttLine &)(*h) = *_style;
          (TAttFill &)(*h) = *_style;
          (TAttMarker &)(*h) = *_style;
@@ -10761,7 +10762,7 @@ void xRooNode::Draw(Option_t *opt)
                TH1 *hh = dynamic_cast<TH1 *>(ho);
                if (!hh)
                   continue;
-               bool createdStyle = (xRooNode(*hh, *this).style(nullptr, false) == nullptr);
+               bool createdStyle = (xRooNode(*hh, *this).styles(nullptr, false).get<TStyle>() == nullptr);
 
                if (createdStyle) {
                   // give hist a color, that isn't the same as any other hists color
@@ -10775,7 +10776,8 @@ void xRooNode::Draw(Option_t *opt)
                         TH1 *hh2 = dynamic_cast<TH1 *>(ho2);
                         if (!hh2)
                            continue;
-                        auto _style = xRooNode(*hh2, *this).style(hh2, false);
+                        auto _styleNode = xRooNode(*hh2, *this).styles(hh2, false);
+                        auto _style = _styleNode.get<TStyle>();
                         if (hh != hh2 && _style && _style->GetFillColor() == hh->GetFillColor()) {
                            used = true;
                            break;
@@ -10784,8 +10786,8 @@ void xRooNode::Draw(Option_t *opt)
                   } while (used);
                }
 
-               auto _style = xRooNode(*hh, *this).style(hh);
-               if (_style) {
+               auto _styleNode = xRooNode(*hh, *this).styles(hh);
+               if (auto _style = _styleNode.get<TStyle>()) {
                   *dynamic_cast<TAttLine *>(hh) = *_style;
                   *dynamic_cast<TAttFill *>(hh) = *_style;
                   *dynamic_cast<TAttMarker *>(hh) = *_style;
