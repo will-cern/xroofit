@@ -386,9 +386,19 @@ public:
    double GetBinData(int bin, const xRooNode &data = "obsData");
    double GetBinContent(int bin) const { return GetBinContents(bin, bin).at(0); }
    std::vector<double> GetBinContents(int binStart = 1, int binEnd = 0) const; // default will get all bins
-   double GetBinError(int bin, const xRooNode &fr = "") const;
-   std::vector<double> GetBinErrors(int binStart = 1, int binEnd = 0, const xRooNode &fr = "") const;
+   double GetBinError(int bin, const xRooNode &fr = "", int nToys = 0,bool errorsHi=false, bool errorsLo=false) const;
+   std::vector<double> GetBinErrors(int binStart = 1, int binEnd = 0, const xRooNode &fr = "", int nToys=0, bool errorsHi=false, bool errorsLo=false) const;
    std::pair<double, double> IntegralAndError(const xRooNode &fr = "", const char *rangeName = nullptr) const;
+
+   std::vector<double> GetBinErrorsHi(int binStart = 1, int binEnd = 0, const xRooNode &fr = "", int nToys = 0) const {
+      return GetBinErrors(binStart,binEnd,fr,nToys,true,false);
+   }
+   std::vector<double> GetBinErrorsLo(int binStart = 1, int binEnd = 0, const xRooNode &fr = "", int nToys = 0) const {
+      return GetBinErrors(binStart,binEnd,fr,nToys,false,true);
+   }
+   double GetBinErrorHi(int bin, const xRooNode &fr = "", int nToys = 0) const { return GetBinError(bin,fr,nToys,true,false); }
+   double GetBinErrorLo(int bin, const xRooNode &fr = "", int nToys = 0) const { return GetBinError(bin,fr,nToys,false,true); }
+
 
    // methods to access default content and error
    double GetContent() const { return GetBinContent(fBinNumber); }
@@ -449,7 +459,7 @@ public:
 
    TGraph *BuildGraph(RooAbsLValue *v = nullptr, bool includeZeros = false, TVirtualPad *fromPad = nullptr) const;
    TH1 *BuildHistogram(RooAbsLValue *v = nullptr, bool empty = false, bool errors = false, int binStart = 1,
-                       int binEnd = 0, const xRooNode &fr = "") const;
+                       int binEnd = 0, const xRooNode &fr = "", bool errorsHi=false, bool errorsLo=false, int nErrorToys=0, TH1* templateHist = nullptr) const;
    xRooNode mainChild() const;
    void Draw(Option_t *opt = "") override; // *MENU*
 
