@@ -10408,12 +10408,12 @@ void xRooNode::Draw(Option_t *opt)
       get()->Draw();
       return;
    }
-   RooAbsReal *sf = nullptr;
+//   RooAbsReal *sf = nullptr;
    if (get()->InheritsFrom("RooExtendPdf")) {
       browse();
       rarNode = find(".pdf").get();
       // rar = rarNode->get<RooAbsReal>();
-      sf = find(".n")->get<RooAbsReal>();
+//      sf = find(".n")->get<RooAbsReal>();
    }
 
    if(!nostack && !hasOverlay && (rarNode->get()->InheritsFrom("RooRealSumPdf") || rarNode->get()->InheritsFrom("RooAddPdf") ||
