@@ -459,7 +459,7 @@ public:
 
    TGraph *BuildGraph(RooAbsLValue *v = nullptr, bool includeZeros = false, TVirtualPad *fromPad = nullptr) const;
    TH1 *BuildHistogram(RooAbsLValue *v = nullptr, bool empty = false, bool errors = false, int binStart = 1,
-                       int binEnd = 0, const xRooNode &fr = "", bool errorsHi=false, bool errorsLo=false, int nErrorToys=0, TH1* templateHist = nullptr, bool nostack=true) const;
+                       int binEnd = 0, const xRooNode &fr = "", bool errorsHi=false, bool errorsLo=false, int nErrorToys=0, TH1* templateHist = nullptr, bool nostack=true, bool setInterp=false) const;
    xRooNode mainChild() const;
    void Draw(Option_t *opt = "") override; // *MENU*
 

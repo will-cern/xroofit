@@ -7666,7 +7666,7 @@ xRooNode xRooNode::filter(const xRooNode &range) const
 }
 
 TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binStart, int binEnd,
-                              const xRooNode &_fr, bool errorsHi, bool errorsLo, int nErrorToys, TH1* templateHist, bool nostack) const
+                              const xRooNode &_fr, bool errorsHi, bool errorsLo, int nErrorToys, TH1* templateHist, bool nostack, bool setInterp) const
 {
    auto rar = get<RooAbsReal>();
    if (!rar)
@@ -7718,6 +7718,12 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          h->SetMinimum(x->hasMin() ? x->getMin()
                                    : (h->GetBinContent(1) - std::max(std::abs(h->GetBinContent(1) * 0.1), 50.)));
          h->GetXaxis()->SetName(dynamic_cast<TObject *>(v)->GetName());
+         h->SetOption("e2");
+         h->SetFillStyle(3005);
+         h->SetMarkerSize(0);
+         h->SetFillColor(h->GetLineColor());
+         h->SetMarkerStyle(0);
+
          return h;
       }
       auto _ax = GetXaxis();
@@ -8002,6 +8008,43 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    RooArgList* errorPars = nullptr;
    std::unique_ptr<RooAbsCollection> errorParsSnap;
 
+   if(setInterp) {
+      RooAbsArg* vvv = dynamic_cast<RooAbsArg*>(v);
+      // determining if histogram should have interpolation drawing options set on it
+      // need to strip namespace to discount the "HistFactory" namespace classes from all being treated as binned
+      TString clNameNoNamespace = rar->ClassName();
+      clNameNoNamespace = clNameNoNamespace(clNameNoNamespace.Last(':') + 1, clNameNoNamespace.Length());
+      setInterp = (clNameNoNamespace.Contains("Hist") || vvv->isCategory() || rar->isBinnedDistribution(*vvv) ||
+                      h->GetNbinsX() == 1 || rar->getAttribute("BinnedLikelihood") ||
+                      (dynamic_cast<RooAbsRealLValue *>(vvv) &&
+                       std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue *>(vvv),
+                                                                             -std::numeric_limits<double>::infinity(),
+                                                                             std::numeric_limits<double>::infinity()))))
+                        ? false
+                        : true;
+      if (auto d = dynamic_cast<RooHistFunc *>(rar); d && !d->isBinnedDistribution(*vvv) && h->GetNbinsX() != 1) {
+         setInterp=true; // hist func is interpolated, so draw it as such
+      }
+      if (setInterp && !components().empty()) {
+         // check if all components of dOpt are "Hist" type (CMS model support)
+         // if so then don't interp;
+         bool allHist = true;
+         for (auto &s : components()) {
+            TString _clName = s->get()->ClassName();
+            _clName = _clName(_clName.Last(':') + 1, _clName.Length());
+            if (!(s->get() && _clName.Contains("Hist"))) {
+               allHist = false;
+               break;
+            }
+         }
+         if (allHist)
+            setInterp=false;
+      }
+      if(setInterp) {
+         h->SetOption("l"); // does linear interpolation between points
+      }
+   }
+
 
    if(errors) {
       // may be computing potentially asymmetric errors
@@ -8010,8 +8053,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       // note that this means GetBinContent on returned histogram will return midpoint of the up and down error
       auto l = static_cast<TH1*>(h->Clone("nominal"));l->SetDirectory(0);
       l->SetFillStyle(0);
-      h->GetListOfFunctions()->Add(l,"histsame");
-      h->SetOption("e2"); // default draw option E2 so error band shown .. could make 'EX0' to draw classic style
+      h->GetListOfFunctions()->Add(l,(setInterp) ? "lsame": "histsame");
+      h->SetOption(setInterp?"e3":"e2"); // default draw option E2 or E3 so error band shown .. could have used 'EX0' to draw "classic style"
       // could take this from the 'band' style object if we create one in future?
       h->SetMarkerSize(0);
       h->SetFillStyle(3005);
@@ -8252,13 +8295,14 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
    // build a stack unless not requested
    if (!nostack) {
-      h->SetOption("e2"); // draw as an error band ... needs to be e3 if interpolating
-      auto hCopy = static_cast<TH1*>(h->Clone("band"));
-      hCopy->Reset();hCopy->Add(h); // use Reset and Add to clear the function list (dont clear directly as may double-delete if same object added twice)
+      // need to draw copy of hist so shown over the stack
+      auto hCopy = static_cast<TH1 *>(h->Clone("copy"));
+      hCopy->Reset();
+      hCopy->Add(h); // use Reset and Add to clear the function list (dont clear directly as may double-delete if same object added twice)
       hCopy->SetStats(false);
-      h->GetListOfFunctions()->Add(hCopy,TString(h->GetOption())+"same");
-      h->GetListOfFunctions()->Add(hCopy,"axissame"); // prevents stack covering axis
-      TString dOpt = ""; // should become lf2 if interpolation of histogram is appropriate
+      h->GetListOfFunctions()->Add(hCopy, TString(h->GetOption()) + "same");
+      h->GetListOfFunctions()->Add(hCopy, "axissame"); // prevents stack covering axis
+      TString dOpt = (setInterp)?"LF2":""; // should become lf2 if interpolation of histogram is appropriate
 
       const xRooNode *rarNode = this;
       RooAbsReal *sf = nullptr;
@@ -8352,7 +8396,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          }
       } else {
          for (auto &samp : rarNode->components()) {
-            auto hh = samp->BuildHistogram(v,empty,false/* no errors for stack*/,binStart,binEnd,_fr,false,false,0,h); // passing h to ensure binning is the same for all subcomponent hists
+            auto hh = samp->BuildHistogram(v,empty,false/* no errors for stack*/,binStart,binEnd,_fr,false,false,0,h,true,setInterp); // passing h to ensure binning is the same for all subcomponent hists
             hh->SetName(samp->GetName());
             if (sf)
                hh->Scale(sf->getVal());
@@ -8463,7 +8507,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
              auto _h1 = dynamic_cast<TH1*>(stack->GetHists()->At(0));
              if(_h1->GetNbinsX()==hh->GetNbinsX()) TODO ... finish dealing with silly rounding effects
          }*/
-         TString thisOpt = dOpt;
+         TString thisOpt = TString(hh->GetOption())=="l" ? "LF2" : ""; // need LF2 to get smooth line with fill
          // uncomment next line to blend continuous with discrete components .. get some unpleasant "poke through"
          // effects though
          // if(auto s = samp->get<RooAbsReal>(); s) thisOpt = s->isBinnedDistribution(*dynamic_cast<RooAbsArg*>(v)) ?
@@ -10382,7 +10426,7 @@ void xRooNode::Draw(Option_t *opt)
    }
 
 
-   auto h = BuildHistogram(v, false, hasErrorOpt,1,0,"",false,false,0,nullptr,nostack);
+   auto h = BuildHistogram(v, false, hasErrorOpt,1,0,"",false,false,0,nullptr,nostack,true/*setInterp*/);
    if (!h)
       return;
    h->SetBit(kCanDelete);
@@ -10396,6 +10440,9 @@ void xRooNode::Draw(Option_t *opt)
       // do this to get bin labels
       h->GetXaxis()->SetName("xaxis"); // WARNING -- this messes up anywhere we GetXaxis()->GetName()
    }
+
+   // get style now, before we mess with histogram title
+   auto _styleNode = styles(h);
 
    if (rar->InheritsFrom("RooAbsPdf") && !(rar->InheritsFrom("RooRealSumPdf") || rar->InheritsFrom("RooAddPdf") ||
                                            rar->InheritsFrom("RooSimultaneous"))) {
@@ -10432,50 +10479,52 @@ void xRooNode::Draw(Option_t *opt)
          gPad->SetGrid(1, 1);
       }
    }
-   // need to strip namespace to discount the "HistFactory" namespace classes from all being treated as binned
-   TString clNameNoNamespace = rar->ClassName();
-   clNameNoNamespace = clNameNoNamespace(clNameNoNamespace.Last(':') + 1, clNameNoNamespace.Length());
-   TString dOpt = (clNameNoNamespace.Contains("Hist") || vv->isCategory() || rar->isBinnedDistribution(*vv) ||
-                   h->GetNbinsX() == 1 || rar->getAttribute("BinnedLikelihood") ||
-                   (dynamic_cast<RooAbsRealLValue *>(vv) &&
-                    std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue *>(vv),
-                                                                          -std::numeric_limits<double>::infinity(),
-                                                                          std::numeric_limits<double>::infinity()))))
-                     ? ""
-                     : "LF2";
-   if (auto d = dynamic_cast<RooHistFunc *>(rar); d && !d->isBinnedDistribution(*vv) && h->GetNbinsX() != 1) {
-      dOpt = "LF2"; // hist func is interpolated, so draw it as such
-   }
-   if (dOpt == "LF2" && !components().empty()) {
-      // check if all components of dOpt are "Hist" type (CMS model support)
-      // if so then dOpt="";
-      bool allHist = true;
-      for (auto &s : components()) {
-         TString _clName = s->get()->ClassName();
-         _clName = _clName(_clName.Last(':') + 1, _clName.Length());
-         if (!(s->get() && _clName.Contains("Hist"))) {
-            allHist = false;
-            break;
-         }
-      }
-      if (allHist)
-         dOpt = "";
-   }
-
-   if(dOpt=="LF2") {
-      // ensure any sub hists have lf2 option
-      TObjLink *lnk = h->GetListOfFunctions()->FirstLink();
-      while (lnk) {
-         if(auto hh = dynamic_cast<TH1*>(lnk->GetObject())) {
-            if(TString(hh->GetName())=="band" && TString(lnk->GetOption())=="e2same") {
-               lnk->SetOption("LF2 e3same");
-            } else if(TString(hh->GetName())=="nominal") {
-               lnk->SetOption("L same");
-            }
-         }
-         lnk = lnk->Next();
-      }
-   }
+   TString dOpt = h->GetOption();
+   if(dOpt=="l") h->SetFillStyle(0);
+//   // need to strip namespace to discount the "HistFactory" namespace classes from all being treated as binned
+//   TString clNameNoNamespace = rar->ClassName();
+//   clNameNoNamespace = clNameNoNamespace(clNameNoNamespace.Last(':') + 1, clNameNoNamespace.Length());
+//   TString dOpt = (clNameNoNamespace.Contains("Hist") || vv->isCategory() || rar->isBinnedDistribution(*vv) ||
+//                   h->GetNbinsX() == 1 || rar->getAttribute("BinnedLikelihood") ||
+//                   (dynamic_cast<RooAbsRealLValue *>(vv) &&
+//                    std::unique_ptr<std::list<double>>(rar->binBoundaries(*dynamic_cast<RooAbsRealLValue *>(vv),
+//                                                                          -std::numeric_limits<double>::infinity(),
+//                                                                          std::numeric_limits<double>::infinity()))))
+//                     ? ""
+//                     : "LF2";
+//   if (auto d = dynamic_cast<RooHistFunc *>(rar); d && !d->isBinnedDistribution(*vv) && h->GetNbinsX() != 1) {
+//      dOpt = "LF2"; // hist func is interpolated, so draw it as such
+//   }
+//   if (dOpt == "LF2" && !components().empty()) {
+//      // check if all components of dOpt are "Hist" type (CMS model support)
+//      // if so then dOpt="";
+//      bool allHist = true;
+//      for (auto &s : components()) {
+//         TString _clName = s->get()->ClassName();
+//         _clName = _clName(_clName.Last(':') + 1, _clName.Length());
+//         if (!(s->get() && _clName.Contains("Hist"))) {
+//            allHist = false;
+//            break;
+//         }
+//      }
+//      if (allHist)
+//         dOpt = "";
+//   }
+//
+//   if(dOpt=="LF2") {
+//      // ensure any sub hists have lf2 option
+//      TObjLink *lnk = h->GetListOfFunctions()->FirstLink();
+//      while (lnk) {
+//         if(auto hh = dynamic_cast<TH1*>(lnk->GetObject())) {
+//            if(TString(hh->GetName())=="band" && TString(lnk->GetOption())=="e2same") {
+//               lnk->SetOption("LF2 e3same");
+//            } else if(TString(hh->GetName())=="nominal") {
+//               lnk->SetOption("L same");
+//            }
+//         }
+//         lnk = lnk->Next();
+//      }
+//   }
 
    if (rar == vv && rar->IsA() == RooRealVar::Class()) {
       dOpt += "TEXT";
@@ -10514,19 +10563,7 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    TH1 *errHist = nullptr;
-   if (hasError) {
-      // still needed for at least rar==vv case (could try moving to there)
-      h->SetFillStyle(hasError ? 3005 : 0);
-      h->SetFillColor(h->GetLineColor());
-      h->SetMarkerStyle(0);
-//      errHist = dynamic_cast<TH1 *>(h->Clone(Form("%s_err", h->GetName())));
-//      errHist->SetBit(kCanDelete);
-//      errHist->SetDirectory(nullptr);
-//      h->SetFillStyle(0);
-//      for (int i = 1; i <= h->GetNbinsX(); i++) {
-//         h->SetBinError(i, 0);
-//      }
-   }
+
 
    if (!hasSame)
       clearPad();
@@ -10567,7 +10604,7 @@ void xRooNode::Draw(Option_t *opt)
       }
       _hist->SetStats(false);
       // if (_hist->GetBinContent(1)==0.) _hist->SetBinContent(1,(_hist->GetMaximum()-_hist->GetMinimum())*0.005);
-      _hist->Draw(((hasError) ? "e2" : ""));
+      _hist->Draw();//_hist->Draw(((hasError) ? "e2" : ""));
       gPad->Modified();
       return;
    }
@@ -10608,14 +10645,14 @@ void xRooNode::Draw(Option_t *opt)
          //            (TAttLine&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          //            (TAttFill&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          //            (TAttMarker&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
-         auto _styleNode = styles(h);
+         _styleNode = styles(h);
          rar->setStringAttribute("style", oldStyle == "" ? nullptr : oldStyle.Data()); // restores old style
          if (auto _style = _styleNode.get<TStyle>()) {
             (TAttLine &)(*h) = *_style;
             (TAttFill &)(*h) = *_style;
             (TAttMarker &)(*h) = *_style;
          }
-         h->Draw(dOpt=="LF2" ? "e2" : dOpt);
+         h->Draw(dOpt=="LF2" ? "e3" : dOpt);
          if (errHist) {
             errHist->SetTitle(overlayName);
             (TAttLine &)(*errHist) = *h;
@@ -10623,7 +10660,6 @@ void xRooNode::Draw(Option_t *opt)
          }
       }
    } else {
-      auto _styleNode = styles(h);
 //      if (auto _style = _styleNode.get<TStyle>()) {
 //         (TAttLine &)(*h) = *_style;
 //         (TAttFill &)(*h) = *_style;
@@ -10633,7 +10669,7 @@ void xRooNode::Draw(Option_t *opt)
 //            errHist->SetFillColor(h->GetLineColor());
 //         }
 //      }
-      h->Draw(dOpt=="LF2" ? "e2" : dOpt);
+      h->Draw(dOpt);
    }
 
    if (!hasOverlay && (rarNode->get()->InheritsFrom("RooRealSumPdf") || rarNode->get()->InheritsFrom("RooAddPdf") ||
@@ -10644,7 +10680,7 @@ void xRooNode::Draw(Option_t *opt)
          TObjLink *lnk = stack->GetHists()->FirstLink();
          while (lnk) {
             TH1* hh = static_cast<TH1*>(lnk->GetObject());
-            lnk->SetOption(dOpt);
+            //lnk->SetOption(dOpt); - not needed
             auto hhMin = (hh->GetMinimum() == 0) ? hh->GetMinimum(1e-9) : hh->GetMinimum();
             if (lnk==stack->GetHists()->FirstLink() && h->GetMinimum() > hhMin) {
                auto newMin = hhMin - (h->GetMaximum() - hhMin) * gStyle->GetHistTopMargin();
