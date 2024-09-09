@@ -896,6 +896,7 @@ double xRooNLLVar::saturatedMainTerm() const
    for (int i = 0; i < _data->numEntries(); i++) {
       _data->get(i);
       double w = _data->weight();
+      if(w==0) continue;
       out -= w * std::log(w);
       if (_binnedChannels.count("*")) {
          out += TMath::LnGamma(w + 1);
