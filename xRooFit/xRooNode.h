@@ -379,6 +379,7 @@ public:
    bool SetXaxis(int nbins, double low, double high) { return SetXaxis("xaxis", "", nbins, low, high); }
    bool SetXaxis(int nbins, const double *bins) { return SetXaxis("xaxis", "", nbins, bins); }
 
+   std::shared_ptr<TStyle> style(TObject *initObject = nullptr, bool autoCreate = true) const; // DEPRECATED: TO BE REMOVED
    xRooNode styles(TObject *initObject = nullptr, bool autoCreate = true) const;
 
    TAxis *GetXaxis() const;

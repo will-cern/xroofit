@@ -4547,6 +4547,10 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode &acquirer, con
    return fComp;
 }
 
+std::shared_ptr<TStyle> xRooNode::style(TObject *initObject, bool autoCreate) const {
+   return std::dynamic_pointer_cast<TStyle>(styles(initObject,autoCreate).fComp);
+}
+
 xRooNode xRooNode::styles(TObject *initObject, bool autoCreate) const
 {
    TString t = GetTitle();
