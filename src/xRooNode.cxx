@@ -7711,17 +7711,18 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          h->Sumw2();
          h->GetXaxis()->SetBinLabel(1, rar->GetName());
          h->SetBinContent(1, rar->getVal());
-         if (x->hasError())
+         if (x->getError()) {
             h->SetBinError(1, x->getError());
+            h->SetFillStyle(3005);
+            h->SetFillColor(h->GetLineColor());
+         }
          h->SetMaximum(x->hasMax() ? x->getMax()
                                    : (h->GetBinContent(1) + std::max(std::abs(h->GetBinContent(1) * 0.1), 50.)));
          h->SetMinimum(x->hasMin() ? x->getMin()
                                    : (h->GetBinContent(1) - std::max(std::abs(h->GetBinContent(1) * 0.1), 50.)));
          h->GetXaxis()->SetName(dynamic_cast<TObject *>(v)->GetName());
          h->SetOption("e2");
-         h->SetFillStyle(3005);
          h->SetMarkerSize(0);
-         h->SetFillColor(h->GetLineColor());
          h->SetMarkerStyle(0);
 
          return h;
@@ -10089,6 +10090,7 @@ void xRooNode::Draw(Option_t *opt)
       graph->SetEditable(false);
       pNamesHist->SetLineWidth(0);
       pNamesHist->SetMarkerSize(0);
+      pNamesHist->SetMarkerStyle(0);
       graph->GetListOfFunctions()->Add(pNamesHist, "same"); // graph->SetHistogram(pNamesHist);
       if (doHorizontal) {
 
@@ -10442,7 +10444,7 @@ void xRooNode::Draw(Option_t *opt)
    }
 
    // get style now, before we mess with histogram title
-   auto _styleNode = styles(h);
+   // auto _styleNode = styles(h);
 
    if (rar->InheritsFrom("RooAbsPdf") && !(rar->InheritsFrom("RooRealSumPdf") || rar->InheritsFrom("RooAddPdf") ||
                                            rar->InheritsFrom("RooSimultaneous"))) {
@@ -10623,7 +10625,10 @@ void xRooNode::Draw(Option_t *opt)
          h->SetTitle(overlayName);
          // for overlays will take style from current gStyle before overriding with personal style
          // this ensures initial style will be whatever gStyle is, rather than whatever ours is
-         (TAttLine &)(*h) = *gStyle;
+         static_cast<TAttLine &>(*h) = *gStyle;
+         static_cast<TAttFill &>(*h) = *gStyle;
+         static_cast<TAttMarker &>(*h) = *gStyle;
+         h->SetFillStyle(0); // explicit default for overlays will be transparent fill
 
          //            std::shared_ptr<TStyle> style; // use to keep alive for access from GetStyle below, in case
          //            getObject has decided to return the owning ptr (for some reason) if
@@ -10645,7 +10650,7 @@ void xRooNode::Draw(Option_t *opt)
          //            (TAttLine&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          //            (TAttFill&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
          //            (TAttMarker&)(*h) = *(gROOT->GetStyle(h->GetTitle()) ? gROOT->GetStyle(h->GetTitle()) : gStyle);
-         _styleNode = styles(h);
+         auto _styleNode = styles(h);
          rar->setStringAttribute("style", oldStyle == "" ? nullptr : oldStyle.Data()); // restores old style
          if (auto _style = _styleNode.get<TStyle>()) {
             (TAttLine &)(*h) = *_style;
