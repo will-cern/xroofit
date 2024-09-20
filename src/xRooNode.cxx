@@ -7642,7 +7642,7 @@ void xRooNode::sterilize() const
 }
 
 // observables not in the axisVars are automatically projected over
-xRooNode xRooNode::histo(const xRooNode &vars, const xRooNode &fr, bool content, bool errors) const
+xRooNode xRooNode::histo(const xRooNode &vars, const xRooNode &fr, bool content, bool errors, bool stack, bool errorsHi, bool errorsLo, int nErrorToys ) const
 {
 
    if (!vars.fComp && strlen(vars.GetName())) {
@@ -7653,10 +7653,11 @@ xRooNode xRooNode::histo(const xRooNode &vars, const xRooNode &fr, bool content,
 
    RooAbsLValue *v = nullptr;
    if (vars.empty()) {
-      out.fComp = std::shared_ptr<TH1>(BuildHistogram(nullptr, !content, errors, -1, -1, fr));
+      // does an integral
+      out.fComp = std::shared_ptr<TH1>(BuildHistogram(nullptr, !content, errors, -1, -1, fr, errorsHi, errorsLo, nErrorToys, nullptr, !stack, true));
    } else if (vars.size() == 1) {
       v = vars.at(0)->get<RooAbsLValue>();
-      out.fComp = std::shared_ptr<TH1>(BuildHistogram(v, !content, errors, 1, 0, fr));
+      out.fComp = std::shared_ptr<TH1>(BuildHistogram(v, !content, errors, 1, 0, fr, errorsHi, errorsLo, nErrorToys, nullptr, !stack, true ));
    } else {
       throw std::runtime_error("multi-dim histo not yet supported");
    }
@@ -10433,8 +10434,13 @@ void xRooNode::Draw(Option_t *opt)
 
 
    auto h = BuildHistogram(v, false, hasErrorOpt,1,0,"",false,false,0,nullptr,nostack,true/*setInterp*/);
-   if (!h)
+   if (!h) {
+      if(get()) {
+         // draw a deleteable clone of the object we wrap (since we might own the object)
+         get()->DrawClone(opt);
+      }
       return;
+   }
    h->SetBit(kCanDelete);
 
    if (!v)

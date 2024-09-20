@@ -454,7 +454,7 @@ public:
    void SetChecked(bool val = true) { Checked(this, val); }
 
    /** @private */
-   xRooNode histo(const xRooNode &vars = "x", const xRooNode &fr = "", bool content = true, bool errors = true) const;
+   xRooNode histo(const xRooNode &vars = "x", const xRooNode &fr = "", bool content = true, bool errors = true, bool stack = true, bool errorsHi = false, bool errorsLo = false, int nErrorToys = 0) const;
    /** @private */
    xRooNode filter(const xRooNode &range) const;
 
