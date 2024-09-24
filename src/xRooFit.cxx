@@ -632,7 +632,7 @@ public:
             // doing a hesse step, estimate progress based on evaluations
             int nRequired = prevPars.size();
             if (nRequired > 1) {
-               nRequired *= (nRequired - 1) / 2;
+               nRequired *= nRequired;
                if (fState == "Hesse3") {
                   nRequired *= 4;
                }
@@ -1245,6 +1245,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
          if (std::unique_ptr<RooAbsCollection> mpars(floatPars->selectByAttrib("minos", true)); !mpars->empty()) {
             if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
                fff->fState = "Minos";
+               fff->counter2 = 0;
             }
             auto _status = _minimizer.minos(*mpars);
             statusHistory.push_back(std::pair("Minos", _status));

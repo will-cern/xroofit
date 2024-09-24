@@ -5107,6 +5107,13 @@ xRooNode &xRooNode::browse()
                existing->fTimes++;
                existing->fFolder = c->fFolder; // transfer folder assignment
             } else {
+               // mark any existing children with the same name for cleanup - this happens e.g. if did a Replace on one of these nodes
+               // note that the child nodes will still become reordered (the old node will be deleted, new node will appear at end)
+               for(auto& child : *this) {
+                  if(strcmp(child->GetName(),c->GetName())==0) {
+                     child->fTimes=0;
+                  }
+               }
                emplace_back(c);
             }
          } else if (auto s = dynamic_cast<RooAbsCollection *>(_proxy)) {
@@ -7654,7 +7661,7 @@ xRooNode xRooNode::histo(const xRooNode &vars, const xRooNode &fr, bool content,
    RooAbsLValue *v = nullptr;
    if (vars.empty()) {
       // does an integral
-      out.fComp = std::shared_ptr<TH1>(BuildHistogram(nullptr, !content, errors, -1, -1, fr, errorsHi, errorsLo, nErrorToys, nullptr, !stack, true));
+      out.fComp = std::shared_ptr<TH1>(BuildHistogram(nullptr, !content, errors, -1, -1, fr, errorsHi, errorsLo, nErrorToys, nullptr, !stack, false));
    } else if (vars.size() == 1) {
       v = vars.at(0)->get<RooAbsLValue>();
       out.fComp = std::shared_ptr<TH1>(BuildHistogram(v, !content, errors, 1, 0, fr, errorsHi, errorsLo, nErrorToys, nullptr, !stack, true ));
@@ -8013,6 +8020,10 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    auto cat = (!x) ? dynamic_cast<RooAbsCategoryLValue *>(v) : nullptr;
    RooArgList* errorPars = nullptr;
    std::unique_ptr<RooAbsCollection> errorParsSnap;
+
+   if(!v) {
+      setInterp = false;
+   }
 
    if(setInterp) {
       RooAbsArg* vvv = dynamic_cast<RooAbsArg*>(v);
@@ -10384,9 +10395,9 @@ void xRooNode::Draw(Option_t *opt)
             auto val = _nll.pars()->getRealValue(initPar->GetName());
             if (ii > 1)
                _nll.pars()->setRealValue(initPar->GetName(), valueToDo);
-            auto _extTerm = _nll.extendedTerm();
+            auto _extTerm = _nll.extendedTermVal();
             _nll.pars()->setRealValue(initPar->GetName(), initPar->getVal());
-            auto _extTerm2 = _nll.extendedTerm();
+            auto _extTerm2 = _nll.extendedTermVal();
             _nll.pars()->setRealValue(initPar->GetName(), val);
             for (int i = 1; i <= emptyHist->GetNbinsX(); i++) {
                emptyHist->SetBinContent(i,

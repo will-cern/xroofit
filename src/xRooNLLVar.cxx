@@ -786,7 +786,7 @@ double xRooNLLVar::getEntryBinWidth(size_t entry) const
    return volume;
 }
 
-double xRooNLLVar::saturatedConstraintTerm() const
+double xRooNLLVar::saturatedConstraintTermVal() const
 {
    // for each global observable in the dataset, determine which constraint term is associated to it
    // and given its type, add the necessary saturated term...
@@ -850,23 +850,31 @@ double xRooNLLVar::mainTermNdof() const
    return data()->numEntries() - _floats->size();
 }
 
-double xRooNLLVar::mainTermPgof() const
+double xRooNLLVar::mainTermVal() const
 {
    // using totVal - constraintTerm while new evalbackend causes mainTerm() to return nullptr
-   double val = get()->getVal();
-   if (auto _constraintTerm = constraintTerm()) {
-      val -= _constraintTerm->getVal();
-   }
+   return get()->getVal() - constraintTermVal();
+}
 
-   return TMath::Prob(2. * (val - saturatedMainTerm()), mainTermNdof());
+double xRooNLLVar::constraintTermVal() const
+{
+   if (auto _constraintTerm = constraintTerm()) {
+      return _constraintTerm->getVal();
+   }
+   return 0;
+}
+
+double xRooNLLVar::mainTermPgof() const
+{
+   return TMath::Prob(2. * (mainTermVal() - saturatedMainTermVal()), mainTermNdof());
 }
 
 double xRooNLLVar::saturatedVal() const
 {
-   return saturatedMainTerm() + saturatedConstraintTerm();
+   return saturatedMainTermVal() + saturatedConstraintTermVal();
 }
 
-double xRooNLLVar::saturatedMainTerm() const
+double xRooNLLVar::saturatedMainTermVal() const
 {
 
    // Use this term to create a goodness-of-fit metric, which is approx chi2 distributed with numEntries (data) d.o.f:
@@ -914,7 +922,7 @@ double xRooNLLVar::saturatedMainTerm() const
       }
    }
 
-   out += simTerm();
+   out += simTermVal();
 
    return out;
 }
@@ -1156,7 +1164,7 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
    }
 
    try {
-      if (!kReuseNLL || !mainTerm() /*|| mainTerm()->operMode() == RooAbsTestStatistic::MPMaster*/) { // lost access to RooAbsTestStatistic in 6.34, but MP-mode will still throw exception, so we will still catch it
+      if (!kReuseNLL /*|| !mainTerm()*/ /*|| mainTerm()->operMode() == RooAbsTestStatistic::MPMaster*/) { // lost access to RooAbsTestStatistic in 6.34, but MP-mode will still throw exception, so we will still catch it
          // happens when using MP need to rebuild the nll instead
          // also happens if there's no mainTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
          AutoRestorer snap(*fFuncVars);
@@ -1171,16 +1179,19 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
       }
       bool out = false;
       if (_data.first) {
-         if (_data.first->getGlobalObservables()) {
-            // replace in all terms
-            out = get()->setData(*_data.first, false);
-            get()->setValueDirty();
-         } else {
-            // replace just in mainTerm ... note to self: why not just replace in all like above? should test!
-            auto _mainTerm = mainTerm();
-            out = _mainTerm->setData(*_data.first, false /* clone data? */);
-            _mainTerm->setValueDirty();
-         }
+         // replace in all terms
+         out = get()->setData(*_data.first, false /* clone data */);
+//         get()->setValueDirty();
+//         if (_data.first->getGlobalObservables()) {
+//            // replace in all terms
+//            out = get()->setData(*_data.first, false);
+//            get()->setValueDirty();
+//         } else {
+//            // replace just in mainTerm ... note to self: why not just replace in all like above? should test!
+//            auto _mainTerm = mainTerm();
+//            out = _mainTerm->setData(*_data.first, false /* clone data? */);
+//            _mainTerm->setValueDirty();
+//         }
       } else {
          reset();
       }
@@ -1238,10 +1249,12 @@ void xRooNLLVar::AddOption(const RooCmdArg &opt)
 
 RooAbsData *xRooNLLVar::data() const
 {
+   return fData.get();
+   /*
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 33, 00)
    auto _nll = mainTerm();
    if (!_nll)
       return fData.get();
-#if ROOT_VERSION_CODE < ROOT_VERSION(6, 33, 00)
    RooAbsData *out = &static_cast<RooAbsOptTestStatistic*>(_nll)->data();
 #else
    RooAbsData* out = nullptr; // new backends not conducive to having a reference to a RooAbsData in them (they use buffers instead)
@@ -1249,27 +1262,53 @@ RooAbsData *xRooNLLVar::data() const
    if (!out)
       return fData.get();
    return out;
+    */
 }
 
+/*
 RooAbsReal *xRooNLLVar::mainTerm() const
 {
-   auto _func = func();
-   if (_func && (_func->isReducerNode() || _func->InheritsFrom("RooAbsTestStatistic")))
-      return _func.get();
-   for (auto s : _func->servers()) {
-      if (auto a = dynamic_cast<RooAbsReal *>(s); a && (a->isReducerNode() || a->InheritsFrom("RooAbsTestStatistic")))
-         return a;
-   }
    return nullptr;
-}
+   // the main term is the "other term" in a RooAddition alongside a ConstraintSum
+   // if can't find the ConstraintSum, just return the function
 
-double xRooNLLVar::extendedTerm() const
+   RooAbsArg* _func = func().get();
+   if(!_func->InheritsFrom("RooAddition")) {
+      _func = nullptr;
+      // happens with new 6.32 backend, where the top-level function is an EvaluatorWrapper
+      for (auto s : func()->servers()) {
+         if(s->InheritsFrom("RooAddition")) {
+            _func = s; break;
+         }
+      }
+      if(!_func) {
+         return func().get();
+      }
+   }
+   std::set<RooAbsArg*> others,constraints;
+   for (auto s : _func->servers()) {
+      if(s->InheritsFrom("RooConstraintSum")) {
+         constraints.insert(s);
+      } else {
+         others.insert(s);
+      }
+   }
+   if(constraints.size()==1 && others.size()==1) {
+      return static_cast<RooAbsReal*>(*others.begin());
+   }
+   return nullptr; // failed to find the right term?
+
+
+}
+ */
+
+double xRooNLLVar::extendedTermVal() const
 {
    // returns Nexp - Nobs*log(Nexp)
    return fPdf->extendedTerm(fData->sumEntries(), fData->get());
 }
 
-double xRooNLLVar::simTerm() const
+double xRooNLLVar::simTermVal() const
 {
    if (auto s = dynamic_cast<RooSimultaneous *>(fPdf.get()); s) {
       return fData->sumEntries() * log(1.0 * (s->servers().size() - 1)); // one of the servers is the cat
@@ -1277,7 +1316,7 @@ double xRooNLLVar::simTerm() const
    return 0;
 }
 
-double xRooNLLVar::binnedDataTerm() const
+double xRooNLLVar::binnedDataTermVal() const
 {
    // this is only relevant if BinnedLikelihood active
    // = sum[ N_i! ] since LnGamma(N_i+1) ~= N_i!
