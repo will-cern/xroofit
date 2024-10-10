@@ -92,6 +92,7 @@ public:
 
    class xRooFitResult : public std::shared_ptr<const RooFitResult> {
    public:
+      xRooFitResult(const RooFitResult& fr);
       xRooFitResult(const std::shared_ptr<xRooNode> &in,
                     const std::shared_ptr<xRooNLLVar> &nll = nullptr); // : fNode(in) { }
       const RooFitResult *operator->() const;

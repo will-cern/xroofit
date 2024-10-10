@@ -463,6 +463,10 @@ xRooNLLVar::generate(bool expected, int seed)
    return xRooFit::generateFrom(*fPdf, *fr, expected, seed);
 }
 
+xRooNLLVar::xRooFitResult::xRooFitResult(const RooFitResult& fr) : xRooFitResult(std::make_shared<xRooNode>(fr)) {
+
+}
+
 xRooNLLVar::xRooFitResult::xRooFitResult(const std::shared_ptr<xRooNode> &in, const std::shared_ptr<xRooNLLVar> &nll)
    : std::shared_ptr<const RooFitResult>(std::dynamic_pointer_cast<const RooFitResult>(in->fComp)),
      fNode(in),
@@ -1480,29 +1484,54 @@ int xRooNLLVar::xRooHypoPoint::status() const
 
 void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
 {
-   std::cout << "POI: " << const_cast<xRooHypoPoint *>(this)->poi().contentsString()
-             << " , null: " << dynamic_cast<RooAbsReal *>(const_cast<xRooHypoPoint *>(this)->poi().first())->getVal()
-             << " , alt: "
-             << dynamic_cast<RooAbsReal *>(const_cast<xRooHypoPoint *>(this)->alt_poi().first())->getVal();
+   auto _poi = const_cast<xRooHypoPoint *>(this)->poi();
+   auto _alt_poi = const_cast<xRooHypoPoint *>(this)->alt_poi();
+   std::cout << "POI: " << _poi.contentsString()
+             << " , null: ";
+   bool first=true;
+   for(auto a : _poi) {
+      auto v = dynamic_cast<RooAbsReal*>(a);
+      if (!a) continue;
+      if (!first) std::cout << ",";
+      std::cout << v->getVal();
+      first = false;
+   }
+   std::cout << " , alt: ";
+   first=true;
+   bool any_alt = false;
+   for(auto a : _alt_poi) {
+      auto v = dynamic_cast<RooAbsReal*>(a);
+      if (!a) continue;
+      if (!first) std::cout << ",";
+      std::cout << v->getVal();
+      first = false;
+      if(!std::isnan(v->getVal())) any_alt=true;
+   }
    std::cout << " , pllType: " << fPllType << std::endl;
 
    std::cout << " -        ufit: ";
    if (fUfit) {
-      std::cout << fUfit->GetName() << " " << fUfit->minNll() << " (status=" << fUfit->status() << ") ("
-                << const_cast<xRooHypoPoint *>(this)->mu_hat().GetName()
-                << "_hat: " << const_cast<xRooHypoPoint *>(this)->mu_hat().getVal() << " +/- "
-                << const_cast<xRooHypoPoint *>(this)->mu_hat().getError() << ")" << std::endl;
+      std::cout << fUfit->GetName() << " " << fUfit->minNll() << " (status=" << fUfit->status() << ") (";
+      first=true;
+      for(auto a : _poi) {
+         auto v = dynamic_cast<RooRealVar*>(fUfit->floatParsFinal().find(a->GetName()));
+         if(!v) continue;
+         if(!first) std::cout << ",";
+         std::cout << v->GetName() << "_hat: " << v->getVal() << " +/- " << v->getError();
+         first=false;
+      }
+      std::cout << ")" << std::endl;
    } else {
       std::cout << "Not calculated" << std::endl;
    }
-   std::cout << " -   null cfit: ";
+   std::cout << " -   cfit_null: ";
    if (fNull_cfit) {
       std::cout << fNull_cfit->GetName() << " " << fNull_cfit->minNll() << " (status=" << fNull_cfit->status() << ")";
    } else {
       std::cout << "Not calculated";
    }
-   if (!std::isnan(dynamic_cast<RooAbsReal *>(const_cast<xRooHypoPoint *>(this)->alt_poi().first())->getVal())) {
-      std::cout << std::endl << " -    alt cfit: ";
+   if (any_alt) {
+      std::cout << std::endl << " -    cfit_alt: ";
       if (fAlt_cfit) {
          std::cout << fAlt_cfit->GetName() << " " << fAlt_cfit->minNll() << " (status=" << fAlt_cfit->status() << ")"
                    << std::endl;
@@ -1526,7 +1555,7 @@ void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
          } else {
             std::cout << "Not calculated";
          }
-         std::cout << std::endl << "   - asimov null cfit: ";
+         std::cout << std::endl << "   - asimov cfit_null: ";
          if (fAsimov->fNull_cfit) {
             std::cout << fAsimov->fNull_cfit->GetName() << " " << fAsimov->fNull_cfit->minNll()
                       << " (status=" << fAsimov->fNull_cfit->status() << ")";
@@ -1538,8 +1567,11 @@ void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
    } else {
       std::cout << std::endl;
    }
+   if (fLbound_cfit) {
+      std::cout << " - cfit_lbound: " << fLbound_cfit->GetName() << " " << fLbound_cfit->minNll() << " (status=" << fLbound_cfit->status() << ")";
+   }
    if (fGenFit)
-      std::cout << " -      genFit: " << fGenFit->GetName() << std::endl;
+      std::cout << " -      gfit: " << fGenFit->GetName() << std::endl;
    if (!nullToys.empty() || !altToys.empty()) {
       std::cout << " *   null toys: " << nullToys.size();
       size_t firstToy = 0;
