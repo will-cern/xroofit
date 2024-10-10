@@ -332,6 +332,14 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
          }
       }
 
+      // load list of colors if there is one
+      if(auto colors = dynamic_cast<TSeqCollection*>(_ws->obj(gROOT->GetListOfColors()->GetName()))) {
+         gROOT->GetListOfColors()->Clear();
+         for(auto col : *colors) {
+            gROOT->GetListOfColors()->Add(col);
+         }
+      }
+
       // use the datasets if any to 'mark' observables
       int checkCount = 0;
       for (auto &d : _ws->allData()) {
@@ -11172,6 +11180,8 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
    TString sOpt(option);
    sOpt.ToLower();
    if (auto w = get<RooWorkspace>(); w) {
+      // ensure the current color set is saved in the workspace
+      w->import(*gROOT->GetListOfColors(),true);
 
       if (TString(filename).EndsWith(".json")) {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
