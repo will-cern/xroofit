@@ -4862,6 +4862,14 @@ std::shared_ptr<xRooNode> xRooNode::find(const std::string &name, bool browseRes
       }
       return child2;
    }
+   // allow calling of find on a RooWorkspace to access getObject objects ...
+   if(get<RooWorkspace>() && name!=".memory") {
+      if(auto obj = getObject(name)) {
+         auto out = std::make_shared<xRooNode>(obj,*this);
+         if(browseResult) out->browse();
+         return out;
+      }
+   }
    return nullptr;
 }
 
