@@ -444,7 +444,9 @@ public:
 
    double ndof() const;
    double saturatedVal() const;
+   [[deprecated("Use saturatedConstraintTermVal()")]] double saturatedConstraintTerm() const { return saturatedConstraintTermVal(); }
    double saturatedConstraintTermVal() const;
+   [[deprecated("Use saturatedMainTermVal()")]] double saturatedMainTerm() const { return saturatedMainTermVal(); }
    double saturatedMainTermVal() const;
    double pgof() const; // a goodness-of-fit pvalue based on profile likelihood of a saturated model
    double mainTermPgof() const;
