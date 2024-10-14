@@ -1137,7 +1137,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       // }
 
       // only do hesse if was a valid min and not full accurate cov matrix already (can happen if e.g. ran strat2)
-      if (hesse &&
+      if (hesse && m_hessestrategy.Length()!=0 &&
           (m_strategy(sIdx) == 'h' || (_minimizer.fitter()->Result().IsValid()))) {
 
          // Note: minima where the covariance was made posdef are deemed 'valid' ...
