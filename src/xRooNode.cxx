@@ -4847,17 +4847,20 @@ std::shared_ptr<xRooNode> xRooNode::find(const std::string &name, bool browseRes
          }
          return child;
       }
-      if (auto x = mainChild(); x && strcmp(child->GetName(), x.GetName()) == 0) {
-         // can browse directly into main children as if their children were our children
-         for (auto &child2 : x.browse()) {
-            if (auto _obj = child2->get(); name == child2->GetName() || partname == child2->GetName() ||
-                                           (_obj && name == _obj->GetName()) || (_obj && partname == _obj->GetName())) {
-               if (browseResult)
-                  child2->browse(); // needed for onward read (or is it? there's a browse above too??)
-               if (partname != name && name != child2->GetName()) {
-                  return child2->at(name.substr(partname.length() + 1));
+      if(partname.find('.')!=0) { // do not allow mainChild browsing if trying to find a "." child ... as is done in getObject for ".memory"
+         if (auto x = mainChild(); x && strcmp(child->GetName(), x.GetName()) == 0) {
+            // can browse directly into main children as if their children were our children
+            for (auto &child2 : x.browse()) {
+               if (auto _obj = child2->get(); name == child2->GetName() || partname == child2->GetName() ||
+                                              (_obj && name == _obj->GetName()) ||
+                                              (_obj && partname == _obj->GetName())) {
+                  if (browseResult)
+                     child2->browse(); // needed for onward read (or is it? there's a browse above too??)
+                  if (partname != name && name != child2->GetName()) {
+                     return child2->at(name.substr(partname.length() + 1));
+                  }
+                  return child2;
                }
-               return child2;
             }
          }
       }
