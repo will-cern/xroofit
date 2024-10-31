@@ -304,7 +304,7 @@ public:
    xRooNode components() const; // additive children
    xRooNode factors() const;    // multiplicative children
    xRooNode variations() const; // interpolated children (are bins a form of variation?)
-   xRooNode coefs() const;
+   xRooNode coefs(bool recurse=false) const;
    xRooNode coords(bool setVals = true) const; // will move to the coords in the process if setVals=true
    xRooNode bins() const;
 

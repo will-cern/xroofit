@@ -4974,6 +4974,10 @@ std::shared_ptr<xRooNode> xRooNode::operator[](const std::string &name)
       return child2;
    }
    auto out = std::make_shared<xRooNode>(partname.c_str(), nullptr, *this); // not adding as child yeeet
+   // special case, if creating a node in the workspace with a specific name, it's a folder node ...
+   if(get<RooWorkspace>() && partname=="pdfs") {
+      out->SetName("!pdfs");
+   }
    if (partname != name) {
       return out->operator[](name.substr(partname.length() + 1));
    }
@@ -5790,9 +5794,32 @@ xRooNode xRooNode::bins() const
    return out;
 }
 
-xRooNode xRooNode::coefs() const
+xRooNode xRooNode::coefs(bool recurse) const
 {
    RooArgList coefs;
+
+   if(recurse && fParent) {
+      // get our coefs and multiply it by the parents coefs ...
+      auto ourCoefs = xRooNode::coefs(false);
+      auto parentCoefs = fParent->coefs(true);
+      if(!parentCoefs.get<RooAbsReal>()) {
+         // no coefs to include, just return our coefs
+         return ourCoefs;
+      }
+      if(!ourCoefs.get<RooAbsReal>()) {
+         // just return the parent's coefs
+         return parentCoefs;
+      }
+      // if got here, must combine parentCoefs and outCoefs into a RooProduct
+      xRooNode out(".recursiveCoefs",std::make_shared<RooProduct>(".recursiveCoefs", TString::Format("Recursive Coefficients of %s", GetName()),
+                                                                   *ourCoefs.get<RooAbsReal>(),*parentCoefs.get<RooAbsReal>()),*this);
+      // keep alive the two coef nodes by adding to out's memory
+      auto mem = out.emplace_back(std::make_shared<xRooNode>(".memory", nullptr, *this));
+      mem->emplace_back(std::make_shared<xRooNode>(ourCoefs));
+      mem->emplace_back(std::make_shared<xRooNode>(parentCoefs));
+      return out;
+   }
+
    bool isResidual = false;
 
    // if parent is a sumpdf or addpdf then include the coefs
@@ -8067,6 +8094,14 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    bool scaleExpected = (p && p->canBeExtended() && !_coefs.get());
    // Note about above: if pdf has coefficients then its embedded in a RooAddPdf that has coefs defined ...
    // in this case we should *not* scale by expected, since the coefs become the scaling instead
+   // we should also not build a stack for this (may be a RooRealSumPdf inside a RooAddPdf, but the
+   // samples of the RooRealSumPdf wont be correctly scaled to line up with overall RooRealSumPdf
+   // which will be normalized to its coefficient
+   if(!nostack && p && p->canBeExtended() && _coefs.get()) {
+      nostack=true;
+      // if wanted to still hve a stack, would need to scale the stack subcomponents by
+      // coefs-value / p_integral(raw) ... since raw p-integral will be what stack integrates to
+   }
 
    std::unique_ptr<RooArgSet> snap(normSet.snapshot());
    TStopwatch timeIt;
@@ -10481,7 +10516,8 @@ void xRooNode::Draw(Option_t *opt)
    auto rar = get<RooAbsReal>();
    const xRooNode *rarNode = this;
    if (!rar) {
-      get()->Draw();
+      // draw a deleteable clone of the object we wrap (since we might own the object)
+      get()->DrawClone(opt);
       return;
    }
 //   RooAbsReal *sf = nullptr;
@@ -11198,7 +11234,7 @@ void xRooNode::Draw(Option_t *opt)
 
    // now draw selected datasets on top if this was a pdf
    if (auto _pdf = get<RooAbsPdf>();
-       !hasSame && _pdf /*&& (_pdf->canBeExtended() || robs().empty())*/ && coefs().empty()) {
+       !hasSame && _pdf /*&& (_pdf->canBeExtended() || robs().empty())*/ && coefs(true).empty()) {
       auto _dsets = datasets();
       // bool _drawn=false;
       for (auto &d : _dsets) {
