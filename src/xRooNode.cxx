@@ -1454,7 +1454,46 @@ xRooNode xRooNode::Remove(const xRooNode &child)
             throw std::runtime_error(TString::Format("Cannot find %s in %s", child.GetName(), fParent->GetName()));
          }
          return xRooNode(*arg);
-      } // todo: add support for RooAddPdf and RooAddition
+      } else if (auto p5 = fParent->get<RooAddPdf>(); p5) {
+         auto arg = toRemove.get<RooAbsArg>();
+         if (!arg)
+            arg = p5->pdfList().find(child.GetName());
+         if (!arg)
+            throw std::runtime_error(TString::Format("Cannot find %s in %s", child.GetName(), fParent->GetName()));
+         // remove, including coef removal ....
+         auto idx = p5->pdfList().index(arg);
+
+         if (idx != -1) {
+
+            const_cast<RooArgList &>(p5->pdfList()).remove(*arg);
+            p5->removeServer(*arg, true);
+            // have to be careful removing coef because if shared will end up removing them all!!
+            std::vector<RooAbsArg *> _coefs;
+            for (size_t ii = 0; ii < const_cast<RooArgList &>(p5->coefList()).size(); ii++) {
+               if (ii != size_t(idx))
+                  _coefs.push_back(const_cast<RooArgList &>(p5->coefList()).at(ii));
+            }
+            const_cast<RooArgList &>(p5->coefList()).removeAll();
+            for (auto &a : _coefs)
+               const_cast<RooArgList &>(p5->coefList()).add(*a);
+
+            sterilize();
+         } else {
+            throw std::runtime_error(TString::Format("Cannot find %s in %s", child.GetName(), fParent->GetName()));
+         }
+         return xRooNode(*arg);
+      } else if (auto p6 = fParent->get<RooAddition>(); p6) {
+         auto arg = toRemove.get<RooAbsArg>();
+         if (!arg)
+            arg = p6->list().find(child.GetName());
+         if (!arg)
+            throw std::runtime_error(TString::Format("Cannot find %s in %s", child.GetName(), fParent->GetName()));
+         // remove server ... doesn't seem to trigger removal from proxy
+         const_cast<RooArgList &>(p6->list()).remove(*arg);
+         p6->removeServer(*arg, true);
+         sterilize();
+         return xRooNode(*arg);
+      }
    }
 
    if (auto w = get<RooWorkspace>(); w) {
@@ -1476,11 +1515,11 @@ xRooNode xRooNode::Remove(const xRooNode &child)
       return out;
    } else if (get<RooProduct>() || get<RooProdPdf>()) {
       return factors().Remove(child);
-   } else if (get<RooRealSumPdf>()) {
+   } else if (get<RooRealSumPdf>() || get<RooAddPdf>() || get<RooAddition>()) {
       return components().Remove(child);
    }
 
-   throw std::runtime_error("Removal not implemented for this type of object");
+   throw std::runtime_error("Removal not implemented for object type " + std::string(get() ? get()->ClassName() : "null"));
 }
 
 xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
@@ -2954,7 +2993,7 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
                                                  (strlen(child.GetTitle()) && strcmp(child.GetTitle(), child.GetName()))
                                                     ? child.GetTitle()
                                                     : p2->GetTitle(),
-                                                 RooArgList(), RooArgList());
+                                                 RooArgList(), RooArgList() /* forces coef-mode if we specify this list */);
             _pdf = _sumpdf;
          } else {
             auto _sumpdf = acquireNew<RooRealSumPdf>(
