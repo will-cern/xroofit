@@ -402,6 +402,40 @@ void xRooNLLVar::reinitialize()
             }
          }
       }
+      std::map<RooAbsPdf*,std::string> normRanges;
+      if (auto range = dynamic_cast<RooCmdArg *>(fOpts->find("RangeWithName"))) {
+         TString rangeName = range->getString(0);
+         if(auto sr = dynamic_cast<RooCmdArg*>(fOpts->find("SplitRange")); sr && sr->getInt(0) && dynamic_cast<RooSimultaneous*>(fPdf.get())) {
+            // doing split range ... need to loop over categories of simpdf and apply range to each
+            auto simPdf = dynamic_cast<RooSimultaneous*>(fPdf.get());
+            for (auto cat : simPdf->indexCat()) {
+               auto subpdf = simPdf->getPdf(cat.first.c_str());
+               if (!subpdf) continue; // state not in pdf
+               TString srangeName(rangeName);
+               srangeName.ReplaceAll(",","_" + cat.first + ",");
+               srangeName += "_" + cat.first;
+               RooArgSet ss;
+               subpdf->treeNodeServerList(&ss, nullptr, true, false);
+               ss.add(*subpdf);
+               for (auto a : ss) {
+                  if (a->InheritsFrom("RooAddPdf")) {
+                     auto p = dynamic_cast<RooAbsPdf*>(a);
+                     normRanges[p] = p->normRange() ? p->normRange() : "";
+                     p->setNormRange(srangeName);
+                  }
+               }
+            }
+         } else {
+            // set range on all AddPdfs before creating - needed in cases where coefs are present and need fractioning based on fit range bugfix needed: roofit needs to propagate the normRange to AddPdfs child nodes (used in createExpectedEventsFunc)
+            for (auto a : s) {
+               if (a->InheritsFrom("RooAddPdf")) {
+                  auto p = dynamic_cast<RooAbsPdf *>(a);
+                  normRanges[p] = p->normRange() ? p->normRange() : "";
+                  p->setNormRange(rangeName);
+               }
+            }
+         }
+      }
       // before creating, clear away caches if any if pdf is in ws
       if (GETWS(fPdf)) {
          std::set<std::string> setNames;
@@ -422,6 +456,8 @@ void xRooNLLVar::reinitialize()
       // RooFit only swaps in what it calls parameters, this misses out the RooConstVars which we treat as pars as well
       // so swap those in ... question: is recursiveRedirectServers usage in RooAbsOptTestStatic (and here) a memory
       // leak?? where do the replaced servers get deleted??
+
+      for(auto& [k,v] : normRanges) k->setNormRange(v=="" ? nullptr : v.c_str());
 
       for (auto &a : attribs)
          std::shared_ptr<RooAbsReal>::get()->setAttribute(a.c_str());
