@@ -1843,8 +1843,20 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
                                                        TString::Format("Expected Events of %s", _pdf->GetTitle()),
                                                        *_pdf));
             } else {
+
+               // need to create a coefficient for each existing pdf first, like above
+               for (auto i = p->coefList().size();i<p->pdfList().size();i++) {
+                  const_cast<RooArgList &>(p->coefList())
+                     .add(*acquireNew<RooExtendedBinding>(TString::Format("%s_extBind", p->pdfList().at(i)->GetName()),
+                                                          TString::Format("Expected Events of %s", p->pdfList().at(i)->GetTitle()),
+                                                          *static_cast<RooAbsPdf*>(p->pdfList().at(i))));
+               }
+
                const_cast<RooArgList &>(p->coefList()).add(*acquire2<RooAbsArg, RooRealVar>("1", "1", 1));
             }
+            // ensure not in no-coef mode any more
+            *reinterpret_cast<bool*>(reinterpret_cast<unsigned char *>(p) + p->Class()->GetDataMemberOffset("_allExtendable"))=false;
+            *reinterpret_cast<bool*>(reinterpret_cast<unsigned char *>(p) + p->Class()->GetDataMemberOffset("_haveLastCoef"))=true;
          }
          const_cast<RooArgList &>(p->pdfList()).add(*_pdf);
          sterilize();
@@ -2868,6 +2880,18 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
    if (strcmp(GetName(), ".coef") == 0) { // covers both .coef and .coefs
       // need to add this into the relevant coef ... if its not a RooProduct, replace it with one first
       if (auto p = fParent->fParent->get<RooAddPdf>()) {
+         // may be in no-coef mode ... in which case must create coefs (use "ExtendedBindings" but note that these need obs list passing to them
+         if(p->coefList().empty() && !p->pdfList().empty()) {
+            for (auto _pdf : p->pdfList()) {
+               const_cast<RooArgList &>(p->coefList())
+                  .add(*acquireNew<RooExtendedBinding>(TString::Format("%s_extBind", _pdf->GetName()),
+                                                       TString::Format("Expected Events of %s", _pdf->GetTitle()),
+                                                       *static_cast<RooAbsPdf*>(_pdf)));
+            }
+            Info("Multiply","Created RooExtendedBinding coefficients for all pdfs of %s so that can multiply coef",p->GetName());
+            *reinterpret_cast<bool*>(reinterpret_cast<unsigned char *>(p) + p->Class()->GetDataMemberOffset("_allExtendable"))=false;
+            *reinterpret_cast<bool*>(reinterpret_cast<unsigned char *>(p) + p->Class()->GetDataMemberOffset("_haveLastCoef"))=true;
+         }
          for (size_t i = 0; i < p->pdfList().size(); i++) {
             if (p->pdfList().at(i) == fParent->get<RooAbsArg>()) {
                auto coefs = p->coefList().at(i);
@@ -2993,7 +3017,7 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
                                                  (strlen(child.GetTitle()) && strcmp(child.GetTitle(), child.GetName()))
                                                     ? child.GetTitle()
                                                     : p2->GetTitle(),
-                                                 RooArgList(), RooArgList() /* forces coef-mode if we specify this list */);
+                                                 RooArgList()/*, RooArgList() /* forces coef-mode if we specify this list */);
             _pdf = _sumpdf;
          } else {
             auto _sumpdf = acquireNew<RooRealSumPdf>(
