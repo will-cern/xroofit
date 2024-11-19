@@ -3017,7 +3017,7 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
                                                  (strlen(child.GetTitle()) && strcmp(child.GetTitle(), child.GetName()))
                                                     ? child.GetTitle()
                                                     : p2->GetTitle(),
-                                                 RooArgList()/*, RooArgList() /* forces coef-mode if we specify this list */);
+                                                 RooArgList()/*, RooArgList() forces coef-mode if we specify this list */);
             _pdf = _sumpdf;
          } else {
             auto _sumpdf = acquireNew<RooRealSumPdf>(
