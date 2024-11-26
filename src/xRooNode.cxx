@@ -1220,6 +1220,13 @@ const char *xRooNode::GetIconName() const
          }
          return "xRooFitPDFStyle";
       }
+      if (o->InheritsFrom("RooStats::ModelConfig")) {
+         if (!gClient->GetMimeTypeList()->GetIcon("xRooFitMCStyle", true)) {
+            gClient->GetMimeTypeList()->AddType("xRooFitMCStyle", "xRooFitMCStyle", "app_t.xpm", "app_t.xpm",
+                                                "->Browse()");
+         }
+         return "xRooFitMCStyle";
+      }
       if (auto a = dynamic_cast<RooAbsReal *>(o); a) {
          if (auto _ax = GetXaxis();
              _ax && (a->isBinnedDistribution(*dynamic_cast<RooAbsArg *>(_ax->GetParent())) ||
@@ -5739,7 +5746,9 @@ xRooNode xRooNode::components() const
                out.back()->fFolder = "!styles";
             } else if (strcmp(out.back()->get()->ClassName(), "RooStats::HypoTestInverterResult") == 0) {
                out.back()->fFolder = "!scans";
-            } else {
+            } else if (strcmp(out.back()->get()->ClassName(),"RooStats::ModelConfig") == 0) {
+               out.back()->fFolder = "!models";
+            } else{
                out.back()->fFolder = "!objects";
             }
          }
@@ -5759,6 +5768,14 @@ xRooNode xRooNode::components() const
       while ((snap = iter->Next())) {
          out.emplace_back(std::make_shared<xRooNode>(*snap, *this));
          out.back()->fFolder = "!snapshots";
+      }
+   } else if(auto mc = get<RooStats::ModelConfig>()) {
+      // add the pdf as a child, and the external constraints set if its there
+      if(mc->GetPdf()) {
+         out.emplace_back(std::make_shared<xRooNode>(".pdf", *mc->GetPdf(), *this));
+      }
+      if(mc->GetExternalConstraints()) {
+         out.emplace_back(std::make_shared<xRooNode>(".extCons", *mc->GetExternalConstraints(), *this));
       }
    } else if (strlen(GetName()) > 0 && GetName()[0] == '!' && fParent) {
       // special case of dynamic property
@@ -6233,6 +6250,8 @@ xRooNode xRooNode::datasets() const
              }
          }
      }*/
+   } else if(auto mc = get<RooStats::ModelConfig>()) {
+      return xRooNode(*mc->GetPdf(),fParent).datasets();
    }
 
    return out;
@@ -6825,6 +6844,10 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, std::initializer_list<RooCmdArg>
 
 xRooNode xRooNode::generate(const xRooNode &fr, bool expected, int seed)
 {
+   if(auto mc = get<RooStats::ModelConfig>()) {
+      return xRooNode(*mc->GetPdf(),fParent).generate(fr,expected,seed);
+   }
+
    if (!get<RooAbsPdf>()) {
       // before giving up, if this is a workspace we can proceed if we only have one model
       if (get<RooWorkspace>()) {
@@ -6902,6 +6925,16 @@ xRooNode xRooNode::generate(const xRooNode &fr, bool expected, int seed)
 
 xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
 {
+   if(auto mc = get<RooStats::ModelConfig>()) {
+      if(mc->GetExternalConstraints()) {
+         RooLinkedList optsWithConstraints;
+         for(auto o : opts) { optsWithConstraints.Add(o->Clone(nullptr)); }
+         optsWithConstraints.Add(RooFit::ExternalConstraints(*mc->GetExternalConstraints()).Clone(nullptr));
+         return xRooNode(*mc->GetPdf(), fParent).nll(_data, optsWithConstraints);
+      } else {
+         return xRooNode(*mc->GetPdf(), fParent).nll(_data, opts);
+      }
+   }
 
    if (!get<RooAbsPdf>()) {
       // before giving up, if this is a workspace we can proceed if we only have one model
@@ -6912,7 +6945,7 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
                if (!mainModel) {
                   mainModel = c;
                } else {
-                  throw std::runtime_error(TString::Format("Workspace has multiple models, you must specify which to "
+                  throw std::runtime_error(TString::Format("Workspace has multiple pdfs, you must specify which to "
                                                            "build nll with (found at least %s and %s)",
                                                            mainModel->GetName(), c->GetName()));
                }
@@ -7180,6 +7213,7 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
       } else if (!get() || get<RooAbsCollection>()) {
          // filter the children .... handle special case of filtering ".vars" with "x" option too
          xRooNode out(std::make_shared<RooArgList>(), fParent);
+         out.SetName(TString(GetName())+"_reduced");
          size_t nobs = 0;
          bool notAllArgs = false;
          bool isVars = (strcmp(GetName(), ".vars") == 0);
@@ -9058,7 +9092,9 @@ void xRooNode::Draw(Option_t *opt)
    if (!get() && !IsFolder() && !sOpt2.Contains("x="))
       return;
 
-   if (auto ir = get<RooStats::HypoTestInverterResult>()) {
+   if(auto mc = get<RooStats::ModelConfig>()) {
+      xRooNode(*mc->GetPdf(),fParent).Draw(opt);// draw the pdf of the config
+   } else if (auto ir = get<RooStats::HypoTestInverterResult>()) {
       xRooHypoSpace(ir).Draw(opt);
       gSystem->ProcessEvents();
       return;
