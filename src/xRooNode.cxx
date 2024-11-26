@@ -6937,22 +6937,36 @@ xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
    }
 
    if (!get<RooAbsPdf>()) {
-      // before giving up, if this is a workspace we can proceed if we only have one model
+      // before giving up, if this is a workspace we can proceed if we only have one model or pdf
       if (get<RooWorkspace>()) {
-         std::shared_ptr<xRooNode> mainModel;
+         std::shared_ptr<xRooNode> mainPdf, mainModel, otherPdf;
          for (auto &c : const_cast<xRooNode *>(this)->browse()) {
             if (c->get<RooAbsPdf>()) {
-               if (!mainModel) {
+               if (!mainPdf) {
+                  mainPdf = c;
+               } else {
+                  otherPdf = c;
+               }
+            } else if(c->get<RooStats::ModelConfig>()) {
+               if(!mainModel) {
                   mainModel = c;
                } else {
-                  throw std::runtime_error(TString::Format("Workspace has multiple pdfs, you must specify which to "
+                  throw std::runtime_error(TString::Format("Workspace has multiple models, you must specify which to "
                                                            "build nll with (found at least %s and %s)",
                                                            mainModel->GetName(), c->GetName()));
                }
             }
          }
          if (mainModel)
-            return mainModel->nll(_data, opts);
+            return mainModel->nll(_data,opts);
+         if (mainPdf) {
+            if(otherPdf) {
+               throw std::runtime_error(TString::Format("Workspace has multiple pdfs, you must specify which to "
+                                                        "build nll with (found at least %s and %s)",
+                                                        mainPdf->GetName(), otherPdf->GetName()));
+            }
+            return mainPdf->nll(_data, opts);
+         }
       }
       throw std::runtime_error(TString::Format("%s is not a pdf", GetName()));
    }
