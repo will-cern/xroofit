@@ -2659,7 +2659,25 @@ xRooNode xRooNode::Constrain(const xRooNode &child)
       if (!x) {
          throw std::runtime_error("Nowhere to put constraint");
       }
-
+      // get datasets of the swallower, and add glob to any globs lists
+      auto childGlobs = child.globs();
+      if(!childGlobs.empty()) {
+         for (auto d : x->datasets()) {
+            if (auto globs = d->get<RooAbsData>()->getGlobalObservables()) {
+               RooArgSet newGlobs(*globs);
+               newGlobs.add(*childGlobs.get<RooArgList>());
+               d->get<RooAbsData>()->setGlobalObservables(newGlobs);
+            }
+         }
+         // also add to the workspaces globalObservables lists
+         if(x->ws()) {
+            for (auto &[k, v] : GETWSSETS(x->ws())) {
+               if (k == "globalObservables" || TString(k).EndsWith("_GlobalObservables")) {
+                  const_cast<RooArgSet &>(v).add(*childGlobs.get<RooArgList>());
+               }
+            }
+         }
+      }
       if (auto s = x->get<RooSimultaneous>(); s) {
          // put into every channel that features parameter
          x->browse();
