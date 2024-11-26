@@ -2161,6 +2161,14 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          if (auto _d = child.get<RooAbsData>()) {
             // don't use acquire method to import, because that adds datasets as Embeddded
             if (!w->import(*_d)) {
+               // should upgrade vars with any obs from the dataset
+               if(_d->get()) {
+                  std::unique_ptr<RooAbsCollection>(w->allVars().selectCommon(*_d->get()))->setAttribAll("obs");
+               }
+               if(_d->getGlobalObservables()) {
+                  std::unique_ptr<RooAbsCollection> globs(w->allVars().selectCommon(*_d->get()));
+                  globs->setAttribAll("obs");globs->setAttribAll("global");
+               }
                return xRooNode(child.GetName(), *w->data(child.GetName()), *this);
             } else {
                throw std::runtime_error(
