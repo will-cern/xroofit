@@ -2163,7 +2163,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
       // if child is a histogram, will create a RooProdPdf
 
    } else if (auto w = get<RooWorkspace>(); w) {
-      child.convertForAcquisition(*this);
+      child.convertForAcquisition(*this,child.get()?"":"func" /* if child is a string, allow it to be passed to factory */);
       if (child.get()) {
          if (auto _d = child.get<RooAbsData>()) {
             // don't use acquire method to import, because that adds datasets as Embeddded
@@ -4645,6 +4645,9 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode &acquirer, con
       TString s(sName);
       s = TString(s(8, s.Length()));
       fComp.reset(acquirer.ws()->factory(s), [](TObject *) {});
+      if(fComp) {
+         const_cast<xRooNode *>(this)->TNamed::SetName(fComp->GetName());
+      }
       return fComp;
    }
 
