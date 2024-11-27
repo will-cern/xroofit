@@ -1137,7 +1137,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       // }
 
       // only do hesse if was a valid min and not full accurate cov matrix already (can happen if e.g. ran strat2)
-      if (hesse && m_hessestrategy.Length()!=0 &&
+      if (hesse && m_hessestrategy.Length() != 0 &&
           (m_strategy(sIdx) == 'h' || (_minimizer.fitter()->Result().IsValid()))) {
 
          // Note: minima where the covariance was made posdef are deemed 'valid' ...
@@ -1175,9 +1175,9 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
          while (sIdx != -1) {
             hesseStrategy = int(m_hessestrategy(sIdx) - '0');
 
-            if(strategy==2 && hesseStrategy==2) {
+            if (strategy == 2 && hesseStrategy == 2) {
                // don't repeat hesse if strategy=2 and hesseStrategy=2, and the matrix was valid
-               if(_minimizer.fitter()->GetMinimizer()->CovMatrixStatus() == 3) {
+               if (_minimizer.fitter()->GetMinimizer()->CovMatrixStatus() == 3) {
                   break;
                }
                if (sIdx >= m_hessestrategy.Length() - 1) {
@@ -1186,7 +1186,6 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
                sIdx++;
                continue;
             }
-
 
             _minimizer.fitter()->Config().MinimizerOptions().SetStrategy(hesseStrategy);
             // const_cast<ROOT::Math::IOptions*>(_minimizer.fitter()->Config().MinimizerOptions().ExtraOptions())->SetValue("HessianStepTolerance",0.1);

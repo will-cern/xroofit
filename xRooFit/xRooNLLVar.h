@@ -92,7 +92,7 @@ public:
 
    class xRooFitResult : public std::shared_ptr<const RooFitResult> {
    public:
-      xRooFitResult(const RooFitResult& fr);
+      xRooFitResult(const RooFitResult &fr);
       xRooFitResult(const std::shared_ptr<xRooNode> &in,
                     const std::shared_ptr<xRooNLLVar> &nll = nullptr); // : fNode(in) { }
       const RooFitResult *operator->() const;
@@ -444,7 +444,10 @@ public:
 
    double ndof() const;
    double saturatedVal() const;
-   [[deprecated("Use saturatedConstraintTermVal()")]] double saturatedConstraintTerm() const { return saturatedConstraintTermVal(); }
+   [[deprecated("Use saturatedConstraintTermVal()")]] double saturatedConstraintTerm() const
+   {
+      return saturatedConstraintTermVal();
+   }
    double saturatedConstraintTermVal() const;
    [[deprecated("Use saturatedMainTermVal()")]] double saturatedMainTerm() const { return saturatedMainTermVal(); }
    double saturatedMainTermVal() const;

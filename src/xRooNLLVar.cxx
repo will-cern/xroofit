@@ -402,31 +402,35 @@ void xRooNLLVar::reinitialize()
             }
          }
       }
-      std::map<RooAbsPdf*,std::string> normRanges;
+      std::map<RooAbsPdf *, std::string> normRanges;
       if (auto range = dynamic_cast<RooCmdArg *>(fOpts->find("RangeWithName"))) {
          TString rangeName = range->getString(0);
-         if(auto sr = dynamic_cast<RooCmdArg*>(fOpts->find("SplitRange")); sr && sr->getInt(0) && dynamic_cast<RooSimultaneous*>(fPdf.get())) {
+         if (auto sr = dynamic_cast<RooCmdArg *>(fOpts->find("SplitRange"));
+             sr && sr->getInt(0) && dynamic_cast<RooSimultaneous *>(fPdf.get())) {
             // doing split range ... need to loop over categories of simpdf and apply range to each
-            auto simPdf = dynamic_cast<RooSimultaneous*>(fPdf.get());
+            auto simPdf = dynamic_cast<RooSimultaneous *>(fPdf.get());
             for (auto cat : simPdf->indexCat()) {
                auto subpdf = simPdf->getPdf(cat.first.c_str());
-               if (!subpdf) continue; // state not in pdf
+               if (!subpdf)
+                  continue; // state not in pdf
                TString srangeName(rangeName);
-               srangeName.ReplaceAll(",","_" + cat.first + ",");
+               srangeName.ReplaceAll(",", "_" + cat.first + ",");
                srangeName += "_" + cat.first;
                RooArgSet ss;
                subpdf->treeNodeServerList(&ss, nullptr, true, false);
                ss.add(*subpdf);
                for (auto a : ss) {
                   if (a->InheritsFrom("RooAddPdf")) {
-                     auto p = dynamic_cast<RooAbsPdf*>(a);
+                     auto p = dynamic_cast<RooAbsPdf *>(a);
                      normRanges[p] = p->normRange() ? p->normRange() : "";
                      p->setNormRange(srangeName);
                   }
                }
             }
          } else {
-            // set range on all AddPdfs before creating - needed in cases where coefs are present and need fractioning based on fit range bugfix needed: roofit needs to propagate the normRange to AddPdfs child nodes (used in createExpectedEventsFunc)
+            // set range on all AddPdfs before creating - needed in cases where coefs are present and need fractioning
+            // based on fit range bugfix needed: roofit needs to propagate the normRange to AddPdfs child nodes (used in
+            // createExpectedEventsFunc)
             for (auto a : s) {
                if (a->InheritsFrom("RooAddPdf")) {
                   auto p = dynamic_cast<RooAbsPdf *>(a);
@@ -457,7 +461,8 @@ void xRooNLLVar::reinitialize()
       // so swap those in ... question: is recursiveRedirectServers usage in RooAbsOptTestStatic (and here) a memory
       // leak?? where do the replaced servers get deleted??
 
-      for(auto& [k,v] : normRanges) k->setNormRange(v=="" ? nullptr : v.c_str());
+      for (auto &[k, v] : normRanges)
+         k->setNormRange(v == "" ? nullptr : v.c_str());
 
       for (auto &a : attribs)
          std::shared_ptr<RooAbsReal>::get()->setAttribute(a.c_str());
@@ -499,9 +504,7 @@ xRooNLLVar::generate(bool expected, int seed)
    return xRooFit::generateFrom(*fPdf, *fr, expected, seed);
 }
 
-xRooNLLVar::xRooFitResult::xRooFitResult(const RooFitResult& fr) : xRooFitResult(std::make_shared<xRooNode>(fr)) {
-
-}
+xRooNLLVar::xRooFitResult::xRooFitResult(const RooFitResult &fr) : xRooFitResult(std::make_shared<xRooNode>(fr)) {}
 
 xRooNLLVar::xRooFitResult::xRooFitResult(const std::shared_ptr<xRooNode> &in, const std::shared_ptr<xRooNLLVar> &nll)
    : std::shared_ptr<const RooFitResult>(std::dynamic_pointer_cast<const RooFitResult>(in->fComp)),
@@ -944,7 +947,8 @@ double xRooNLLVar::saturatedMainTermVal() const
    for (int i = 0; i < _data->numEntries(); i++) {
       _data->get(i);
       double w = _data->weight();
-      if(w==0) continue;
+      if (w == 0)
+         continue;
       out -= w * std::log(w);
       if (_binnedChannels.count("*")) {
          out += TMath::LnGamma(w + 1);
@@ -1204,7 +1208,10 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
    }
 
    try {
-      if (!kReuseNLL /*|| !mainTerm()*/ /*|| mainTerm()->operMode() == RooAbsTestStatistic::MPMaster*/) { // lost access to RooAbsTestStatistic in 6.34, but MP-mode will still throw exception, so we will still catch it
+      if (!kReuseNLL                                                        /*|| !mainTerm()*/
+          /*|| mainTerm()->operMode() == RooAbsTestStatistic::MPMaster*/) { // lost access to RooAbsTestStatistic
+                                                                            // in 6.34, but MP-mode will still throw
+                                                                            // exception, so we will still catch it
          // happens when using MP need to rebuild the nll instead
          // also happens if there's no mainTerm(), which is the case in 6.32 where RooNLLVar is partially deprecated
          AutoRestorer snap(*fFuncVars);
@@ -1221,17 +1228,16 @@ bool xRooNLLVar::setData(const std::pair<std::shared_ptr<RooAbsData>, std::share
       if (_data.first) {
          // replace in all terms
          out = get()->setData(*_data.first, false /* clone data */);
-//         get()->setValueDirty();
-//         if (_data.first->getGlobalObservables()) {
-//            // replace in all terms
-//            out = get()->setData(*_data.first, false);
-//            get()->setValueDirty();
-//         } else {
-//            // replace just in mainTerm ... note to self: why not just replace in all like above? should test!
-//            auto _mainTerm = mainTerm();
-//            out = _mainTerm->setData(*_data.first, false /* clone data? */);
-//            _mainTerm->setValueDirty();
-//         }
+         //         get()->setValueDirty();
+         //         if (_data.first->getGlobalObservables()) {
+         //            // replace in all terms
+         //            out = get()->setData(*_data.first, false);
+         //            get()->setValueDirty();
+         //         } else {
+         //            // replace just in mainTerm ... note to self: why not just replace in all like above? should
+         //            test! auto _mainTerm = mainTerm(); out = _mainTerm->setData(*_data.first, false /* clone data?
+         //            */); _mainTerm->setValueDirty();
+         //         }
       } else {
          reset();
       }
@@ -1297,11 +1303,8 @@ RooAbsData *xRooNLLVar::data() const
       return fData.get();
    RooAbsData *out = &static_cast<RooAbsOptTestStatistic*>(_nll)->data();
 #else
-   RooAbsData* out = nullptr; // new backends not conducive to having a reference to a RooAbsData in them (they use buffers instead)
-#endif
-   if (!out)
-      return fData.get();
-   return out;
+   RooAbsData* out = nullptr; // new backends not conducive to having a reference to a RooAbsData in them (they use
+buffers instead) #endif if (!out) return fData.get(); return out;
     */
 }
 
@@ -1522,39 +1525,45 @@ void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
 {
    auto _poi = const_cast<xRooHypoPoint *>(this)->poi();
    auto _alt_poi = const_cast<xRooHypoPoint *>(this)->alt_poi();
-   std::cout << "POI: " << _poi.contentsString()
-             << " , null: ";
-   bool first=true;
-   for(auto a : _poi) {
-      auto v = dynamic_cast<RooAbsReal*>(a);
-      if (!a) continue;
-      if (!first) std::cout << ",";
+   std::cout << "POI: " << _poi.contentsString() << " , null: ";
+   bool first = true;
+   for (auto a : _poi) {
+      auto v = dynamic_cast<RooAbsReal *>(a);
+      if (!a)
+         continue;
+      if (!first)
+         std::cout << ",";
       std::cout << v->getVal();
       first = false;
    }
    std::cout << " , alt: ";
-   first=true;
+   first = true;
    bool any_alt = false;
-   for(auto a : _alt_poi) {
-      auto v = dynamic_cast<RooAbsReal*>(a);
-      if (!a) continue;
-      if (!first) std::cout << ",";
+   for (auto a : _alt_poi) {
+      auto v = dynamic_cast<RooAbsReal *>(a);
+      if (!a)
+         continue;
+      if (!first)
+         std::cout << ",";
       std::cout << v->getVal();
       first = false;
-      if(!std::isnan(v->getVal())) any_alt=true;
+      if (!std::isnan(v->getVal()))
+         any_alt = true;
    }
    std::cout << " , pllType: " << fPllType << std::endl;
 
    std::cout << " -        ufit: ";
    if (fUfit) {
       std::cout << fUfit->GetName() << " " << fUfit->minNll() << " (status=" << fUfit->status() << ") (";
-      first=true;
-      for(auto a : _poi) {
-         auto v = dynamic_cast<RooRealVar*>(fUfit->floatParsFinal().find(a->GetName()));
-         if(!v) continue;
-         if(!first) std::cout << ",";
+      first = true;
+      for (auto a : _poi) {
+         auto v = dynamic_cast<RooRealVar *>(fUfit->floatParsFinal().find(a->GetName()));
+         if (!v)
+            continue;
+         if (!first)
+            std::cout << ",";
          std::cout << v->GetName() << "_hat: " << v->getVal() << " +/- " << v->getError();
-         first=false;
+         first = false;
       }
       std::cout << ")" << std::endl;
    } else {
@@ -1604,7 +1613,8 @@ void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
       std::cout << std::endl;
    }
    if (fLbound_cfit) {
-      std::cout << " - cfit_lbound: " << fLbound_cfit->GetName() << " " << fLbound_cfit->minNll() << " (status=" << fLbound_cfit->status() << ")";
+      std::cout << " - cfit_lbound: " << fLbound_cfit->GetName() << " " << fLbound_cfit->minNll()
+                << " (status=" << fLbound_cfit->status() << ")";
    }
    if (fGenFit)
       std::cout << " -      gfit: " << fGenFit->GetName() << std::endl;
@@ -3069,7 +3079,8 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    fitDetails.addClone(RooRealVar("minNll", "minNll", 0));
    fitDetails.addClone(RooRealVar("edm", "edm", 0));
    auto fitDS = new RooDataSet("fits", "fit summary data", fitDetails);
-   //fitDS->convertToTreeStore(); // strings not stored properly in vector store, so do convert! - not needed since string var storage not properly supported - storing in globs list instead
+   // fitDS->convertToTreeStore(); // strings not stored properly in vector store, so do convert! - not needed since
+   // string var storage not properly supported - storing in globs list instead
 
    for (int i = 0; i < 7; i++) {
       std::shared_ptr<const RooFitResult> fit;
