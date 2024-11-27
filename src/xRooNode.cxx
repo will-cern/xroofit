@@ -6818,6 +6818,11 @@ const char *xRooNode::GetRange() const
    return out.c_str();
 }
 
+xRooNLLVar xRooNode::nll(const char* _data, std::initializer_list<RooCmdArg> nllOpts) const
+{
+   return nll(xRooNode(_data),nllOpts);
+}
+
 xRooNLLVar xRooNode::nll(const xRooNode &_data) const
 {
    return nll(_data, *xRooFit::createNLLOptions());

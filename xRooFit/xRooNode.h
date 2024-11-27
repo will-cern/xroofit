@@ -411,11 +411,12 @@ public:
 
    // methods to access content and covariances of the CHILDREN of a node
    std::vector<double> contents() const;
-   TMatrixDSym covariances(const xRooNode &fr = "") const;
-
+   TMatrixDSym covariances(const xRooNode &fr = "") const;nll
    xRooNLLVar nll(const xRooNode &_data, std::initializer_list<RooCmdArg> nllOpts) const;
    xRooNLLVar nll(const xRooNode &_data, const RooLinkedList &nllOpts) const;
    xRooNLLVar nll(const xRooNode &_data = "") const; // uses xRooFit::createNLLOption for nllOpts
+
+   xRooNLLVar nll(const char* _data, std::initializer_list<RooCmdArg> nllOpts = {}) const; // exists to have sensible exception reporting in python (rather than conversion errors, which are incorrect)
 
    xRooNode fitResult(const char *opt = "") const;      // todo: make this 'fitResults'
    void SetFitResult(const RooFitResult *fr = nullptr); // null means will load prefit
