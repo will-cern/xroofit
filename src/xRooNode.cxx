@@ -1585,6 +1585,10 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          auto out = (child.get<RooAbsArg>()) ? child.get<RooAbsArg>() : getObject<RooAbsArg>(child.GetName()).get();
          out->setAttribute("poi");
          return xRooNode(*out, *this);
+      } else if(!child.get() && fParent->get<RooWorkspace>()) {
+         // may be creating poi at same time as adding, try add to parent
+         auto res = fParent->Add(child);
+         if(res.get<RooAbsLValue>()) return Add(res);
       }
       throw std::runtime_error("Failed to add parameter of interest");
    } else if ((strcmp(GetName(), ".pars") == 0 || strcmp(GetName(), ".vars") == 0) && fParent->get<RooWorkspace>()) {
