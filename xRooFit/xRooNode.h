@@ -411,7 +411,7 @@ public:
 
    // methods to access content and covariances of the CHILDREN of a node
    std::vector<double> contents() const;
-   TMatrixDSym covariances(const xRooNode &fr = "") const;nll
+   TMatrixDSym covariances(const xRooNode &fr = "") const;
    xRooNLLVar nll(const xRooNode &_data, std::initializer_list<RooCmdArg> nllOpts) const;
    xRooNLLVar nll(const xRooNode &_data, const RooLinkedList &nllOpts) const;
    xRooNLLVar nll(const xRooNode &_data = "") const; // uses xRooFit::createNLLOption for nllOpts
