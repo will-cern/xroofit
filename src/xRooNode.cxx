@@ -6021,8 +6021,9 @@ xRooNode xRooNode::factors() const
          bool show(true);
          for (auto c : a->clients()) {
             show = false;
-            if (c->InheritsFrom("RooProduct"))
-               show = true;
+            if (c->InheritsFrom("RooProduct")) {
+               show = true; break;
+            }
          }
          if (show)
             out.emplace_back(std::make_shared<xRooNode>(*a, *this));
