@@ -2212,7 +2212,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          auto _cat = acquire<RooCategory>(catName.c_str(), catName.c_str());
          _cat->setAttribute("obs");
          auto out = acquireNew<RooSimultaneous>(child.GetName(), child.GetTitle(), *_cat);
-         Info("Add", "Created model RooSimultaneous::%s in workspace %s", out->GetName(), w->GetName());
+         Info("Add", "Created pdf RooSimultaneous::%s in workspace %s", out->GetName(), w->GetName());
          return xRooNode(out, *this);
       }
    }
