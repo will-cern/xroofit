@@ -7899,8 +7899,11 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                               bool setInterp) const
 {
    auto rar = get<RooAbsReal>();
-   if (!rar)
+   if (!rar) {
+      if(get<TH1>()) { return dynamic_cast<TH1*>(get()->Clone()); }
       return nullptr;
+   }
+
 
    TObject *vv = rar;
 
