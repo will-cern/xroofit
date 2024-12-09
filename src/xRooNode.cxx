@@ -6667,68 +6667,67 @@ xRooNode xRooNode::fitResult(const char *opt) const
       auto checkFr = [&](TObject *o) {
          if (auto _fr = dynamic_cast<RooFitResult *>(o); _fr && _fr->TestBit(1 << 20)) {
             // check all pars match final/const values ... if mismatch need to create a new RooFitResult
-            bool match = true;
+            RooArgList oldFloats; RooArgList newFloats;
+            RooArgList newConsts;
             for (auto p : pars()) {
-               if (!p->get<RooAbsReal>()) {
-                  if (auto cat = p->get<RooAbsCategory>();
-                      cat && cat->getCurrentIndex() ==
-                                _fr->floatParsFinal().getCatIndex(cat->GetName(), std::numeric_limits<int>().max())) {
-                     match = false;
-                     break;
-                  }
-               } else if (p->get<RooAbsArg>()->getAttribute("Constant")) {
-                  if (_fr->floatParsFinal().find(p->GetName()) ||
-                      std::abs(_fr->constPars().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
-                               p->get<RooAbsReal>()->getVal()) > 1e-15) {
-                     match = false;
-                     break;
+               if (p->get<RooAbsArg>()->getAttribute("Constant") || p->get<RooConstVar>()) {
+                  // par must not be in the float list or have different value to what is in constPars (if it is there)
+                  if(_fr->floatParsFinal().find(p->GetName()) ||
+                      (p->get<RooAbsReal>() && std::abs(_fr->constPars().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
+                               p->get<RooAbsReal>()->getVal()) > 1e-15) ||
+                      (p->get<RooAbsCategory>() && p->get<RooAbsCategory>()->getCurrentIndex() !=
+                                                      _fr->constPars().getCatIndex(p->GetName(), std::numeric_limits<int>().max()))) {
+                     newConsts.add(*p->get<RooAbsArg>());
                   }
                } else {
-                  if (_fr->constPars().find(p->GetName()) ||
-                      std::abs(
-                         _fr->floatParsFinal().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
-                         p->get<RooAbsReal>()->getVal()) > 1e-15) {
-                     match = false;
-                     break;
+                  // floating par must be present in the floatPars list with the same value
+                  if(!_fr->floatParsFinal().find(p->GetName())) {
+                     newFloats.add(*p->get<RooAbsArg>());
+                  } else if((p->get<RooAbsReal>() && std::abs(_fr->floatParsFinal().getRealValue(p->GetName(), std::numeric_limits<double>::quiet_NaN()) -
+                                                               p->get<RooAbsReal>()->getVal()) > 1e-15) ||
+                             (p->get<RooAbsCategory>() && p->get<RooAbsCategory>()->getCurrentIndex() !=
+                                                             _fr->floatParsFinal().getCatIndex(p->GetName(), std::numeric_limits<int>().max()))) {
+                     // value of existing float changed
+                     oldFloats.add(*p->get<RooAbsArg>());
                   }
                }
             }
-            if (!match) {
-               // create new fit result using covariances from this fit result
-               std::unique_ptr<RooArgList> _pars(
-                  dynamic_cast<RooArgList *>(pars().argList().selectByAttrib("Constant", false)));
-               auto fr = std::make_shared<RooFitResult>(TString::Format("%s-dirty", _fr->GetName()));
-               fr->SetTitle(TString::Format("%s parameter snapshot", GetName()));
-               fr->setFinalParList(*_pars);
-               TMatrixTSym<double> *prevCov = static_cast<TMatrixTSym<double> *>(GETDMP(_fr, _VM));
-               if (prevCov) {
-                  auto cov = _fr->reducedCovarianceMatrix(*_pars);
-                  // make the diagonals all the current error values
-                  for (size_t i = 0; i < _pars->size(); i++) {
-                     if (auto v = dynamic_cast<RooRealVar *>(_pars->at(i))) {
-                        cov(i, i) = pow(v->getError(), 2);
-                     } else {
-                        cov(i, i) = 0;
-                     }
+            if (!oldFloats.empty() || !newFloats.empty() || !newConsts.empty()) {
+               // create new fit result using covariance from the fit result
+               // remove any new consts from the list before extracting covariance matrix
+               RooArgList existingFloats(_fr->floatParsFinal());
+               existingFloats.remove(newConsts,true,true/* match name*/);
+               auto cov = _fr->reducedCovarianceMatrix(existingFloats);
+               if(!newFloats.empty()) {
+                  // extend the covariance matrix and add variances using current parameter errors
+                  size_t oldSize = existingFloats.size();
+                  cov.ResizeTo(oldSize+newFloats.size(),oldSize+newFloats.size());
+                  for(size_t i=0;i<newFloats.size();i++) {
+                     existingFloats.add(*newFloats.at(i));
+                     auto v = dynamic_cast<RooRealVar*>(newFloats.at(i));
+                     if(v)
+                        cov( oldSize + i, oldSize + i ) = std::pow(v->getError(),2);
                   }
-                  fr->setCovarianceMatrix(cov);
                }
+               RooArgList existingConsts(_fr->constPars());
+               existingConsts.remove(newFloats,true,true);
+               existingConsts.add(newConsts);
 
-               auto _args = consts().argList();
-               _args.add(pp().argList());
-               // global obs are added to constPars list too
-               auto _globs = globs(); // keep alive as may own glob
-               _args.add(_globs.argList());
-               fr->setConstParList(_args);
-               std::unique_ptr<RooArgList> _snap(dynamic_cast<RooArgList *>(_pars->snapshot()));
-               for (auto &p : *_snap) {
-                  if (auto atr = p->getStringAttribute("initVal"); atr && dynamic_cast<RooRealVar *>(p))
-                     dynamic_cast<RooRealVar *>(p)->setVal(TString(atr).Atof());
-               }
-               fr->setInitParList(*_snap);
+               // do we need to add our remaining const pars to the const par list? or the globs?
+               // for speed we wont bother
+
+               auto fr = std::make_shared<RooFitResult>(TString::Format("%s-dirty", _fr->GetName()));
+               fr->setFinalParList(existingFloats);
+               fr->setConstParList(existingConsts);
+               fr->setCovarianceMatrix(cov);
+               fr->setInitParList(_fr->floatParsInit()); // will only be the pars that were actually float for the fit
+
                return xRooNode(fr, *this);
+            } else {
+               // all matching, can return the fit result as-is
+               return xRooNode(*_fr, std::make_shared<xRooNode>(*_w, std::make_shared<xRooNode>()));
             }
-            return xRooNode(*_fr, std::make_shared<xRooNode>(*_w, std::make_shared<xRooNode>()));
+
          }
          return xRooNode();
       };
@@ -8061,22 +8060,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
       /// Oct2022: No longer doing this because want to allow fitResult to be used to get partial error
       //        // need to add any floating parameters not included somewhere already in the fit result ...
-      //        RooArgList l;
-      //        for(auto& p : pars()) {
-      //            auto vv = p->get<RooRealVar>();
-      //            if (!vv) continue;
-      //            if (vv == dynamic_cast<RooRealVar*>(v)) continue;
-      //            if (vv->isConstant()) continue;
-      //            if (fr->floatParsFinal().find(vv->GetName())) continue;
-      //            if (fr->_constPars && fr->_constPars->find(vv->GetName())) continue;
-      //            l.add(*vv);
-      //        }
-      //
-      //        if (!l.empty()) {
-      //            RooArgList l2; l2.addClone(fr->floatParsFinal());
-      //            l2.addClone(l);
-      //            fr->setFinalParList(l2);
-      //        }
+      // now done in the fitResult() method, where a fit result from the workspace can be automatically extended
 
       TMatrixTSym<double> *prevCov = static_cast<TMatrixTSym<double> *>(GETDMP(fr, _VM));
 
