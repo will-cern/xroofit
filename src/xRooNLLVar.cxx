@@ -844,9 +844,10 @@ double xRooNLLVar::saturatedConstraintTermVal() const
       return 0;
 
    for (auto c : cTerm->list()) {
-      if (std::string(c->ClassName()) == "RooAbsPdf") {
+      if (std::string(c->ClassName()) == "RooAbsPdf" || std::string(c->ClassName()).find("RooNormalizedPdf")!=std::string::npos) {
          // in ROOT 6.32 the constraintTerm is full of RooNormalizedPdfs which aren't public
-         // in that case use the first server
+         // became public in 6.34, hence now also check for RooNormalizedPdf explicitly
+         // in this case use the first server
          c = c->servers()[0];
       }
       if (auto gaus = dynamic_cast<RooGaussian *>(c)) {
