@@ -942,6 +942,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
    }
 
    bool restore = !fitConfig.UpdateAfterFit();
+   bool minos = fitConfig.MinosErrors();
    std::string logs;
    if (!out) {
       int strategy = fitConfig.MinimizerOptions().Strategy();
@@ -976,7 +977,6 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       bool hesse = _minimizer.fitter()->Config().ParabErrors();
       _minimizer.fitter()->Config().SetParabErrors(
          false); // turn "off" so can run hesse as a separate step, appearing in status
-      bool minos = _minimizer.fitter()->Config().MinosErrors();
       _minimizer.fitter()->Config().SetMinosErrors(false);
       _minimizer.fitter()->Config().SetUpdateAfterFit(true); // note: seems to always take effect
 
@@ -1388,18 +1388,18 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       if (_progress) {
          delete _nll;
       }
+   }
 
+   if(out && out->status() == 0 && minos) {
       // call minos if requested on any parameters
-      if (status == 0 && minos) {
-         for (auto label : {"xminos", "xMinos"}) {
-            std::unique_ptr<RooAbsCollection> pars(floatPars->selectByAttrib(label, true));
-            for (auto p : *pars) {
-               Info("minimize", "Computing xminos error for %s", p->GetName());
-               xRooFit::minos(nll, *out, p->GetName(), myFitConfig);
-            }
-            if (!pars->empty())
-               *floatPars = out->floatParsFinal(); // put values back to best fit
+      for (auto label : {"xminos", "xMinos"}) {
+         std::unique_ptr<RooAbsCollection> pars(floatPars->selectByAttrib(label, true));
+         for (auto p : *pars) {
+            Info("minimize", "Computing xminos error for %s", p->GetName());
+            xRooFit::minos(nll, *out, p->GetName(), myFitConfig);
          }
+         if (!pars->empty())
+            *floatPars = out->floatParsFinal(); // put values back to best fit
       }
    }
 
