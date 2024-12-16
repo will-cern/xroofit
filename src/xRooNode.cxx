@@ -1251,10 +1251,22 @@ const char *xRooNode::GetNodeType() const
    if (auto o = get(); o && fParent && (fParent->get<RooProduct>() || fParent->get<RooRealSumPdf>())) {
       if (o->InheritsFrom("RooStats::HistFactory::FlexibleInterpVar"))
          return "Overall";
-      if (o->InheritsFrom("PiecewiseInterpolation"))
-         return (dynamic_cast<RooAbsArg *>(o)->getAttribute("density")) ? "DensityHisto" : "Histo";
+      if (o->InheritsFrom("PiecewiseInterpolation")) {
+         // check if children are all RooHistFunc ... if so, it's a HistoFactor, otherwise it's a Varied
+         bool isHisto=true;
+         for(auto c : const_cast<xRooNode*>(this)->browse()) {
+            if(!c->get<RooHistFunc>()) {
+               isHisto=false; break;
+            }
+         }
+         if(isHisto) {
+            return (dynamic_cast<RooAbsArg *>(o)->getAttribute("density")) ? "HistoDensity" : "Histo";
+         } else {
+            return (dynamic_cast<RooAbsArg *>(o)->getAttribute("density")) ? "VariedDensity" : "Varied";
+         }
+      }
       if (o->InheritsFrom("RooHistFunc"))
-         return (dynamic_cast<RooAbsArg *>(o)->getAttribute("density")) ? "ConstDensityHisto" : "ConstHisto";
+         return (dynamic_cast<RooAbsArg *>(o)->getAttribute("density")) ? "SimpleDensity" : "Simple";
       if (o->InheritsFrom("RooBinWidthFunction"))
          return "Density";
       if (o->InheritsFrom("ParamHistFunc"))
@@ -6954,6 +6966,12 @@ xRooNode xRooNode::generate(const xRooNode &fr, bool expected, int seed)
    return xRooNode(
       xRooFit::generateFrom(*get<RooAbsPdf>(), (_fr ? *_fr : *(fitResult().get<RooFitResult>())), expected, seed).first,
       *this);
+
+   // should add coords to the dataset too?
+   // e.g. in the case of generating a dataset for a single channel, include the channelCat
+   // this will allow datasets to then be combined.
+   // could just say users must use 'reduced' on the simPdf, even if reducing to a single channel
+
 }
 
 xRooNLLVar xRooNode::nll(const xRooNode &_data, const RooLinkedList &opts) const
