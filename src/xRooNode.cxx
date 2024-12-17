@@ -1969,7 +1969,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
                   TString::Format("%s;%s", dynamic_cast<TObject *>(_x)->GetName(), binningName.Data()));
                // technically convertForAcquisition has already acquired so no need to re-acquire but should be harmless
                _func = std::dynamic_pointer_cast<RooAbsArg>(acquire(xRooNode(*h).convertForAcquisition(*this)));
-               Info("Add", "Created densityhisto factor %s (xaxis=%s) for %s", _func->GetName(), _obs.at(0)->GetName(),
+               Info("Add", "Created SimpleDensity factor %s (xaxis=%s) for %s", _func->GetName(), _obs.at(0)->GetName(),
                     p->GetName());
             } else {
                throw std::runtime_error("Unsupported creation of new component in SumPdf for this many obs");
@@ -2004,7 +2004,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          }
          if (isConverted) {
             Info("Add", "Created %s factor RooHistFunc::%s for %s",
-                 _f->getAttribute("density") ? "densityhisto" : "histo", _f->GetName(), p->GetName());
+                 _f->getAttribute("density") ? "SimpleDensity" : "Simple", _f->GetName(), p->GetName());
          }
       }
 
@@ -3020,10 +3020,10 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
 
       if (isConverted && child.get<RooHistFunc>()) {
          Info("Multiply", "Created %s factor %s in %s",
-              child.get<RooAbsArg>()->getAttribute("density") ? "densityhisto" : "histo", child->GetName(),
+              child.get<RooAbsArg>()->getAttribute("density") ? "SimpleDensity" : "Simple", child->GetName(),
               p->GetName());
       } else if (isConverted && child.get<ParamHistFunc>()) {
-         Info("Multiply", "Created shape factor %s in %s", child->GetName(), p->GetName());
+         Info("Multiply", "Created Shape factor %s in %s", child->GetName(), p->GetName());
       }
 
       if (auto _f = std::dynamic_pointer_cast<RooAbsReal>(out); _f) {
