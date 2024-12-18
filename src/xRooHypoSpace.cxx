@@ -366,7 +366,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
          new TMemFile("fitDatabase", "RECREATE");
       }*/
       // now we create a TMemFile of our own, so that we don't get in the way of other hypoSpaces
-      fFitDb = std::shared_ptr<TMemFile>(new TMemFile(TString::Format("fitDatabase_%s",GetName()),"RECREATE"),[](TMemFile *o) {});
+      fFitDb = std::shared_ptr<TMemFile>(new TMemFile(TString::Format("fitDatabase_%s",GetName()),"RECREATE"),[](TFile *) {});
       // db can last longer than the hypoSpace, so that the fits are fully available in the browser
       // if a scan was initiated through the browser. If user wants to cleanup they can do manually
       // through root's GetListOfFiles()
