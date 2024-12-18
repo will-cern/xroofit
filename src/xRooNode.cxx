@@ -747,7 +747,7 @@ void xRooNode::Browse(TBrowser *b)
       }
       if (_fr) {
          if (_fr->status() || _fr->covQual() != 3) { // snapshots or bad fits
-            v->GetTreeItem(b)->SetColor((_fr->numStatusHistory() || _fr->floatParsFinal().empty()) ? kRed : kBlue);
+            v->GetTreeItem(b)->SetColor((_fr->numStatusHistory() || !_fr->floatParsFinal().empty()) ? kRed : kBlue);
          } else if (_fr->numStatusHistory() == 0) { // partial fit result ..
             v->GetTreeItem(b)->SetColor(kGray);
          }
@@ -3704,7 +3704,7 @@ xRooNode &xRooNode::operator=(const TObject &o)
     */
 }
 
-void xRooNode::_fit_(const char *constParValues)
+void xRooNode::_fit_(const char *constParValues, const char* options)
 {
    try {
       auto _pars = pars();
@@ -3716,8 +3716,10 @@ void xRooNode::_fit_(const char *constParValues)
          TString pat = (idx == -1) ? TString(pattern) : TString(pattern(0, idx));
          double val =
             (idx == -1) ? std::numeric_limits<double>::quiet_NaN() : TString(pattern(idx + 1, pattern.Length())).Atof();
+         bool foundArg = false;
          for (auto p : _pars.argList()) {
             if (TString(p->GetName()).Contains(TRegexp(pat, true))) {
+               foundArg = true;
                p->setAttribute("Constant", true);
                if (!std::isnan(val)) {
                   valsToSet[dynamic_cast<RooAbsRealLValue *>(p)] = val;
@@ -3726,7 +3728,25 @@ void xRooNode::_fit_(const char *constParValues)
                }
             }
          }
+         if(!foundArg) {
+            throw std::runtime_error(std::string("Unrecognised parameter: ") + pat.Data());
+         }
       }
+
+      // parse options
+      TStringToken pattern2(options, ",");
+      auto defaultOpts = xRooFit::createNLLOptions();
+      while (pattern2.NextToken()) {
+         auto idx = pattern2.Index('=');
+         TString pat = (idx == -1) ? TString(pattern2) : TString(pattern2(0, idx));
+         TString val = TString(pattern2(idx + 1, pattern2.Length()));
+         if(auto o = defaultOpts->FindObject(pat)) {
+            defaultOpts->Remove(o);
+            delete o;
+         }
+         defaultOpts->Add( new RooCmdArg(pat,val.IsDec() ? val.Atoi() : 0,0,val.IsFloat() ? val.Atof() : 0.,0.,val.IsAlpha()?val:nullptr) );
+      }
+
       // use the first selected dataset
       auto _dsets = datasets();
       TString dsetName = "";
@@ -3736,7 +3756,7 @@ void xRooNode::_fit_(const char *constParValues)
             break;
          }
       }
-      auto _nll = nll(dsetName.Data());
+      auto _nll = nll(dsetName.Data(),*defaultOpts);
       // can now set the values
       for (auto [p, v] : valsToSet) {
          p->setVal(v);
@@ -3797,7 +3817,7 @@ void xRooNode::_generate_(const char *datasetName, bool expected)
 }
 
 void xRooNode::_scan_(const char *what, double nToys, const char *xvar, int nBinsX, double lowX,
-                      double highX /*, const char*, int, double, double*/, const char *constParValues)
+                      double highX /*, const char*, int, double, double*/, const char *constParValues, const char* options)
 {
    try {
       TString sXvar(xvar);
@@ -3820,16 +3840,38 @@ void xRooNode::_scan_(const char *what, double nToys, const char *xvar, int nBin
          TString pat = (idx == -1) ? TString(pattern) : TString(pattern(0, idx));
          double val =
             (idx == -1) ? std::numeric_limits<double>::quiet_NaN() : TString(pattern(idx + 1, pattern.Length())).Atof();
+         bool foundArg = false;
          for (auto par : _pars.argList()) {
             if (TString(par->GetName()).Contains(TRegexp(pat, true))) {
+               foundArg=true;
                par->setAttribute("Constant", true);
                if (!std::isnan(val)) {
                   dynamic_cast<RooAbsRealLValue *>(par)->setVal(val);
                }
             }
          }
+         if(!foundArg) {
+            throw std::runtime_error(std::string("Unrecognised parameter: ") + pat.Data());
+         }
+
       }
-      auto hs = nll(dsetName.Data()).hypoSpace(sXvar);
+
+      // parse options
+      TStringToken pattern2(options, ",");
+      auto defaultOpts = xRooFit::createNLLOptions();
+      while (pattern2.NextToken()) {
+         auto idx = pattern2.Index('=');
+         TString pat = (idx == -1) ? TString(pattern2) : TString(pattern2(0, idx));
+         TString val = TString(pattern2(idx + 1, pattern2.Length()));
+         if(auto o = defaultOpts->FindObject(pat)) {
+            defaultOpts->Remove(o);
+            delete o;
+         }
+         defaultOpts->Add( new RooCmdArg(pat,val.IsDec() ? val.Atoi() : 0,0,val.IsFloat() ? val.Atof() : 0.,0.,val.IsAlpha()?val:nullptr) );
+      }
+
+      auto hs = nll(dsetName.Data(),*defaultOpts).hypoSpace(sXvar);
+      hs.SetName(TUUID().AsString());
       if (nToys) {
          sWhat += " toys";
          if (nToys > 0) {
@@ -3848,7 +3890,6 @@ void xRooNode::_scan_(const char *what, double nToys, const char *xvar, int nBin
             TString::Format("%s\nData = %s\nScan Status Code = %d", hs.GetName(), dsetName.Data(), scanStatus),
             kMBIconExclamation, kMBOk);
       }
-      hs.SetName(TUUID().AsString());
       if (ws()) {
          if (auto res = hs.result())
             ws()->import(*res);
@@ -10239,7 +10280,7 @@ void xRooNode::Draw(Option_t *opt)
          pave->SetMargin(0.);
          pave->SetName("status");
          pave->SetTextAlign(31);
-         pave->AddText(TString::Format("minNLL: %g  edm: %g", fr->minNll(), fr->edm()));
+         pave->AddText(TString::Format("minNLL: %g  edm: %g", fr->minNll(), fr->edm()))->SetTextColor((fr->status() == 3) ? kRed : kBlack);
          std::string covQualTxt;
          switch (fr->covQual()) {
          case -1: covQualTxt = "Unknown"; break;
