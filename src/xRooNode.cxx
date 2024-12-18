@@ -2859,6 +2859,13 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
                  mainChild().get() ? mainChild().get()->GetName() : get()->GetName(), o->ClassName(), o->GetName());
          }
          return out;
+      } else if(sOpt=="const") {
+         auto out = Multiply(RooConstVar(child.GetName(), child.GetTitle(), 1));
+         if (get()) {
+            Info("Multiply", "Scaled %s by new const factor %s",
+                 mainChild().get() ? mainChild().get()->GetName() : get()->GetName(), out->GetName());
+         }
+         return out;
       } else if (sOpt == "norm") {
          if (TString(child.GetName()).Contains("[") && ws()) {
             // assume factory method wanted
@@ -2879,7 +2886,7 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
                  mainChild().get() ? mainChild().get()->GetName() : get()->GetName(), out->GetName());
          }
          return out;
-      } else if (sOpt == "shape" || sOpt == "histo" || sOpt == "blankshape") {
+      } else if (sOpt == "shape" || sOpt == "simple" || sOpt == "blankshape") {
          // needs axis defined
          if (auto ax = GetXaxis(); ax) {
             auto h = std::shared_ptr<TH1>(BuildHistogram(dynamic_cast<RooAbsLValue *>(ax->GetParent()), true));
@@ -2972,6 +2979,34 @@ xRooNode xRooNode::Multiply(const xRooNode &child, Option_t *opt)
                   }
                   const_cast<RooArgList &>(p->coefList()).removeAll();
                   const_cast<RooArgList &>(p->coefList()).add(oldCoefs);
+                  coefs = newCoefs.get();
+               }
+               return xRooNode(*coefs, fParent).Multiply(child);
+            }
+         }
+      } else if(auto p2 = fParent->fParent->get<RooRealSumPdf>()) {
+         // find our function in the funcList, and then update the coefs of it
+
+         for (size_t i = 0; i < p2->funcList().size(); i++) {
+            if (p2->funcList().at(i) == fParent->get<RooAbsArg>()) {
+               auto coefs = p2->coefList().at(i);
+               if (!coefs->InheritsFrom("RooProduct")) {
+                  RooArgList oldCoef;
+                  if (!(strcmp(coefs->GetName(), "1") == 0 || strcmp(coefs->GetName(), "ONE") == 0))
+                     oldCoef.add(*coefs);
+                  auto newCoefs = fParent->acquireNew<RooProduct>(
+                     TString::Format("coefs_%s", fParent->GetName()),
+                     TString::Format("coefficients for %s", fParent->GetName()), oldCoef);
+                  RooArgList oldCoefs;
+                  for (size_t j = 0; j < p2->coefList().size(); j++) {
+                     if (i == j) {
+                        oldCoefs.add(*newCoefs);
+                     } else {
+                        oldCoefs.add(*p2->coefList().at(j));
+                     }
+                  }
+                  const_cast<RooArgList &>(p2->coefList()).removeAll();
+                  const_cast<RooArgList &>(p2->coefList()).add(oldCoefs);
                   coefs = newCoefs.get();
                }
                return xRooNode(*coefs, fParent).Multiply(child);
