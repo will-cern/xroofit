@@ -1354,6 +1354,10 @@ double xRooNLLVar::extendedTermVal() const
 
 double xRooNLLVar::simTermVal() const
 {
+   // comes from the _simCount code inside RooNLLVar
+   // is this actually only appropriate if the roosimultaneous is not extended?
+   // i.e. then this term represents the probability the entry belongs to a given state, and given
+   // all the states are normalized to 1, this probability is assumed to just be 1/N_states
    if (auto s = dynamic_cast<RooSimultaneous *>(fPdf.get()); s) {
       return fData->sumEntries() * log(1.0 * (s->servers().size() - 1)); // one of the servers is the cat
    }
@@ -1913,7 +1917,6 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
          rfit->setStatus(fit->getRealValue("status"));
          rfit->setMinNLL(fit->getRealValue("minNll"));
          rfit->setEDM(fit->getRealValue("edm"));
-         rfit->setCovQual(fit->getRealValue("covQual"));
          if (type == 0) {
             std::unique_ptr<RooAbsCollection> par_hats(
                hypoTestResult->GetFitInfo()->getGlobalObservables()->selectByName(coords->contentsString().c_str()));
@@ -1926,6 +1929,7 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
          rfit->setInitParList(RooArgList());
          TMatrixDSym cov(0);
          rfit->setCovarianceMatrix(cov);
+         rfit->setCovQual(fit->getRealValue("covQual"));
          return rfit;
       }
    }

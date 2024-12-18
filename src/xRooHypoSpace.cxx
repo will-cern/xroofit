@@ -356,7 +356,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
    if (!gDirectory || !gDirectory->IsWritable()) {
       // locate a TMemFile in the open list of files and move to that
       // or create one if cannot find
-      for (auto file : *gROOT->GetListOfFiles()) {
+      /*for (auto file : *gROOT->GetListOfFiles()) {
          if (auto f = dynamic_cast<TMemFile *>(file)) {
             f->cd();
             break;
@@ -364,7 +364,13 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       }
       if (!gDirectory || !gDirectory->IsWritable()) {
          new TMemFile("fitDatabase", "RECREATE");
-      }
+      }*/
+      // now we create a TMemFile of our own, so that we don't get in the way of other hypoSpaces
+      fFitDb = std::shared_ptr<TMemFile>(new TMemFile(TString::Format("fitDatabase_%s",GetName()),"RECREATE"),[](TMemFile *o) {});
+      // db can last longer than the hypoSpace, so that the fits are fully available in the browser
+      // if a scan was initiated through the browser. If user wants to cleanup they can do manually
+      // through root's GetListOfFiles()
+      // would like to clean it up ourself when the hypoSpace is destroyed, but would need way to keep alive for the browser
    }
 
    int out = 0;
