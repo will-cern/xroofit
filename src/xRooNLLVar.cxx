@@ -2785,6 +2785,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       l->SetBorderSize(0);
       l->SetBit(kCanDelete);
       l->Draw();
+      l->ConvertNDCtoPad();
    } else {
       for (auto o : *gPad->GetListOfPrimitives()) {
          l = dynamic_cast<TLegend *>(o);
@@ -2851,7 +2852,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
 
    l->AddEntry(tl, label, "l");
    label = "";
-   if (!std::isnan(pNull.first) || !std::isnan(pAlt.first)) {
+   if ((pNull.second < std::numeric_limits<double>::infinity()) || (pAlt.second < std::numeric_limits<double>::infinity())) {
       auto pCLs = pCLs_toys();
       label += " p_{toy}=(";
       label += (std::isnan(pNull.first)) ? "-" : TString::Format("%.4f #pm %.4f", pNull.first, pNull.second);
@@ -2913,9 +2914,9 @@ TString xRooNLLVar::xRooHypoPoint::tsTitle(bool inWords) const
          return (inWords) ? TString::Format("Lower-Bound Uncapped PLR")
                           : TString::Format("#tilde{s}_{%s=%g}", v->GetTitle(), v->getVal());
       } else if (v) {
-         return (inWords) ? TString::Format("Uncapped PLR") : TString::Format("s_{%s=%g}", v->GetTitle(), v->getVal());
+         return (inWords) ? TString::Format("Uncapped PLR") : TString::Format("u_{%s=%g}", v->GetTitle(), v->getVal());
       } else {
-         return "s";
+         return "u";
       }
    } else {
       return "Test Statistic";
