@@ -151,6 +151,7 @@ auto GETLISTTREE(TGFileBrowser *b)
 #include "TRegexp.h"
 #include "TExec.h"
 #include "TPaveText.h"
+#include "TLatex.h"
 
 #include "TGListTree.h"
 #include "TGMsgBox.h"
@@ -626,7 +627,7 @@ void xRooNode::Browse(TBrowser *b)
    if (auto _fr = get<RooFitResult>(); _fr && fBrowsables.empty()) {
       // have some common drawing options
       fBrowsables.push_back(std::make_shared<xRooNode>(".Draw(\"pull\")", nullptr, *this));
-      fBrowsables.push_back(std::make_shared<xRooNode>(".Draw(\"corrcolztext\")", nullptr, *this));
+      fBrowsables.push_back(std::make_shared<xRooNode>(".Draw(\"corr10colztext\")", nullptr, *this));
       if (std::unique_ptr<RooAbsCollection>(_fr->floatParsFinal().selectByAttrib("poi", true))->size() == 1) {
          fBrowsables.push_back(std::make_shared<xRooNode>(".Draw(\"impact\")", nullptr, *this));
       }
@@ -9163,7 +9164,10 @@ void addLegendEntry(TObject *o, const char *title, const char *opt)
    if (l->GetListOfPrimitives()->GetEntries() > 20)
       return; // todo: create an 'other' entry?
 
-   l->AddEntry(o, formatLegendString(title).c_str(), opt);
+   auto e = l->AddEntry(o, formatLegendString(title).c_str(), opt);
+   // move to top of the legend (we add things in at the top)
+   l->GetListOfPrimitives()->RemoveLast();
+   l->GetListOfPrimitives()->AddFirst(e);
    if (auto nObj = l->GetListOfPrimitives()->GetEntries(); nObj > 0) {
       // each entry takes up 0.05 ... maximum of N*(N+4) (where N is # cols) before next column
       int nn = l->GetNColumns();
@@ -9809,8 +9813,45 @@ void xRooNode::Draw(Option_t *opt)
    if (auto fr = get<RooFitResult>(); fr) {
       if (sOpt.Contains("corr")) {
          // do correlation matrix
+         // if a number follows 'corr', reduce the correlation matrix to show only the most extreme correlations
+         int numCorrs = TString(sOpt(sOpt.Index("corr") + 4, sOpt.Length())).Atoi();
+         if(numCorrs==0) numCorrs = fr->correlationMatrix().GetNcols();
 
-         auto hist = fr->correlationHist(fr->GetName());
+         TH2* hist = nullptr;
+         if(numCorrs < fr->correlationMatrix().GetNcols()) {
+            // need to reduce
+            std::set<std::pair<double,size_t>> maxCorrs;
+            for(int i=0;i<fr->correlationMatrix().GetNcols();i++) {
+               double maxCorr = 0;
+               for(int j=0;j<fr->correlationMatrix().GetNcols();j++) {
+                  if(j==i) continue;
+                  maxCorr = std::max(std::abs(fr->correlationMatrix()(i,j)),maxCorr);
+               }
+               maxCorrs.insert({maxCorr,i});
+            }
+            std::vector<size_t> topN;
+            int c=0;
+            for(auto itr = maxCorrs.rbegin();itr != maxCorrs.rend(); ++itr) {
+               topN.push_back(itr->second);
+               c++;
+               if (c == numCorrs)
+                  break;
+            }
+            hist = new TH2D(fr->GetName(),TString::Format("%s - Top %d correlations",fr->GetTitle(),numCorrs),numCorrs,0,numCorrs,numCorrs,0,numCorrs);
+            for(size_t i = 0;i<topN.size();i++) {
+               hist->GetXaxis()->SetBinLabel(i+1,fr->floatParsFinal().at(topN.at(i))->GetTitle());
+               hist->GetYaxis()->SetBinLabel(numCorrs-i,fr->floatParsFinal().at(topN.at(i))->GetTitle());
+               for(size_t j = 0;j<topN.size();j++) {
+                  hist->Fill(i+0.5,numCorrs-j-0.5,fr->correlationMatrix()(topN.at(i),topN.at(j)));
+               }
+            }
+            hist->SetMinimum(-1); hist->SetMaximum(1);
+
+         } else {
+            hist = fr->correlationHist(fr->GetName());
+            hist->SetTitle(fr->GetTitle());
+         }
+
          hist->SetTitle(fr->GetTitle());
          hist->SetBit(kCanDelete);
          hist->Scale(100);
@@ -10456,6 +10497,23 @@ void xRooNode::Draw(Option_t *opt)
                l->SetY2(_axis->GetXmax());
                // l->Draw();
             }
+         }
+      }
+
+      if(!sOpt.Contains("impact")) {
+         // add labels to graph for unconstrained parameters
+         for(size_t i=0;i<ugraphLabels.size();i++) {
+            int bin = pNamesHist->GetNbinsX()-ugraphLabels.size()+i+1;
+            auto p = dynamic_cast<RooRealVar*>(fr->floatParsFinal().find(pNamesHist->GetXaxis()->GetBinLabel(bin)));
+            if(!p) continue;
+            auto x = graph->GetPointX(graph->GetN()-ugraphLabels.size()+i);
+            auto y = graph->GetPointY(graph->GetN()-ugraphLabels.size()+i)+graph->GetErrorYhigh(graph->GetN()-ugraphLabels.size()+i);
+            auto l = xRooFit::matchPrecision({p->getVal(),p->getError()});
+            auto t = new TLatex(x,y,TString::Format("%g #pm %g",l.first,l.second));
+            t->SetBit(kCanDelete);
+            t->SetTextSizePixels(8);
+            t->SetTextAngle(90);
+            graph->GetListOfFunctions()->Add(t);
          }
       }
 
@@ -11364,7 +11422,7 @@ void xRooNode::Draw(Option_t *opt)
                                       ratioHist->GetBinContent(i));
       }
 
-      double rHeight = 1. / padFrac; //(_tmpPad->GetWNDC())/(gPad->GetHNDC());
+      double rHeight = (1.-padFrac) / padFrac; //(_tmpPad->GetWNDC())/(gPad->GetHNDC());
       if (ratioHist->GetYaxis()->GetTitleFont() % 10 == 2) {
          ratioHist->GetYaxis()->SetTitleSize(ratioHist->GetYaxis()->GetTitleSize() * rHeight);
          ratioHist->GetYaxis()->SetLabelSize(ratioHist->GetYaxis()->GetLabelSize() * rHeight);
