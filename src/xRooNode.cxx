@@ -525,8 +525,8 @@ void xRooNode::Checked(TObject *obj, bool val)
       if (auto fr = get<RooFitResult>(); fr) {
          if (auto _ws = ws(); _ws) {
             if (val) {
-               // ensure fit result is in genericObjects list ... if not, add a copy ...
-               if (!_ws->genobj(fr->GetName())) {
+               // ensure fit result is in genericObjects list or snapshots ... if not, add a copy ...
+               if (fr->numStatusHistory() && !_ws->genobj(fr->GetName())) {
                   _ws->import(*fr);
                   if (auto wfr = dynamic_cast<RooFitResult *>(_ws->genobj(fr->GetName()))) {
                      fr = wfr;
@@ -748,7 +748,7 @@ void xRooNode::Browse(TBrowser *b)
       }
       if (_fr) {
          if (_fr->status() || _fr->covQual() != 3) { // snapshots or bad fits
-            v->GetTreeItem(b)->SetColor((_fr->numStatusHistory() || !_fr->floatParsFinal().empty()) ? kRed : kBlue);
+            v->GetTreeItem(b)->SetColor((_fr->numStatusHistory() && !_fr->floatParsFinal().empty()) ? kRed : kBlue);
          } else if (_fr->numStatusHistory() == 0) { // partial fit result ..
             v->GetTreeItem(b)->SetColor(kGray);
          }
@@ -2196,7 +2196,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
                   std::unique_ptr<RooAbsCollection>(w->allVars().selectCommon(*_d->get()))->setAttribAll("obs");
                }
                if (_d->getGlobalObservables()) {
-                  std::unique_ptr<RooAbsCollection> globs(w->allVars().selectCommon(*_d->get()));
+                  std::unique_ptr<RooAbsCollection> globs(w->allVars().selectCommon(*_d->getGlobalObservables()));
                   globs->setAttribAll("obs");
                   globs->setAttribAll("global");
                }
@@ -4361,7 +4361,7 @@ bool xRooNode::SetBinError(int bin, double value)
       }
       auto newVar = (value == 0) ? getObject<RooRealVar>("1")
                                  : acquire<RooRealVar>(Form("%s_bin%d", prefix.Data(), bin),
-                                                       Form("%s_bin%d", prefix.Data(), bin), 1);
+                                                       Form("#gamma^{%s}_{%d}", prefix.Data(), bin), 1);
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       RooArgList &pSet = phf->_paramSet;
 #else
@@ -4680,13 +4680,12 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode &acquirer, con
             } else {
                if (!h) {
                   arg = acquirer.acquireNew<RooRealVar>(TString::Format("%s_bin%d", newObjName.Data(), i + 1), "", 1);
-               }
-               if (h->GetMinimumStored() != -1111 || h->GetMaximumStored() != -1111) {
-                  arg = acquirer.acquireNew<RooRealVar>(TString::Format("%s_bin%d", newObjName.Data(), i + 1), "",
+               } else if (h->GetMinimumStored() != -1111 || h->GetMaximumStored() != -1111) {
+                  arg = acquirer.acquireNew<RooRealVar>(TString::Format("%s_bin%d", newObjName.Data(), i + 1), TString::Format("%s_{%d}",h->GetTitle(),i+1),
                                                         h->GetBinContent(i + 1), h->GetMinimumStored(),
                                                         h->GetMaximumStored());
                } else {
-                  arg = acquirer.acquireNew<RooRealVar>(TString::Format("%s_bin%d", newObjName.Data(), i + 1), "",
+                  arg = acquirer.acquireNew<RooRealVar>(TString::Format("%s_bin%d", newObjName.Data(), i + 1), TString::Format("%s_{%d}",h->GetTitle(),i+1),
                                                         h->GetBinContent(i + 1));
                }
             }
@@ -4883,24 +4882,31 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
       } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class() ||
                  arg->InheritsFrom("RooStats::HypoTestInverterResult") ||
                  arg->InheritsFrom("RooStats::HypoTestResult")) {
-         // ensure will have a unique name for import if must be new
-         TNamed *aNamed = dynamic_cast<TNamed *>(arg.get());
-         TString aName = arg->GetName();
-         TObject *out_arg = _ws->genobj(arg->GetName());
-         int ii = 1;
-         while (aNamed && out_arg && mustBeNew) {
-            aNamed->SetName(TString::Format("%s;%d", aName.Data(), ii++));
-            out_arg = _ws->genobj(aNamed->GetName());
-         }
-         if (!out_arg) {
-            if (aName != arg->GetName()) {
-               Warning("acquire", "Renaming to %s", arg->GetName());
-            }
-            if (_ws->import(*arg, false /*replace existing*/)) {
-               RooMsgService::instance().setGlobalKillBelow(msglevel);
-               return nullptr;
-            }
+         TObject *out_arg = nullptr;
+         if(auto fr = dynamic_cast<RooFitResult*>(&*arg); fr && fr->numStatusHistory()==0) {
+            // fit results without a status history are treated as snapshots
+            out_arg = fr->Clone();
+            const_cast<RooLinkedList &>(GETWSSNAPSHOTS(_ws)).Add(out_arg);
+         } else {
+            // ensure will have a unique name for import if must be new
+            TNamed *aNamed = dynamic_cast<TNamed *>(arg.get());
+            TString aName = arg->GetName();
             out_arg = _ws->genobj(arg->GetName());
+            int ii = 1;
+            while (aNamed && out_arg && mustBeNew) {
+               aNamed->SetName(TString::Format("%s;%d", aName.Data(), ii++));
+               out_arg = _ws->genobj(aNamed->GetName());
+            }
+            if (!out_arg) {
+               if (aName != arg->GetName()) {
+                  Warning("acquire", "Renaming to %s", arg->GetName());
+               }
+               if (_ws->import(*arg, false /*replace existing*/)) {
+                  RooMsgService::instance().setGlobalKillBelow(msglevel);
+                  return nullptr;
+               }
+               out_arg = _ws->genobj(arg->GetName());
+            }
          }
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          /* this doesnt work because caller has its own version of fParent, not the one in the browser
@@ -6804,6 +6810,8 @@ xRooNode xRooNode::fitResult(const char *opt) const
 
                // do we need to add our remaining const pars to the const par list? or the globs?
                // for speed we wont bother
+               // note that generating datasets needs the globs in the const pars list so the robs can be determined
+               // at the moment this check is done in the generate() method (along with check for missing pars)
 
                auto fr = std::make_shared<RooFitResult>(TString::Format("%s-dirty", _fr->GetName()));
                fr->setFinalParList(existingFloats);
@@ -6990,7 +6998,6 @@ xRooNode xRooNode::generate(const xRooNode &fr, bool expected, int seed)
       }
       throw std::runtime_error(TString::Format("%s is not a pdf", GetName()));
    }
-   auto _fr = fr.get<RooFitResult>();
 
    // when generating, will only include channels that are selected
    // any unselected but not hidden channel will have data from the only selected dataset added to it
@@ -7040,8 +7047,60 @@ xRooNode xRooNode::generate(const xRooNode &fr, bool expected, int seed)
       }
    }
 
+   auto _fr = fr.get<RooFitResult>();
+   xRooNode fr2;
+   if(!_fr) {
+      fr2 = fitResult();
+      _fr = fr2.get<RooFitResult>();
+   }
+
+   // must ensure fr has all the globs in its constPars list ... any missing must be added
+   // otherwise generateFrom method wont determine globs properly
+   // same for any missing pars
+   auto _globs = globs();
+   bool missingGlobs(false);
+   for(auto glob : _globs) {
+      if(!_fr->constPars().find(*glob->get<RooAbsArg>())) {
+         missingGlobs = true; break;
+      }
+   }
+
+   std::unique_ptr<RooFitResult> newFr;
+   if (missingGlobs) {
+      newFr = std::make_unique<RooFitResult>(*_fr);
+      for(auto glob : _globs) {
+         if(!newFr->constPars().find(*glob->get<RooAbsArg>())) {
+            const_cast<RooArgList&>(newFr->constPars()).addClone(*glob->get<RooAbsArg>());
+         }
+      }
+      _fr = newFr.get();
+   }
+
+   // check for missing fundamental pars (consts are not fundamentals)
+   auto _pars = pars();
+   bool missingPars(false);
+   for(auto par : _pars) {
+      if(!par->get<RooAbsArg>()->isFundamental()) continue;
+      if(!_fr->constPars().find(*par->get<RooAbsArg>()) && !_fr->floatParsFinal().find(*par->get<RooAbsArg>())) {
+         missingPars = true; break;
+      }
+   }
+
+   if(missingPars) {
+      newFr = std::make_unique<RooFitResult>(*_fr);
+      for(auto par : _pars) {
+         if(!par->get<RooAbsArg>()->isFundamental()) continue;
+         if(!newFr->constPars().find(*par->get<RooAbsArg>()) && !newFr->floatParsFinal().find(*par->get<RooAbsArg>())) {
+            const_cast<RooArgList&>(newFr->constPars()).addClone(*par->get<RooAbsArg>());
+         }
+      }
+      _fr = newFr.get();
+   }
+
+
+
    return xRooNode(
-      xRooFit::generateFrom(*get<RooAbsPdf>(), (_fr ? *_fr : *(fitResult().get<RooFitResult>())), expected, seed).first,
+      xRooFit::generateFrom(*get<RooAbsPdf>(), *_fr, expected, seed).first,
       *this);
 
    // should add coords to the dataset too?
@@ -7528,7 +7587,8 @@ double new_getPropagatedError(const RooAbsReal &f, const RooFitResult &fr, const
          if (std::abs(rrvInAbsReal->getVal() - rrvFitRes->getVal()) > 0.01 * rrvFitRes->getError()) {
             std::stringstream errMsg;
             errMsg << "RooAbsReal::getPropagatedError(): the parameters of the RooAbsReal don't have"
-                   << " the same values as in the fit result! The logic of getPropagatedError is broken in this case.";
+                   << " the same values as in the fit result! The logic of getPropagatedError is broken in this case."
+                   << " \n " << rrvInAbsReal->GetName() << " : " << rrvInAbsReal->getVal() << " vs " << rrvFitRes->getVal();
 
             throw std::runtime_error(errMsg.str());
          }
@@ -9661,7 +9721,7 @@ void xRooNode::Draw(Option_t *opt)
             _size++;
       }
       if (!hasSame) {
-         if (_size > 2) {
+         if (_size > 4) {
             // add a pad for the common legends
             _size++;
          }
@@ -9689,7 +9749,7 @@ void xRooNode::Draw(Option_t *opt)
          //                }
          //            }
          dynamic_cast<TPad *>(pad)->DivideSquare(_size, 1e-9, 1e-9);
-         if (_size > 3) {
+         if (_size > 5) {
             auto _pad = pad->GetPad(_size); // will use as the legend pad
             _pad->SetName("legend");
             // stretch the pad all the way to the left
@@ -9852,7 +9912,6 @@ void xRooNode::Draw(Option_t *opt)
             hist->SetTitle(fr->GetTitle());
          }
 
-         hist->SetTitle(fr->GetTitle());
          hist->SetBit(kCanDelete);
          hist->Scale(100);
          hist->SetStats(false);
