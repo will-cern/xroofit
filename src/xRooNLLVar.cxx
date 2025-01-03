@@ -2852,7 +2852,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
 
    l->AddEntry(tl, label, "l");
    label = "";
-   if ((pNull.second < std::numeric_limits<double>::infinity()) || (pAlt.second < std::numeric_limits<double>::infinity())) {
+   if (nullHist->GetEntries() || altHist->GetEntries()) {
       auto pCLs = pCLs_toys();
       label += " p_{toy}=(";
       label += (std::isnan(pNull.first)) ? "-" : TString::Format("%.4f #pm %.4f", pNull.first, pNull.second);
@@ -2912,7 +2912,7 @@ TString xRooNLLVar::xRooHypoPoint::tsTitle(bool inWords) const
    } else if (fPllType == xRooFit::Asymptotics::Uncapped) {
       if (v && v->hasRange("physical") && v->getMin("physical") != -std::numeric_limits<double>::infinity()) {
          return (inWords) ? TString::Format("Lower-Bound Uncapped PLR")
-                          : TString::Format("#tilde{s}_{%s=%g}", v->GetTitle(), v->getVal());
+                          : TString::Format("#tilde{u}_{%s=%g}", v->GetTitle(), v->getVal());
       } else if (v) {
          return (inWords) ? TString::Format("Uncapped PLR") : TString::Format("u_{%s=%g}", v->GetTitle(), v->getVal());
       } else {
@@ -2964,7 +2964,7 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints
             Info("xRooNLLVar::hypoSpace", "Setting physical range of %s to [0,inf]", p->GetName());
          } else if (dynamic_cast<RooRealVar *>(p)->hasRange("physical")) {
             dynamic_cast<RooRealVar *>(p)->removeRange("physical");
-            Info("xRooNLLVar::hypoSpace", "Setting physical range of %s to [-inf,inf] (i.e. removed range)",
+            Info("xRooNLLVar::hypoSpace", "Removing physical range of %s",
                  p->GetName());
          }
       }
