@@ -10570,7 +10570,7 @@ void xRooNode::Draw(Option_t *opt)
             auto l = xRooFit::matchPrecision({p->getVal(),p->getError()});
             auto t = new TLatex(x,y,TString::Format("%g #pm %g",l.first,l.second));
             t->SetBit(kCanDelete);
-            t->SetTextSizePixels(8);
+            t->SetTextSize(0.025);
             t->SetTextAngle(90);
             graph->GetListOfFunctions()->Add(t);
          }
