@@ -1431,10 +1431,12 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::getVal(const char *what)
       if (getVal(sWhat + " readonly").second != 0) {
          if (sWhat.Contains("toys=")) {
             // extract number of toys required ... format is "nullToys.altToysFraction" if altToysFraction=0 then use
-            // same for both
-            size_t nToys = TString(sWhat(sWhat.Index("toys=") + 5, sWhat.Length())).Atoi();
-            size_t nToysAlt = (TString(sWhat(sWhat.Index("toys=") + 5, sWhat.Length())).Atof() - nToys) * nToys;
-            if (nToysAlt == 0)
+            // same for both, unless explicitly set (i.e. N.0) then means we want no alt toys
+            // e.g. if doing just pnull significance
+            TString toyNum = sWhat(sWhat.Index("toys=") + 5, sWhat.Length());
+            size_t nToys = toyNum.Atoi();
+            size_t nToysAlt = (toyNum.Atof() - nToys)*nToys;
+            if (nToysAlt == 0 && !toyNum.Contains('.'))
                nToysAlt = nToys;
             if (nullToys.size() < nToys) {
                addNullToys(nToys - nullToys.size());
@@ -1445,6 +1447,8 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::getVal(const char *what)
          } else if (doCLs && toys) {
             // auto toy-generating for limits .. do in blocks of 100
             addCLsToys(100, 0, 0.05, nSigma);
+         } else if(toys) {
+            throw std::runtime_error("Auto-generating toys for anything other than CLs not yet supported, please specify number of toys with 'toys=N' ");
          }
       }
    }
@@ -2405,10 +2409,15 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
             std::cout << "..." << std::flush;
             lasti = altToysAdded + toysAdded;
             s.Reset();
-            Draw();
-            if (gPad) {
-               gPad->Update();
-               gSystem->ProcessEvents();
+            if(!gROOT->IsBatch()) {
+               Draw();
+               if (gPad) {
+                  gPad->Update();
+#if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
+                  gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+#endif
+                  gSystem->ProcessEvents();
+               }
             }
             s.Start();
             // std::cout << "Generated " << i << "/" << nToys << (alt ? " alt " : " null ") << " hypothesis toys " ..."
@@ -2453,13 +2462,15 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
       }
       std::cout << "toys " << TString::Format("[%.2f toys/s overall]", double(toysAdded + altToysAdded) / s2.RealTime())
                 << std::endl;
-      Draw();
-      if (gPad) {
-         gPad->Update();
+      if(!gROOT->IsBatch()) {
+         Draw();
+         if (gPad) {
+            gPad->Update();
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
-         gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
+            gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
 #endif
-         gSystem->ProcessEvents();
+            gSystem->ProcessEvents();
+         }
       }
    }
 
