@@ -11782,9 +11782,10 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
    }
 
    auto _obs = obs();
+   RooArgSet sobs(*_obs.get<RooArgList>()); // need to make explicit RooArgSet for ROOT 6.36 onwards
    auto _coefs = coefs(); // need here to keep alive owned RooProduct
    if (auto c = _coefs.get<RooAbsReal>(); c) {
-      out = c->getVal(*_obs.get<RooArgList>()); // assumes independent of observables!
+      out = c->getVal(sobs); // assumes independent of observables!
    }
 
    if (auto p = dynamic_cast<RooAbsPdf *>(get()); p) {
