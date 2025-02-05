@@ -8482,6 +8482,13 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          static_cast<TH1 *>(main_h->GetListOfFunctions()->FindObject("toys"))->GetListOfFunctions()->Add(h);
          // randomize the parameter values according to the fr's covariance matrix
          errorPars->assignValueOnly(fr->randomizePars());
+         // if any par has 0 error, randomizePars can end up assigning a nan, so replace
+         // all zero errors with value
+         for(auto pp : fr->floatParsFinal()) {
+            auto _vv = dynamic_cast<RooRealVar*>(pp);
+            if(!_vv) continue;
+            if(_vv->getError()==0) errorPars->setRealValue(pp->GetName(),_vv->getVal());
+         }
       }
 
       for (int i = std::max(1, binStart); i <= std::min(h->GetNbinsX(), binEnd); i++) {
@@ -11767,7 +11774,7 @@ TMatrixDSym xRooNode::covariances(const xRooNode &fr) const
    return out;
 }
 
-std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const char *rangeName) const
+std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const char *rangeName, int nToys, bool errorsLo, bool errorsHi) const
 {
    double out = 1.;
    double err = std::numeric_limits<double>::quiet_NaN();
@@ -11800,7 +11807,7 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
       // improved normSet invalidity checking, so assuming no longer need this in 6.28 onwards
       p->_normSet = nullptr;
 #endif
-      err = GetBinError(-1, fr);
+      err = GetBinError(-1, fr, nToys, errorsHi, errorsLo);
       if (rangeName)
          p->setNormRange(nullptr);
    } else if (auto p2 = dynamic_cast<RooAbsReal *>(get()); p2) {
@@ -11811,7 +11818,7 @@ std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const c
       RooProduct pr("int_x_coef", "int_x_coef",
                     RooArgList(*f, !_coefs.get() ? RooFit::RooConst(1) : *_coefs.get<RooAbsReal>()));
       out *= f->getVal();
-      err = xRooNode(pr, *this).GetBinError(-1, fr);
+      err = xRooNode(pr, *this).GetBinError(-1, fr, nToys, errorsHi, errorsLo);
       sterilize(); // needed so that we can forget properly about the integral we just created (and are deleting)
    } else if (get<RooAbsData>()) {
       out = 0;

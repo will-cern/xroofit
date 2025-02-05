@@ -392,7 +392,7 @@ public:
    GetBinError(int bin, const xRooNode &fr = "", int nToys = 0, bool errorsHi = false, bool errorsLo = false) const;
    std::vector<double> GetBinErrors(int binStart = 1, int binEnd = 0, const xRooNode &fr = "", int nToys = 0,
                                     bool errorsHi = false, bool errorsLo = false) const;
-   std::pair<double, double> IntegralAndError(const xRooNode &fr = "", const char *rangeName = nullptr) const;
+   std::pair<double, double> IntegralAndError(const xRooNode &fr = "", const char *rangeName = nullptr, int nToys =0, bool errorsHi = false, bool errorsLo=false) const;
 
    std::vector<double> GetBinErrorsHi(int binStart = 1, int binEnd = 0, const xRooNode &fr = "", int nToys = 0) const
    {
@@ -413,9 +413,17 @@ public:
 
    // methods to access default content and error
    double GetContent() const { return GetBinContent(fBinNumber); }
-   double GetError(const xRooNode &fr = "") const
+   double GetError(const xRooNode &fr = "", int nToys=0, bool errorsHi = false, bool errorsLo=false) const
    {
-      return (fBinNumber == -1) ? IntegralAndError(fr).second : GetBinError(fBinNumber, fr);
+      return (fBinNumber == -1) ? IntegralAndError(fr,"",nToys,errorsHi,errorsLo).second : GetBinError(fBinNumber, fr,nToys,errorsHi,errorsLo);
+   }
+   double GetErrorHi(const xRooNode &fr = "", int nToys = 0) const
+   {
+      return GetError(fr, nToys, true, false);
+   }
+   double GetErrorLo(const xRooNode &fr = "", int nToys = 0) const
+   {
+      return GetError(fr, nToys, false, true);
    }
    double GetData(const xRooNode &data = "obsData") { return GetBinData(fBinNumber, data); }
 
