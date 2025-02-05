@@ -11774,7 +11774,7 @@ TMatrixDSym xRooNode::covariances(const xRooNode &fr) const
    return out;
 }
 
-std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const char *rangeName, int nToys, bool errorsLo, bool errorsHi) const
+std::pair<double, double> xRooNode::IntegralAndError(const xRooNode &fr, const char *rangeName, int nToys, bool errorsHi, bool errorsLo) const
 {
    double out = 1.;
    double err = std::numeric_limits<double>::quiet_NaN();
@@ -11860,7 +11860,7 @@ xRooNode::GetBinErrors(int binStart, int binEnd, const xRooNode &_fr, int nToys,
       if (binStart != binEnd || !fParent) {
          throw std::runtime_error(TString::Format("%s is a bin - only has one value", GetName()));
       }
-      return fParent->GetBinErrors(fBinNumber, fBinNumber, _fr);
+      return fParent->GetBinErrors(fBinNumber, fBinNumber, _fr, nToys, errorHi, errorLo);
    }
 
    std::vector<double> out;
