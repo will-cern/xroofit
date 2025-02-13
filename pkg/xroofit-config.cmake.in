@@ -11,3 +11,4 @@ find_dependency( ROOT COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit R
 
 # Report other information.
 set(XROOFIT_INCLUDE_DIRS "${_prefix}/include")
+set(XROOFIT_LIBRARIES xRooFit)
