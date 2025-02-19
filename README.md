@@ -54,6 +54,51 @@ Then you just need to ensure the library is available in your environment path v
 source setup.sh
 ```
 
+### Building Projects against xRooFit
+
+Below is an example CMakeLists.txt and cxx file to demonstrate how to compile c++ against this project in a way that will work whether you have `xRooFit` available as a standalone project or what to use it from the installation that comes with ROOT. 
+
+CMakeLists.txt:
+
+```python
+cmake_minimum_required(VERSION 3.27)
+project(TestProject)
+
+find_package( xRooFit QUIET )
+if(NOT xRooFit_FOUND)
+    set( _xRooFitComp "RooFitXRooFit" )
+    message(STATUS "Using xRooFit From ROOT")
+else()
+    message(STATUS "Using xRooFit standalone")
+    add_definitions( -DSA_XROOFIT ) #used in c++, see example below
+endif()
+
+find_package( ROOT COMPONENTS RooFit ${_xRooFitComp} )
+
+add_executable(testApp test.cxx)
+target_include_directories(testApp PUBLIC ${ROOT_INCLUDE_DIRS} {XROOFIT_INCLUDE_DIRS})
+target_link_libraries(testApp PUBLIC ${ROOT_LIBRARIES} ${XROOFIT_LIBRARIES})
+```
+
+test.cxx:
+```cpp
+
+#ifdef SA_XROOFIT
+// using xRooFit standalone
+#include "xRooFit/xRooFit.h"
+#else
+// using xRooFit from ROOT
+#include "RooFit/xRooFit/xRooFit.h"
+using namespace ROOT::Experimental::XRooFit;
+#endif
+
+int main() {
+  std::cout << xRooFit::GetVersion() << " " << xRooFit::GetVersionDate() << std::endl;
+  return 0;
+}
+
+```
+
 ### Using xRooNode
 
 The `xRooNode` class is designed to wrap over an existing TObject and provide functionality to aid with interacting with that object. It is a smart pointer to the object, so you have access to all the methods of the object too.
