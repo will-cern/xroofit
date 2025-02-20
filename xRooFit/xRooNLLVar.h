@@ -83,7 +83,8 @@ public:
 
    void reinitialize();
 
-   void AddOption(const RooCmdArg &opt);
+   void SetOption(const RooCmdArg& opt);
+   [[deprecated("Use SetOption()")]] void AddOption(const RooCmdArg &opt) { SetOption(opt); }
 
    std::pair<std::shared_ptr<RooAbsData>, std::shared_ptr<const RooAbsCollection>>
    getData() const; // returns pointer to data and snapshot of globs

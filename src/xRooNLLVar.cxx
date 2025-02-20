@@ -185,30 +185,8 @@ xRooNLLVar::xRooNLLVar(const std::shared_ptr<RooAbsPdf> &pdf,
          if (!fGlobs || !fGlobs->equals(*gl)) {
             throw std::runtime_error("GlobalObservables mismatch");
          }
-      } else if (strcmp(opts.At(i)->GetName(), "Hesse") == 0) {
-         fitConfig()->SetParabErrors(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0)); // controls hesse
-      } else if (strcmp(opts.At(i)->GetName(), "Minos") == 0) {
-         fitConfig()->SetMinosErrors(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0)); // controls minos
-      } else if (strcmp(opts.At(i)->GetName(), "Strategy") == 0) {
-         fitConfig()->MinimizerOptions().SetStrategy(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
-      } else if (strcmp(opts.At(i)->GetName(), "StrategySequence") == 0) {
-         fitConfigOptions()->SetNamedValue("StrategySequence", dynamic_cast<RooCmdArg *>(opts.At(i))->getString(0));
-      } else if (strcmp(opts.At(i)->GetName(), "Tolerance") == 0) {
-         fitConfig()->MinimizerOptions().SetTolerance(dynamic_cast<RooCmdArg *>(opts.At(i))->getDouble(0));
-      } else if (strcmp(opts.At(i)->GetName(), "MaxCalls") == 0) {
-         fitConfig()->MinimizerOptions().SetMaxFunctionCalls(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
-      } else if (strcmp(opts.At(i)->GetName(), "MaxIterations") == 0) {
-         fitConfig()->MinimizerOptions().SetMaxIterations(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
-      } else if (strcmp(opts.At(i)->GetName(), "PrintLevel") == 0) {
-         fitConfig()->MinimizerOptions().SetPrintLevel(dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
       } else {
-         if (strcmp(opts.At(i)->GetName(), "Optimize") == 0) {
-            // this flag will trigger constOptimizeTestStatistic to be called on the nll in createNLL method
-            // we should ensure that the fitconfig setting is consistent with it ...
-            fitConfigOptions()->SetValue("OptimizeConst", dynamic_cast<RooCmdArg *>(opts.At(i))->getInt(0));
-         }
-         fOpts->Add(opts.At(i)->Clone(nullptr)); // nullptr needed because accessing Clone via TObject base class puts
-                                                 // "" instead, so doesnt copy names
+         SetOption(dynamic_cast<RooCmdArg&>(*opts.At(i)));
       }
    }
    if (fGlobs) {
@@ -1284,14 +1262,45 @@ std::shared_ptr<RooAbsReal> xRooNLLVar::func() const
    return *this;
 }
 
-void xRooNLLVar::AddOption(const RooCmdArg &opt)
+void xRooNLLVar::SetOption(const RooCmdArg &opt)
 {
-   fOpts->Add(opt.Clone(nullptr));
-   if (std::shared_ptr<RooAbsReal>::get()) {
-      reinitialize(); // do this way to keep name of nll if user set
+
+   if (strcmp(opt.GetName(), "Hesse") == 0) {
+      fitConfig()->SetParabErrors(opt.getInt(0)); // controls hesse
+   } else if (strcmp(opt.GetName(), "Minos") == 0) {
+      fitConfig()->SetMinosErrors(opt.getInt(0)); // controls minos
+   } else if (strcmp(opt.GetName(), "Strategy") == 0) {
+      fitConfig()->MinimizerOptions().SetStrategy(opt.getInt(0));
+   } else if (strcmp(opt.GetName(), "StrategySequence") == 0) {
+      fitConfigOptions()->SetNamedValue("StrategySequence", opt.getString(0));
+   } else if (strcmp(opt.GetName(), "Tolerance") == 0) {
+      fitConfig()->MinimizerOptions().SetTolerance(opt.getDouble(0));
+   } else if (strcmp(opt.GetName(), "MaxCalls") == 0) {
+      fitConfig()->MinimizerOptions().SetMaxFunctionCalls(opt.getInt(0));
+   } else if (strcmp(opt.GetName(), "MaxIterations") == 0) {
+      fitConfig()->MinimizerOptions().SetMaxIterations(opt.getInt(0));
+   } else if (strcmp(opt.GetName(), "PrintLevel") == 0) {
+      fitConfig()->MinimizerOptions().SetPrintLevel(opt.getInt(0));
    } else {
-      reset(); // will trigger reinitialize
+      if (strcmp(opt.GetName(), "Optimize") == 0) {
+         // this flag will trigger constOptimizeTestStatistic to be called on the nll in createNLL method
+         // we should ensure that the fitconfig setting is consistent with it ...
+         fitConfigOptions()->SetValue("OptimizeConst", opt.getInt(0));
+      }
+      if(auto prevObject = fOpts->FindObject(opt.GetName()); prevObject) {
+         // replace previous option
+         fOpts->Replace(prevObject,opt.Clone(nullptr));
+      } else {
+         fOpts->Add(opt.Clone(nullptr)); // nullptr needed because accessing Clone via TObject base class puts
+                                         // "" instead, so doesnt copy names
+      }
+      if (std::shared_ptr<RooAbsReal>::get()) {
+         reinitialize(); // do this way to keep name of nll if user set
+      } else {
+         reset(); // will trigger reinitialize
+      }
    }
+
 }
 
 RooAbsData *xRooNLLVar::data() const
