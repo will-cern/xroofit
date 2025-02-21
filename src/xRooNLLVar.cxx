@@ -381,10 +381,16 @@ void xRooNLLVar::reinitialize()
          }
       }
       std::map<RooAbsPdf *, std::string> normRanges;
+      std::set<TObject*> removedOpts;
       if (auto range = dynamic_cast<RooCmdArg *>(fOpts->find("RangeWithName"))) {
          TString rangeName = range->getString(0);
          if (auto sr = dynamic_cast<RooCmdArg *>(fOpts->find("SplitRange"));
              sr && sr->getInt(0) && dynamic_cast<RooSimultaneous *>(fPdf.get())) {
+            if(auto special = fOpts->find("RangeOptimize")) {
+               removedOpts.insert(sr);fOpts->Remove(sr);
+               removedOpts.insert(range);fOpts->Remove(range);
+               removedOpts.insert(special); fOpts->Remove(special);
+            }
             // doing split range ... need to loop over categories of simpdf and apply range to each
             auto simPdf = dynamic_cast<RooSimultaneous *>(fPdf.get());
             for (auto cat : simPdf->indexCat()) {
@@ -435,6 +441,7 @@ void xRooNLLVar::reinitialize()
          attribs = std::shared_ptr<RooAbsReal>::get()->attributes();
       this->reset(std::unique_ptr<RooAbsReal>{fPdf->createNLL(*fData, *fOpts)}.release());
       std::shared_ptr<RooAbsReal>::get()->SetName(TString::Format("nll_%s/%s", fPdf->GetName(), fData->GetName()));
+      for(auto o : removedOpts) fOpts->Add(o);
       // RooFit only swaps in what it calls parameters, this misses out the RooConstVars which we treat as pars as well
       // so swap those in ... question: is recursiveRedirectServers usage in RooAbsOptTestStatic (and here) a memory
       // leak?? where do the replaced servers get deleted??
@@ -1290,6 +1297,7 @@ void xRooNLLVar::SetOption(const RooCmdArg &opt)
       if(auto prevObject = fOpts->FindObject(opt.GetName()); prevObject) {
          // replace previous option
          fOpts->Replace(prevObject,opt.Clone(nullptr));
+         delete prevObject;
       } else {
          fOpts->Add(opt.Clone(nullptr)); // nullptr needed because accessing Clone via TObject base class puts
                                          // "" instead, so doesnt copy names
