@@ -23,7 +23,7 @@ list(APPEND CMAKE_PREFIX_PATH $ENV{ROOTSYS})
 find_package( ROOT 6.26 QUIET COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit RooFitCore Matrix Gpad Graf RooStats HistPainter HistFactory Gui Ged RooFitHS3)
 set(_root_libraries ROOT::MathCore ROOT::RIO ROOT::Core ROOT::Tree ROOT::Hist ROOT::TreePlayer ROOT::RooFit
         ROOT::RooFitCore ROOT::Matrix ROOT::Gpad ROOT::Graf ROOT::RooStats ROOT::HistPainter ROOT::HistFactory
-        ROOT::Gui ROOT::Ged ROOT::RooFitHS3 ROOT::FitPanel)
+        ROOT::Gui ROOT::Ged ROOT::RooFitHS3 ROOT::FitPanel Minuit2)
 if (NOT ROOT_FOUND)
     find_package( ROOT 6.22 COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit RooFitCore Matrix Gpad Graf RooStats HistPainter HistFactory Gui Ged )
     set(_root_libraries ROOT::MathCore ROOT::RIO ROOT::Core ROOT::Tree ROOT::Hist ROOT::TreePlayer ROOT::RooFit
@@ -109,3 +109,6 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkg/xroofit-config.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/xroofit-config-version.cmake
         DESTINATION lib/xroofit)
+
+# install the statchallenges implementation file
+install(FILES ./test/statchallenges_impl.py DESTINATION "${CMAKE_INSTALL_PREFIX}/share/statchallenges/subjects" RENAME xRooFit.py)
