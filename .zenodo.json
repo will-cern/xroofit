@@ -1,0 +1,40 @@
+{
+    "title": "xRooFit",
+    "description": "<p>xRooFit is a high-level API for RooFit, designed for use in both Python and C++, with advanced capabilities for workspace creation, editing, and statistical analysis. xRooFit is bundled with ROOT as an experimental feature, as well as being available as a standalone software suite. xRooFit is extensively used in the ATLAS Collaboration at CERN.</p>",
+    "access_right": "open",
+    "creators": [
+        {
+            "name": "Buttinger, Will",
+            "affiliation": "Rutherford Appleton Laboratory, STFC",
+            "orcid": "0000-0002-5116-1897"
+        }
+    ],
+    "language": "eng",
+    "custom": {
+        "code:codeRepository": "https://gitlab.cern.ch/will/xroofit",
+        "code:programmingLanguage": [
+            {
+                "id": "c++",
+                "title": {
+                    "en": "C++"
+                }
+            },
+            {
+                "id": "python",
+                "title": {
+                    "en": "Python"
+                }
+            }
+        ],
+        "code:developmentStatus": {
+            "id": "active",
+            "title": {
+                "en": "Active"
+            }
+        }
+    },
+    "license": "cc-by-4.0",
+    "imprint_publisher": "Zenodo",
+    "upload_type": "software"
+}
+
