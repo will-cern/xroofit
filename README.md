@@ -4,6 +4,11 @@ Extra tools for RooFit projects. Home of the xRooBrowser.
 
 xRooFit works in both c++ and python, with the experience in python being particularly pleasant as you don't have to think about object types. The examples below are, unless otherwise stated/obvious, given in python.
 
+## Citations
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15095380.svg)](https://doi.org/10.5281/zenodo.15095380)
+
+
 ## Setup
 
 ### Recommended setup
