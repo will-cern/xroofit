@@ -35,6 +35,10 @@
     },
     "license": "cc-by-4.0",
     "imprint_publisher": "Zenodo",
-    "upload_type": "software"
+    "upload_type": "software",
+    "prereserve_doi": {
+        "doi": "10.5281/zenodo.15095284",
+        "recid": 15095284
+    }
 }
 
