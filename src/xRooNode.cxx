@@ -337,7 +337,7 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
       if (auto colors = dynamic_cast<TSeqCollection *>(_ws->obj(gROOT->GetListOfColors()->GetName()))) {
          gROOT->GetListOfColors()->Clear();
          for (auto col : *colors) {
-            gROOT->GetListOfColors()->Add(col);
+            gROOT->GetListOfColors()->Add(gROOT->GetListOfColors()->IsOwner() ? col->Clone() : col); // in 6.36 root, colors list became owning
          }
       }
 
