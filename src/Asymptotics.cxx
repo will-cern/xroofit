@@ -49,7 +49,7 @@ double xRooFit::Asymptotics::k(const IncompatFunc &compatRegions, double pValue,
       double operator()(double x) const
       {
          double val = PValue(cFunc, x, poiVal, alt_val, sigma_mu, low, high);
-         if (val < 0)
+         if (val < -1e-10)
             kInvalid = true;
          return val - target;
       }
