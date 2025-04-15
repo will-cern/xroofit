@@ -386,6 +386,9 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
 
    int out = 0;
 
+   // enable visualizing by default if scanning in non-batch mode
+   if(!gROOT->IsBatch() && !sType.Contains("visualize")) sType += " visualize";
+
    if (nPoints == 0) {
       // automatic scan
       if (sType.Contains("cls")) {
@@ -1252,47 +1255,59 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
          out->GetHistogram()->GetXaxis()->SetTitle(exp->GetHistogram()->GetXaxis()->GetTitle());
          out->GetHistogram()->GetYaxis()->SetTitle(exp->GetHistogram()->GetYaxis()->GetTitle());
       }
-      auto leg = new TLegend(1. - gStyle->GetPadRightMargin() - 0.3, 1. - gStyle->GetPadTopMargin() - 0.35,
-                             1. - gStyle->GetPadRightMargin() - 0.05, 1. - gStyle->GetPadTopMargin() - 0.05);
-      leg->SetName("legend");
-      leg->SetBit(kCanDelete);
+      TLegend* leg = nullptr;
+      if(out->GetListOfGraphs()->GetEntries()>1) {
+         leg = new TLegend(1. - gStyle->GetPadRightMargin() - 0.3, 1. - gStyle->GetPadTopMargin() - 0.35,
+                                1. - gStyle->GetPadRightMargin() - 0.05, 1. - gStyle->GetPadTopMargin() - 0.05);
+         leg->SetName("legend");
+         leg->SetBit(kCanDelete);
 
-      out->GetListOfFunctions()->Add(leg);
-      // out->GetListOfFunctions()->Add(out->GetHistogram()->Clone(".axis"),"sameaxis"); // redraw axis
+         out->GetListOfFunctions()->Add(leg);
+         // out->GetListOfFunctions()->Add(out->GetHistogram()->Clone(".axis"),"sameaxis"); // redraw axis
 
-      for (auto g : *out->GetListOfGraphs()) {
-         if (auto o = dynamic_cast<TGraph *>(g)->GetListOfFunctions()->FindObject("down")) {
-            leg->AddEntry(o, "", "F");
-         } else {
-            leg->AddEntry(g, "", "LPE");
+         for (auto g : *out->GetListOfGraphs()) {
+            if (auto o = dynamic_cast<TGraph *>(g)->GetListOfFunctions()->FindObject("down")) {
+               leg->AddEntry(o, "", "F");
+            } else {
+               leg->AddEntry(g, "", "LPE");
+            }
          }
       }
+
+      auto addToLegend = [](TLegend* l, const char* label, const std::pair<double,double> val) {
+         if(l) {
+            l->AddEntry((TObject *)nullptr,
+                        TString::Format("%s%s: %g #pm %g%s", std::isfinite(val.second) ? "" : "#color[2]{", label,
+                                        val.first, val.second, std::isfinite(val.second) ? "" : "}"),
+                        "");
+         }
+      };
 
       if (sOpt.Contains("pcls")) {
          // add current limit estimates to legend
          if (exp2 && exp2->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp-2")));
-            leg->AddEntry((TObject *)nullptr, TString::Format("-2#sigma: %g +/- %g", l.first, l.second), "");
+            addToLegend(leg,"-2#sigma",l);
          }
          if (exp1 && exp1->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp-1")));
-            leg->AddEntry((TObject *)nullptr, TString::Format("-1#sigma: %g +/- %g", l.first, l.second), "");
+            addToLegend(leg,"-1#sigma",l);
          }
          if (exp && exp->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*exp));
-            leg->AddEntry((TObject *)nullptr, TString::Format("0#sigma: %g +/- %g", l.first, l.second), "");
+            addToLegend(leg,"0#sigma",l);
          }
          if (exp1 && exp1->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp+1")));
-            leg->AddEntry((TObject *)nullptr, TString::Format("+1#sigma: %g +/- %g", l.first, l.second), "");
+            addToLegend(leg,"+1#sigma",l);
          }
          if (exp2 && exp2->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp+2")));
-            leg->AddEntry((TObject *)nullptr, TString::Format("+2#sigma: %g +/- %g", l.first, l.second), "");
+            addToLegend(leg,"+2#sigma",l);
          }
          if (obs && obs->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*obs));
-            leg->AddEntry((TObject *)nullptr, TString::Format("Observed: %g +/- %g", l.first, l.second), "");
+            addToLegend(leg,"Observed",l);
          }
       }
       if (testedPoints)
