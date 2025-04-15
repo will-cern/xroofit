@@ -374,17 +374,18 @@ public:
 
    xRooHypoSpace hypoSpace(const char *parName, int nPoints, double low, double high,
                            double alt_value = std::numeric_limits<double>::quiet_NaN(),
-                           const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
+                           const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown, int tsType = 0);
    xRooHypoSpace hypoSpace(const char *parName = "",
                            const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown,
                            double alt_value = std::numeric_limits<double>::quiet_NaN());
    xRooHypoSpace hypoSpace(int nPoints, double low, double high,
                            double alt_value = std::numeric_limits<double>::quiet_NaN(),
                            const xRooFit::Asymptotics::PLLType &pllType = xRooFit::Asymptotics::Unknown);
-   xRooHypoSpace hypoSpace(const char *parName, xRooFit::TestStatistic::Type tsType, int nPoints = 0)
+   xRooHypoSpace hypoSpace(const char *parName, xRooFit::TestStatistic::Type tsType, int nPoints = 0,
+                           double low=-std::numeric_limits<double>::infinity(), double high=std::numeric_limits<double>::infinity(),
+                           double alt_value = std::numeric_limits<double>::quiet_NaN())
    {
-      return hypoSpace(parName, int(tsType), nPoints, -std::numeric_limits<double>::infinity(),
-                       std::numeric_limits<double>::infinity());
+      return hypoSpace(parName, nPoints, low, high, alt_value, xRooFit::Asymptotics::Unknown, tsType);
    }
 
    std::shared_ptr<RooArgSet> pars(bool stripGlobalObs = true) const;

@@ -2968,19 +2968,25 @@ double xRooNLLVar::xRooHypoPoint::fAltVal()
 }
 
 xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints, double low, double high,
-                                                double alt_value, const xRooFit::Asymptotics::PLLType &pllType)
+                                                double alt_value, const xRooFit::Asymptotics::PLLType &pllType, int tsType)
 {
-   if (nPoints < 0) {
-      // catches case where pyROOT has converted TestStatistic enum to int
-      int tsType = nPoints;
-      double alt_val = std::numeric_limits<double>::quiet_NaN();
-      if (tsType == xRooFit::TestStatistic::qmutilde || tsType == xRooFit::TestStatistic::qmu) {
-         alt_val = 0;
-      } else if (tsType == xRooFit::TestStatistic::q0 || tsType == xRooFit::TestStatistic::uncappedq0) {
-         alt_val = 1;
+   if (nPoints < 0 || tsType<0) {
+      // nPoints<0 catches case where pyROOT has converted TestStatistic enum to int
+      if(nPoints<0) {
+         tsType = nPoints;
+         nPoints = int(low + 0.5);
+         low = high;
+         high = alt_value;
+      }
+      if (alt_value == std::numeric_limits<double>::quiet_NaN()) {
+         if (tsType == xRooFit::TestStatistic::qmutilde || tsType == xRooFit::TestStatistic::qmu) {
+            alt_value = 0;
+         } else if (tsType == xRooFit::TestStatistic::q0 || tsType == xRooFit::TestStatistic::uncappedq0) {
+            alt_value = 1;
+         }
       }
 
-      auto out = hypoSpace(parName, pllType, alt_val);
+      auto out = hypoSpace(parName, pllType, alt_value);
 
       // TODO: things like the physical range and alt value can't be stored on the poi
       // because if they change they will change for all hypoSpaces at once, so cannot have
@@ -3006,13 +3012,12 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints
          out.fTestStatType = xRooFit::Asymptotics::OneSidedNegative;
       }
 
-      // in this case the arguments are shifted over by one
-      if (int(low + 0.5) > 0) {
-         out.AddPoints(parName, int(low + 0.5), high, alt_value);
+      if (nPoints > 0) {
+         out.AddPoints(parName, nPoints, low, high);
       } else {
-         if (!std::isnan(high) && !std::isnan(alt_value) && !(std::isinf(high) && std::isinf(alt_value))) {
+         if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
             for (auto p : out.poi()) {
-               dynamic_cast<RooRealVar *>(p)->setRange("scan", high, alt_value);
+               dynamic_cast<RooRealVar *>(p)->setRange("scan", low, high);
             }
          }
       }
