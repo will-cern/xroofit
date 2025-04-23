@@ -1090,9 +1090,9 @@ TAxis *xRooNode::GetXaxis() const
              auto bins = _or_func(
                 /*o->plotSamplingHint(*dynamic_cast<RooAbsRealLValue
                  *>(x),-std::numeric_limits<double>::infinity(),std::numeric_limits<double>::infinity())*/
-                (std::list<double> *)(nullptr),
+                (std::list<double> *)(nullptr), (dynamic_cast<RooAbsRealLValue *>(x)) ?
                 o->binBoundaries(*dynamic_cast<RooAbsRealLValue *>(x), -std::numeric_limits<double>::infinity(),
-                                 std::numeric_limits<double>::infinity()));
+                                 std::numeric_limits<double>::infinity()) : nullptr);
              bins) {
             std::vector<double> _bins;
             for (auto &b : *bins) {
