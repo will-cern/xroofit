@@ -4881,7 +4881,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
          return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject *) {});
       } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class() ||
                  arg->InheritsFrom("RooStats::HypoTestInverterResult") ||
-                 arg->InheritsFrom("RooStats::HypoTestResult")) {
+                 arg->InheritsFrom("RooStats::HypoTestResult") || arg->InheritsFrom("RooStats::ModelConfig")) {
          TObject *out_arg = nullptr;
          if(auto fr = dynamic_cast<RooFitResult*>(&*arg); fr && fr->numStatusHistory()==0) {
             // fit results without a status history are treated as snapshots
@@ -11617,18 +11617,45 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
 {
    TString sOpt(option);
    sOpt.ToLower();
-   if (auto w = get<RooWorkspace>(); w) {
+   TString sFilename(filename);
+   TString objName = GetName();
+   if(sFilename.Contains(".root:")) {
+      objName = TString(sFilename(sFilename.Index(".root:")+6,sFilename.Length()));
+      sFilename = sFilename(0,sFilename.Index(".root:")+5);
+   }
+
+
+   if (auto pdf = get<RooAbsPdf>(); pdf) {
+      // if saving a pdf, will put it inside a workspace, with its datasets, and a modelconfig
+      // then save the workspace
+      RooWorkspace w(objName,TString::Format("Workspace of %s",GetTitle()));xRooNode ws(w);
+      auto addedPdf = ws.Add(*this);
+      for(auto ds : datasets()) {
+         ws.Add(*ds);
+      }
+      RooStats::ModelConfig mc("ModelConfig",GetTitle(),&w);
+      mc.SetPdf(addedPdf->GetName());
+      mc.SetObservables(*addedPdf.robs().get<RooArgList>());
+      mc.SetGlobalObservables(*addedPdf.globs().get<RooArgList>());
+      mc.SetNuisanceParameters(*addedPdf.np().get<RooArgList>());
+      mc.SetParametersOfInterest(*addedPdf.poi().get<RooArgList>());
+      ws.Add(mc);
+
+      // save the workspace
+      ws.SaveAs(filename,option);
+
+   } else if (auto w = get<RooWorkspace>(); w) {
       // ensure the current color set is saved in the workspace
       w->import(*gROOT->GetListOfColors(), true);
 
-      if (TString(filename).EndsWith(".json")) {
+      if (sFilename.EndsWith(".json")) {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
          // stream with json tool
          RooJSONFactoryWSTool tool(*w);
-         if (tool.exportJSON(filename)) {
-            Info("SaveAs", "%s saved to %s", w->GetName(), filename);
+         if (tool.exportJSON(sFilename.Data())) {
+            Info("SaveAs", "%s saved to %s", w->GetName(), sFilename.Data());
          } else {
-            Error("SaveAs", "Unable to save to %s", filename);
+            Error("SaveAs", "Unable to save to %s", sFilename.Data());
          }
 #else
          Error("SaveAs", "json format workspaces only in ROOT 6.26 onwards");
@@ -11645,8 +11672,8 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
       }
 #endif
       // const_cast<Node2*>(this)->sterilize(); - tried this to reduce mem leak on readback but no improve
-      if (!w->writeToFile(filename, sOpt != "update")) {
-         Info("SaveAs", "%s saved to %s", w->GetName(), filename);
+      if (!w->writeToFile(sFilename, sOpt != "update")) {
+         Info("SaveAs", "%s saved to %s", w->GetName(), sFilename.Data());
          // save any fitDatabase that is loaded in memory too
          // TODO: We should do this as well for SaveAs on a scan object
          if (auto fitDb = dynamic_cast<TFile *>(gROOT->GetListOfFiles()->FindObject("fitDatabase"))) {
@@ -11686,12 +11713,12 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
                   }
                }
             };
-            CopyDir(fitDb, std::make_unique<TFile>(filename, "UPDATE").get());
-            Info("SaveAs", "Saved fitDatabase to %s", filename);
+            CopyDir(fitDb, std::make_unique<TFile>(sFilename, "UPDATE").get());
+            Info("SaveAs", "Saved fitDatabase to %s", sFilename.Data());
          }
 
       } else {
-         Error("SaveAs", "Unable to save to %s", filename);
+         Error("SaveAs", "Unable to save to %s", sFilename.Data());
       }
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       // restore the cache to every node
