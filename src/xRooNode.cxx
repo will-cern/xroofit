@@ -1609,10 +1609,18 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
    } else if ((strcmp(GetName(), ".pars") == 0 || strcmp(GetName(), ".vars") == 0) && fParent->get<RooWorkspace>()) {
       // adding a parameter, interpret as factory string unless no "[" then create RooRealVar
       TString fac(child.GetName());
-      if (!fac.Contains("["))
+      if (!fac.Contains("[") && !fac.Contains("("))
          fac += "[1]";
       return xRooNode(*fParent->get<RooWorkspace>()->factory(fac), fParent);
    } else if (strcmp(GetName(), ".datasets()") == 0) {
+
+      if(auto _data = child.get<RooAbsData>(); _data) {
+         if(find(_data->GetName())) {
+            throw std::runtime_error(TString::Format("Cannot add dataset %s, already exists for %s. If intending to combine datasets, please add directly to dataset",child->GetName(),GetName()));
+         }
+         return fParent->Add(child); // add the dataset to the parent
+      }
+
       // create a dataset - only allowed for pdfs or workspaces
       if (auto _ws = ws(); _ws && fParent) {
          sOpt.ToLower();
@@ -1747,12 +1755,47 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
 
          // append any missing observables to our dataset, then append the dataset
 
+         std::set<std::pair<RooAbsCategory*,RooCategory*>> cats;
+
          for (auto col : *_data->get()) {
             if (!p->get()->contains(*col)) {
                ds->addColumn(*col);
             }
+            else if(auto c = dynamic_cast<RooAbsCategory*>(col)) {
+               // check if any of the states of c have different index to c2
+               auto c2 = dynamic_cast<RooCategory*>(p->get()->find(*col));
+               if(!c2) {
+                  throw std::runtime_error(TString::Format("unexpected type for regular observable: %s",col->GetName()));
+               }
+               bool iMatches = true;
+               for(const auto& nameIdx : *c) {
+                  if(!c2->hasLabel(nameIdx.first) && !c2->hasIndex(nameIdx.second)) {
+                     // can define the state
+                     c2->defineType(nameIdx.first,nameIdx.second);
+                  } else if(c2->lookupIndex(nameIdx.first) != nameIdx.second) {
+                     iMatches = false; break; // state exists, but with different index!
+                  }
+               }
+               if(!iMatches) cats.insert({c,c2});
+            }
          }
-         ds->append(*_data);
+         if(cats.empty()) {
+            ds->append(*_data);
+         } else {
+            // cannot use append, because if categoricals use same idx for different states, will not do correct thing
+            for (int i = 0;i<_data->numEntries();i++) {
+               auto row = _data->get(i);
+               auto w = _data->weight();
+               ds->get()->assign(*row);
+               for(auto [c,c2] : cats) {
+                  c2->setLabel(row->getCatLabel(c->GetName()));
+               }
+               ds->add(*ds->get(),w);
+            }
+         }
+
+
+
          ds->SetTitle(TString(ds->GetTitle()) + " + " + _data->GetTitle());
          SetTitle(TString(GetTitle()) + " + " + child.GetTitle());
          return *this;
@@ -1796,8 +1839,10 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             }
          } else if (auto c = dynamic_cast<RooCategory *>(o); c) {
             if (auto dc = dynamic_cast<RooCategory *>(p->get()->find(c->GetName())); dc) {
-               if (!dc->hasLabel(c->getCurrentLabel())) {
-                  dc->defineType(c->getCurrentLabel(), c->getCurrentIndex());
+               for (const auto& nameIdx : *c) {
+                  if (!dc->hasLabel(nameIdx.first)) {
+                     dc->defineType(nameIdx.first, nameIdx.second);
+                  }
                }
             }
          }
@@ -1862,6 +1907,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             // actual pdf histogram because the pdf histogram is just normalized down
             if (_pdf->canBeExtended()) {
                // FIXME: ExtendedBinding needs the obs list passing to it ... should be fixed in RooFit
+               std::cout << " warning " << _pdf->GetName() << " wont be correctly normalized" << std::endl;
                // until then, this will return "1" and so the pdf's histograms wont be normalized properly in relation
                // to stacks of its comps
                const_cast<RooArgList &>(p->coefList())
@@ -2013,7 +2059,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          // adding a pdf to a RooRealSumPdf will replace it with a RooAddPdf and put the RooRealSumPdf inside that
          // if pdf is extended will use in the "no coefficients" state, where the expectedEvents are taking from
          // the pdf integrals
-         TString newName(_p->GetName());
+         TString newName(p->GetName());
          newName.ReplaceAll("_samples", "");
          newName += "_components";
          Warning("Add", "converting samples to components");
@@ -2115,6 +2161,7 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
       // can "add" to a RooProdPdf provided trying to add a RooAbsReal not a RooAbsPdf and have a zero or 1
       // RooRealSumPdf child.convertForAcquisition(*this); - don't convert here because want generated objects named
       // after roorealsumpdf
+      // would like exception is if child is a factory string! - TODO
       if (child.get<RooAbsPdf>() || (!child.get() && getObject<RooAbsPdf>(child.GetName()))) {
          // can add if 0 or 1 RooAddPdf ....
          RooAddPdf *_pdf = nullptr;
@@ -2228,6 +2275,15 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          Info("Add", "Created pdf RooSimultaneous::%s in workspace %s", out->GetName(), w->GetName());
          return xRooNode(out, *this);
       }
+   } else if(auto coll = get<RooAbsCollection>(); coll && child.get<RooAbsArg>()) {
+      if(coll->isOwning()) {
+         coll->addOwned(*static_cast<RooAbsArg*>(child.get<RooAbsArg>()->Clone()));
+      } else if(child.ws() != ws()) {
+         coll->add(*static_cast<RooAbsArg*>(acquire(child.fComp).get()));
+      } else {
+         coll->add(*child.get<RooAbsArg>());
+      }
+      return xRooNode(child.GetName(), *coll->find(child.GetName()), *this);
    }
 
    if (sOpt == "pdf") {
@@ -2337,7 +2393,7 @@ bool xRooNode::IsHidden() const
    return false;
 }
 
-xRooNode xRooNode::Combine(const xRooNode &rhs)
+xRooNode xRooNode::Combine(const xRooNode &rhs, bool silent)
 {
 
    if (get() == rhs.get()) {
@@ -2345,30 +2401,161 @@ xRooNode xRooNode::Combine(const xRooNode &rhs)
       return *this;
    }
 
-   // Info("Combine","Combining %s into %s",rhs.GetPath().c_str(),GetPath().c_str());
+   if(auto lhsa = get<RooAbsArg>(), rhsa = rhs.get<RooAbsArg>(); lhsa && rhsa && lhsa->isIdentical(*rhsa)) {
+      return *this;
+   }
+
+   if(get<RooWorkspace>() && rhs.get<RooWorkspace>()) {
+
+      // report which top-level pdfs will be combined
+      std::set<std::string> pdfs;
+      for (auto &c : rhs.components()) {
+         if((*this)["pdfs"]->find(c->GetName())) {
+            pdfs.insert(c->GetName());
+         }
+      }
+      if(pdfs.empty()) {
+         Warning("Combine","No pdfs will be combined. Please check and/or rename pdfs to match");
+      } else {
+         std::stringstream s;
+         for(auto& p : pdfs)  s << p << ",";
+         Info("Combine","pdfs that will be combined: %s",s.str().c_str());
+      }
+
+      std::set<std::string> _np;
+      auto mynp = np();
+      for (auto &c : rhs.np()) {
+         if(mynp.find(c->GetName())) {
+            _np.insert(c->GetName());
+         }
+      }
+      if(_np.empty()) {
+         Warning("Combine","No correlated np");
+      } else {
+         std::stringstream s;
+         for(auto& p : _np)  s << p << ",";
+         Info("Combine","np that will be shared (correlated): %s",s.str().c_str());
+      }
+      std::set<std::string> _poi;
+      auto mypoi = poi();
+      for (auto &c : rhs.poi()) {
+         if(mypoi.find(c->GetName())) {
+            _poi.insert(c->GetName());
+         }
+      }
+      if(_poi.empty()) {
+         Warning("Combine","No correlated poi");
+      } else {
+         std::stringstream s;
+         for(auto& p : _poi)  s << p << ",";
+         Info("Combine","poi that will be shared (correlated): %s",s.str().c_str());
+      }
+
+
+//       TODO: Check for derived components that have matching names and aren't top-level pdfs
+//
+//      const auto comps = get<RooWorkspace>()->components();
+//
+//      std::set<std::string> leafs;
+//
+//      for(auto& c : rhs.get<RooWorkspace>()->components()) {
+//         if(comps.find(c->GetName())) {
+//
+//         }
+//      }
+
+   }
 
    // combine components, factors, and variations ... when there is a name clash will combine on that object
    for (auto &c : rhs.components()) {
+      if(get<RooWorkspace>() && (c->fFolder=="!scratch"||c->fFolder=="!sets"||c->fFolder=="!snapshots"||c->fFolder=="!models")) continue;
       if (auto _c = components().find(c->GetName()); _c) {
-         _c->Combine(*c);
+         if(!silent) {
+            Info("Combine","Combining %s into %s",c->GetPath().c_str(),_c->GetPath().c_str());
+         }
+         _c->Combine(*c, true);
       } else {
-         Add(*c);
+         try {
+            if(!silent) {
+               Info("Combine","Adding %s into %s",c->GetPath().c_str(),GetPath().c_str());
+            }
+            Add(*c);
+         } catch(std::exception& e) {
+            Warning("Combine","Could not combine %s into %s",c->GetPath().c_str(),GetPath().c_str());
+         }
       }
    }
 
-   for (auto &f : rhs.factors()) {
-      if (auto _f = factors().find(f->GetName()); _f) {
-         _f->Combine(*f);
-      } else {
-         Multiply(*f);
+   if(!get<RooWorkspace>()) { // don't combine factors of a workspace
+      for (auto &f : rhs.factors()) {
+         if (auto _f = factors().find(f->GetName()); _f) {
+            if(!silent) {
+               Info("Combine","Combining %s into %s",f->GetPath().c_str(),_f->GetPath().c_str());
+            }
+            _f->Combine(*f, true);
+         } else {
+            if(!silent) {
+               Info("Combine","Multiplying %s into %s",f->GetPath().c_str(),GetPath().c_str());
+            }
+            Multiply(*f);
+         }
       }
+   } else {
+      // todo: go back through components, doing sets, snapshots, models, ....
+      // do after import of pdfs etc so that can acquire the copies from the workspace
+      for (auto &c : rhs.components()) {
+         if (c->fFolder == "!sets") {
+            if(components().find(c->GetName())) {
+               Info("Combine","Extending set %s",c->GetName());
+               get<RooWorkspace>()->extendSet(c->GetName(), c->get<RooAbsCollection>()->contentsString().c_str());
+            } else {
+               Info("Combine","Defining set %s",c->GetName());
+               get<RooWorkspace>()->defineSet(c->GetName(),c->get<RooAbsCollection>()->contentsString().c_str());
+            }
+         }
+      }
+
+      // also transfer datasets
+      for (auto &ds : rhs.datasets()) {
+         if (auto _ds = datasets().find(ds->GetName()); _ds) {
+            if(!silent) {
+               Info("Combine","Combining %s into %s",ds->GetPath().c_str(),_ds->GetPath().c_str());
+            }
+            _ds->Add(*ds);
+         } else {
+            if(!silent) {
+               Info("Combine","Adding %s into %s",ds->GetPath().c_str(),GetPath().c_str());
+            }
+            datasets().Add(*ds);
+         }
+      }
+
    }
 
    for (auto &v : rhs.variations()) {
       if (auto _v = variations().find(v->GetName()); _v) {
-         _v->Combine(*v);
+         if(!silent) {
+            Info("Combine","Combining variation %s into %s",v->GetPath().c_str(),_v->GetPath().c_str());
+         }
+         _v->Combine(*v, true);
       } else {
+         if(!silent) {
+            Info("Combine","Varying %s into %s",v->GetPath().c_str(),GetPath().c_str());
+         }
          Vary(*v);
+      }
+   }
+
+   if(get<RooSimultaneous>()) {
+      // combine bins (channels) ... special case, never done silently
+      for(auto& b : rhs.bins()) {
+         if (auto _b = bins().find(b->GetName()); _b) {
+            Info("Combine","Combining %s into %s",b->GetPath().c_str(),_b->GetPath().c_str());
+            _b->Combine(*b, true);
+         } else {
+            Info("Combine","Extending with %s into %s",b->GetPath().c_str(),GetPath().c_str());
+            Vary(*b); // extending channels currently done through Vary method
+         }
       }
    }
 
@@ -3306,6 +3493,17 @@ xRooNode xRooNode::Vary(const xRooNode &child)
       if (auto pos = label.find('='); pos != std::string::npos)
          label = label.substr(pos + 1);
       if (!s->indexCat().hasLabel(label)) {
+         //auto idx = static_cast<const RooCategory &>(s->indexCat()).nextAvailableStateIndex(); - can't access, protected method ... will have to just assume indices stay in sync
+         // ensure added to category in any of our datasets too
+         for(auto _ds : datasets()) {
+            if (auto bb = _ds->getBrowsable(".sourceds")) {  _ds = bb; } // shouldn't happen
+            auto dsCat = _ds->robs()[s->indexCat().GetName()]->get<RooCategory>();
+            if(!dsCat) {
+               throw std::runtime_error(TString::Format("Failed to find %s regular observable in %s dataset",s->indexCat().GetName(),_ds->GetName()));
+            }
+            dsCat->defineType(label.c_str());
+         }
+         // adding to the index cat after, so that we don't need to generate subdatasets in the call to datasets() above (missing cat will trigger cut)
          static_cast<RooCategory &>(const_cast<RooAbsCategoryLValue &>(s->indexCat())).defineType(label.c_str());
       }
       std::shared_ptr<TObject> out;
@@ -3319,6 +3517,31 @@ xRooNode xRooNode::Vary(const xRooNode &child)
       }
 
       if (auto _pdf = std::dynamic_pointer_cast<RooAbsPdf>(out); _pdf) {
+         // before adding the channel, we need to see if we are about to add any globs, and if necessary we must update
+         // the dataset globs
+         std::set<RooAbsData*> dsToUpdate;
+         for(auto _ds : datasets()) {
+            if (auto bb = _ds->getBrowsable(".sourceds")) {  _ds = bb; } // shouldn't happen
+            if(_ds->get<RooAbsData>()->getGlobalObservables()) {
+               dsToUpdate.insert(_ds->get<RooAbsData>());
+            }
+         }
+         if(!dsToUpdate.empty()) {
+            RooArgSet leafs; _pdf->leafNodeServerList(&leafs);
+            std::unique_ptr<RooAbsCollection> globals(leafs.selectByAttrib("global",true));
+            for(auto _ds : dsToUpdate) {
+               std::string alist;
+               RooArgSet globs; globs.addClone(*_ds->getGlobalObservables());
+               for(auto& aa : *globals) {
+                  if(!globs.contains(*aa)) { globs.addClone(*aa); alist += std::string(aa->GetName()) + ","; }
+               }
+               if(!alist.empty()) {
+                  Warning("Vary", "Adding %s to global observables of %s", alist.c_str(), _ds->GetName());
+                  _ds->setGlobalObservables(globs);
+               }
+            }
+         }
+
          s->addPdf(*_pdf, label.c_str());
          sterilize();
          // clear children for reload and update shared axis
@@ -4868,6 +5091,15 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
             out_arg = _ws->arg(a->GetName());
             if (GETWS(out_arg) != _ws) { // seems that when objects imported their ws isn't set
                out_arg->setWorkspace(*_ws);
+            }
+            // if any of the leaf nodes of the imported object have "global" label on them, ensure propagate to "globalObservables" list
+            // if ws has one
+            if(auto globs = const_cast<RooArgSet*>(ws()->set("globalObservables")); globs) {
+               RooArgSet leafs; out_arg->leafNodeServerList(&leafs);
+               std::unique_ptr<RooAbsCollection> globals(leafs.selectByAttrib("global",true));
+               for(auto& aa : *globals) {
+                  if(!globs->contains(*aa)) { globs->add(*aa); }
+               }
             }
          }
          RooMsgService::instance().setGlobalKillBelow(msglevel);

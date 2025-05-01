@@ -322,7 +322,7 @@ public:
    xRooNode Vary(const xRooNode &child);
    xRooNode Constrain(const xRooNode &child);
 
-   xRooNode Combine(const xRooNode &rhs); // combine rhs with this node
+   xRooNode Combine(const xRooNode &rhs, bool silent=false); // combine rhs with this node
 
    xRooNode reduced(const std::string &range = "", bool invert = false)
       const; // return a node representing reduced version of this node, will use the SetRange to reduce if blank
