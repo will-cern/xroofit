@@ -315,13 +315,13 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       }
    }
 
-   if (high < low || (high == low && nPoints != 1)) {
+   if (/*high < low ||*/ (high == low && nPoints != 1)) {
       // take from parameter
       low = p->getMin("scan");
       high = p->getMax("scan");
    }
    if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
-      p->setRange("scan", low, high);
+      p->setRange("scan", std::min(low,high), std::max(low,high));
    }
    if (p->hasRange("scan")) {
       ::Info("xRooHypoSpace::scan", "Using %s scan range: %g - %g", p->GetName(), p->getMin("scan"), p->getMax("scan"));
