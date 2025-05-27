@@ -10339,6 +10339,10 @@ void xRooNode::Draw(Option_t *opt)
                   if (_d->get<RooAbsReal>()->getVal())
                      prefitError = _d->get<RooAbsReal>()->getVal();
                }
+               if(fr->constPars().find(pConstr->find(".x")->get()->GetName())) {
+                  // globs was saved to fr, use that instead of current value
+                  prefitVal = fr->constPars().getRealValue(pConstr->find(".x")->get()->GetName());
+               }
                // prefitVal will be the global observable value, need to divide that by tau
                prefitVal /= prefitError;
                // prefiterror will be tau ... need 1/sqrt(tau) for error
@@ -10348,10 +10352,18 @@ void xRooNode::Draw(Option_t *opt)
                   (pConstr->find(".sigma")) ? pConstr->find(".sigma")->get<RooAbsReal>()->getVal() : prefitError;
                prefitVal =
                   (pConstr->find(".x")) ? pConstr->find(".x")->get<RooAbsReal>()->getVal() : 0; // usually the globs
+               if(pConstr->find(".x") && fr->constPars().find(pConstr->find(".x")->get()->GetName())) {
+                  // globs was saved to fr, use that instead of current value
+                  prefitVal = fr->constPars().getRealValue(pConstr->find(".x")->get()->GetName());
+               }
                if (pConstr->find(".x") &&
                    strcmp(p->GetName(), pConstr->find(".x")->get<RooAbsReal>()->GetName()) == 0) {
                   // hybrid construction case,
                   prefitVal = pConstr->find(".mean")->get<RooAbsReal>()->getVal();
+                  if(fr->constPars().find(pConstr->find(".mean")->get()->GetName())) {
+                     // globs was saved to fr, use that instead of current value
+                     prefitVal = fr->constPars().getRealValue(pConstr->find(".mean")->get()->GetName());
+                  }
                }
             }
 
