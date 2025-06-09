@@ -416,11 +416,13 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       if (nPoints == 1) {
          AddPoint(TString::Format("%s=%g", poi().first()->GetName(), (high + low) / 2.));
          graphs(sType); // triggers computation
+         if(back().status()!=0) out += 1;
       } else {
          double step = (high - low) / (nPoints - 1);
          for (size_t i = 0; i < nPoints; i++) {
             AddPoint(TString::Format("%s=%g", poi().first()->GetName(), low + step * i));
             graphs(sType); // triggers computation
+            if(back().status()!=0) out += 1;
          }
       }
    }
@@ -739,7 +741,7 @@ void xRooNLLVar::xRooHypoSpace::LoadFits(const char *apath)
          }
       }
       if (!dir) {
-         Error("LoadFits", "Path not found %s", apath);
+         ::Error("xRooHypoSpace::LoadFits", "Path not found %s", apath);
          return;
       }
    }
@@ -987,6 +989,12 @@ void xRooNLLVar::xRooHypoSpace::Print(Option_t * /*opt*/) const
          } else {
             std::cout << asi_cfit->status();
             badFits += (xRooNLLVar::xRooHypoPoint::allowedStatusCodes.count(asi_cfit->status()) == 0);
+         }
+         auto cfit_lbound = const_cast<xRooHypoPoint &>(at(i)).cfit_lbound(true);
+         if (!cfit_lbound) {
+         } else {
+            std::cout << ",cfit_lbound:"<< cfit_lbound->status();
+            badFits += (xRooNLLVar::xRooHypoPoint::allowedStatusCodes.count(cfit_lbound->status()) == 0);
          }
       }
       std::cout << "]";
@@ -1465,7 +1473,7 @@ xRooNLLVar::xRooHypoSpace::findlimit(const char *opt, double relUncert, unsigned
       if (!gr || gr->GetN() < 1) {
          if (maxTries == 0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), muMin)).getVal(sOpt).first)) {
             // first point failed ... give up
-            Error("findlimit", "Problem evaluating %s @ %s=%g", sOpt.Data(), v->GetName(), muMin);
+            ::Error("findlimit", "Problem evaluating %s @ %s=%g", sOpt.Data(), v->GetName(), muMin);
             return std::pair(std::numeric_limits<double>::quiet_NaN(), 0.);
          }
          gr.reset();
@@ -1501,7 +1509,7 @@ xRooNLLVar::xRooHypoSpace::findlimit(const char *opt, double relUncert, unsigned
 
       if (maxTries == 0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
          // second point failed ... give up
-         Error("findlimit", "Problem evaluating %s @ %s=%g", sOpt.Data(), v->GetName(), nextPoint);
+         ::Error("xRooHypoSpace::findlimit", "Problem evaluating %s @ %s=%g", sOpt.Data(), v->GetName(), nextPoint);
          return std::pair(std::numeric_limits<double>::quiet_NaN(), 0.);
       }
       gr.reset();
@@ -1567,9 +1575,9 @@ xRooNLLVar::xRooHypoSpace::findlimit(const char *opt, double relUncert, unsigned
           nextPoint, lim.second);
    if (maxTries == 0 || std::isnan(AddPoint(TString::Format("%s=%g", v->GetName(), nextPoint)).getVal(sOpt).first)) {
       if (maxTries == 0) {
-         Warning("findlimit", "Reached max number of point evaluations");
+         ::Warning("xRooHypoSpace::findlimit", "Reached max number of point evaluations");
       } else {
-         Error("findlimit", "Problem evaluating %s @ %s=%g", sOpt.Data(), v->GetName(), nextPoint);
+         ::Error("xRooHypoSpace::findlimit", "Problem evaluating %s @ %s=%g", sOpt.Data(), v->GetName(), nextPoint);
       }
       return lim;
    }
