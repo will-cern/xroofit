@@ -9987,7 +9987,12 @@ void xRooNode::Draw(Option_t *opt)
          //                    w*(pad->GetCanvas()->GetWindowWidth()/2.),h*(pad->GetCanvas()->GetWindowHeight()/2.))  )
          //                }
          //            }
-         dynamic_cast<TPad *>(pad)->DivideSquare(_size, 1e-9, 1e-9);
+         int ncols = _simPdf->getStringAttribute("ncols") ? TString(_simPdf->getStringAttribute("ncols")).Atoi() : 0;
+         if(ncols > 0) {
+            dynamic_cast<TPad *>(pad)->Divide(ncols, std::ceil(double(_size)/ncols), 1e-9, 1e-9);
+         } else {
+            dynamic_cast<TPad *>(pad)->DivideSquare(_size, 1e-9, 1e-9);
+         }
          if (_size > 5) {
             auto _pad = pad->GetPad(_size); // will use as the legend pad
             _pad->SetName("legend");
