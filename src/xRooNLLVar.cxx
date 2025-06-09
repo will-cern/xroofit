@@ -1640,7 +1640,7 @@ void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
    }
    if (fLbound_cfit) {
       std::cout << " - cfit_lbound: " << fLbound_cfit->GetName() << " " << fLbound_cfit->minNll()
-                << " (status=" << fLbound_cfit->status() << ")";
+                << " (status=" << fLbound_cfit->status() << ")" << std::endl;
    }
    if (fGenFit)
       std::cout << " -      gfit: " << fGenFit->GetName() << std::endl;
@@ -1894,10 +1894,16 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
                      : xRooFit::Asymptotics::CompatFactor(fPllType, fNullVal(), mu_hat().getVal());
    if (cFactor == 0)
       return std::pair<double, double>(0, 0);
-   if (!cfit_null(readOnly) || allowedStatusCodes.find(cfit_null(readOnly)->status()) == allowedStatusCodes.end())
+   auto _cfit_null = cfit_null(readOnly);
+   if (!_cfit_null || allowedStatusCodes.find(_cfit_null->status()) == allowedStatusCodes.end())
       return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    // std::cout << cfit->minNll() << ":" << cfit->edm() << " " << ufit->minNll() << ":" << ufit->edm() << std::endl;
-   return std::pair<double, double>(2. * cFactor * (cfit_null(readOnly)->minNll() - _ufit->minNll()),
+   double diff = _cfit_null->minNll() - _ufit->minNll();
+   if(diff<0) {
+      // use edm to attempt a small correction to the diff, i.e. assume edm is an additional correction required to minNll
+      diff += (_ufit->edm() - _cfit_null->edm());
+   }
+   return std::pair<double, double>(2. * cFactor * diff,
                                     2. * cFactor * sqrt(pow(cfit_null(readOnly)->edm(), 2) + pow(_ufit->edm(), 2)));
    // return 2.*cFactor*(cfit->minNll()+cfit->edm() - ufit->minNll()+ufit->edm());
 }
