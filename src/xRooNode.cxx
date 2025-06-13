@@ -8946,7 +8946,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       }
 
       THStack *stack = new THStack("stack", TString::Format("%s;%s", rar->GetTitle(), h->GetXaxis()->GetTitle()));
-      int count = 2;
+      int count = 0;
       std::map<std::string, int> colorByTitle; // TODO: should fill from any existing legend
       std::set<std::string> allTitles;
       bool titleMatchName = true;
@@ -9171,7 +9171,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                hh->SetFillStyle(1001); // solid fill style
                bool used = false;
                do {
-                  hh->SetFillColor((count++));
+                  hh->SetFillColor(gEnv->GetValue("XRooFit.MinFillColor",kP10Blue /* was previously 2*/) + (count++));
                   // check not already used this color
                   used = false;
                   for (auto ho2 : *ll) {
