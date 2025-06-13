@@ -23,7 +23,7 @@
 #include "TStopwatch.h"
 #include "TSystem.h"
 #include "TPRegexp.h"
-#include "TMemFile.h"
+//#include "TMemFile.h"
 #include "TROOT.h"
 #include "RooDataSet.h"
 #include "TKey.h"
@@ -377,7 +377,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
          new TMemFile("fitDatabase", "RECREATE");
       }*/
       // now we create a TMemFile of our own, so that we don't get in the way of other hypoSpaces
-      fFitDb = std::shared_ptr<TMemFile>(new TMemFile(TString::Format("fitDatabase_%s",GetName()),"RECREATE"),[](TFile *) {});
+      fFitDb = std::shared_ptr<TDirectory>(gROOT->mkdir(TString::Format("fitDatabase_%s",GetName())),[](TDirectory *) {});
       // db can last longer than the hypoSpace, so that the fits are fully available in the browser
       // if a scan was initiated through the browser. If user wants to cleanup they can do manually
       // through root's GetListOfFiles()
@@ -1748,6 +1748,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          gPad->Clear();
       }
       if (gra) {
+         if(!gPad) TCanvas::MakeDefCanvas();
          auto gra2 = static_cast<TMultiGraph *>(gra->DrawClone(sOpt.Contains("same") ? "" : "A"));
          gra2->SetBit(kCanDelete);
          if (sOpt.Contains("pcls") || sOpt.Contains("pnull")) {

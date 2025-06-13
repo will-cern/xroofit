@@ -1923,7 +1923,10 @@ std::shared_ptr<const RooFitResult> xRooNLLVar::xRooHypoPoint::retrieveFit(int t
             fits->getGlobalObservables()->getStringValue(TString::Format("%s.name", fit->getCatLabel("type")));
          // see if can retrieve from any open file ....
          TDirectory *tmp = gDirectory;
-         for (auto file : *gROOT->GetListOfFiles()) {
+         TList allFilesAndMem;
+         allFilesAndMem.Add(gROOT);
+         allFilesAndMem.AddAll(gROOT->GetListOfFiles());
+         for (auto file : allFilesAndMem) {
             if (auto k = static_cast<TDirectory *>(file)->FindKeyAny(_name.c_str())) {
                // use pre-retrieved fits if available
                xRooFit::StoredFitResult *storedFr =

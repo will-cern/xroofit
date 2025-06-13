@@ -11925,47 +11925,47 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
          Info("SaveAs", "%s saved to %s", w->GetName(), sFilename.Data());
          // save any fitDatabase that is loaded in memory too
          // TODO: We should do this as well for SaveAs on a scan object
-         if (auto fitDb = dynamic_cast<TFile *>(gROOT->GetListOfFiles()->FindObject("fitDatabase"))) {
+         std::function<void(TDirectory *, TDirectory *)> CopyDir;
 
-            std::function<void(TDirectory *, TDirectory *)> CopyDir;
-
-            CopyDir = [&](TDirectory *source, TDirectory *dest) {
-               auto dir = dest->GetDirectory(source->GetName());
-               if (!dir) {
-                  dir = dest->mkdir(source->GetName());
-               }
-               for (auto k : *source->GetListOfKeys()) {
-                  auto key = dynamic_cast<TKey *>(k);
-                  const char *classname = key->GetClassName();
-                  TClass *cl = gROOT->GetClass(classname);
-                  // std::cout << "processing " << key->GetName() << " " << classname << std::endl;
-                  if (!cl) {
+         CopyDir = [&](TDirectory *source, TDirectory *dest) {
+            auto dir = dest->GetDirectory(source->GetName());
+            if (!dir) {
+               dir = dest->mkdir(source->GetName());
+            }
+            for (auto k : *source->GetListOfKeys()) {
+               auto key = dynamic_cast<TKey *>(k);
+               const char *classname = key->GetClassName();
+               TClass *cl = gROOT->GetClass(classname);
+               // std::cout << "processing " << key->GetName() << " " << classname << std::endl;
+               if (!cl) {
+                  continue;
+               } else if (cl->InheritsFrom(TDirectory::Class())) {
+                  CopyDir(source->GetDirectory(key->GetName()), dir);
+               } else {
+                  // don't write object if it already exists
+                  if (dir->FindKey(key->GetName()))
                      continue;
-                  } else if (cl->InheritsFrom(TDirectory::Class())) {
-                     CopyDir(source->GetDirectory(key->GetName()), dir);
+                  // support FitConfigs ....
+                  if (strcmp(classname, "ROOT::Fit::FitConfig") == 0) {
+                     auto fc = key->ReadObject<ROOT::Fit::FitConfig>();
+                     dir->WriteObject(fc, key->GetName());
+                     delete fc;
                   } else {
-                     // don't write object if it already exists
-                     if (dir->FindKey(key->GetName()))
-                        continue;
-                     // support FitConfigs ....
-                     if (strcmp(classname, "ROOT::Fit::FitConfig") == 0) {
-                        auto fc = key->ReadObject<ROOT::Fit::FitConfig>();
-                        dir->WriteObject(fc, key->GetName());
-                        delete fc;
-                     } else {
-                        TObject *obj = key->ReadObj();
-                        if (obj) {
-                           dir->WriteTObject(obj, key->GetName());
-                           delete obj;
-                        }
+                     TObject *obj = key->ReadObj();
+                     if (obj) {
+                        dir->WriteTObject(obj, key->GetName());
+                        delete obj;
                      }
                   }
                }
-            };
-            CopyDir(fitDb, std::make_unique<TFile>(sFilename, "UPDATE").get());
-            Info("SaveAs", "Saved fitDatabase to %s", sFilename.Data());
+            }
+         };
+         for(auto dir : *gROOT->GetListOfKeys()) {
+            if (auto fitDb = dynamic_cast<TDirectory*>(dir); dir && TString(dir->GetName()).BeginsWith("fitDatabase_")) {
+               CopyDir(fitDb, std::make_unique<TFile>(sFilename, "UPDATE").get());
+               Info("SaveAs", "Saved %s to %s", fitDb->GetName(), sFilename.Data());
+            }
          }
-
       } else {
          Error("SaveAs", "Unable to save to %s", sFilename.Data());
       }

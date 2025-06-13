@@ -369,7 +369,7 @@ public:
 
       std::set<std::pair<std::shared_ptr<RooArgList>, std::shared_ptr<xRooNode>>> fPdfs;
 
-      std::shared_ptr<TFile> fFitDb;
+      std::shared_ptr<TDirectory> fFitDb;
    };
 
    xRooHypoSpace hypoSpace(const char *parName, int nPoints, double low, double high,
