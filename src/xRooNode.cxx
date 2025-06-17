@@ -11960,8 +11960,8 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
                }
             }
          };
-         for(auto dir : *gROOT->GetListOfKeys()) {
-            if (auto fitDb = dynamic_cast<TDirectory*>(dir); dir && TString(dir->GetName()).BeginsWith("fitDatabase_")) {
+         for(auto key : *gROOT->GetListOfKeys()) {
+            if (auto fitDb = gROOT->GetDirectory(key->GetName()); fitDb && TString(key->GetName()).BeginsWith("fitDatabase_")) {
                CopyDir(fitDb, std::make_unique<TFile>(sFilename, "UPDATE").get());
                Info("SaveAs", "Saved %s to %s", fitDb->GetName(), sFilename.Data());
             }
