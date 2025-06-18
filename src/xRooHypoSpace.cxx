@@ -23,7 +23,7 @@
 #include "TStopwatch.h"
 #include "TSystem.h"
 #include "TPRegexp.h"
-//#include "TMemFile.h"
+#include "TMemFile.h"
 #include "TROOT.h"
 #include "RooDataSet.h"
 #include "TKey.h"
@@ -364,6 +364,14 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
 
    // create a fitDatabase if required
    TDirectory *origDir = gDirectory;
+   if(fFitDb) {
+      // move to the db, and unlock it if this is a TMemFile
+      fFitDb->cd();
+      if(auto myDb = dynamic_cast<TMemFile*>(fFitDb.get())) {
+         // need to unlock the database
+         *reinterpret_cast<Bool_t*>(reinterpret_cast<unsigned char *>(myDb) + myDb->Class()->GetDataMemberOffset("fWritable")) = true;
+      }
+   }
    if (!gDirectory || !gDirectory->IsWritable()) {
       // locate a TMemFile in the open list of files and move to that
       // or create one if cannot find
@@ -377,7 +385,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
          new TMemFile("fitDatabase", "RECREATE");
       }*/
       // now we create a TMemFile of our own, so that we don't get in the way of other hypoSpaces
-      fFitDb = std::shared_ptr<TDirectory>(gROOT->mkdir(TString::Format("fitDatabase_%s",GetName())),[](TDirectory *) {});
+      fFitDb = std::shared_ptr<TDirectory>(new TMemFile(TString::Format("fitDatabase_%s",TUUID().AsString()),"RECREATE"),[](TDirectory *) {});
       // db can last longer than the hypoSpace, so that the fits are fully available in the browser
       // if a scan was initiated through the browser. If user wants to cleanup they can do manually
       // through root's GetListOfFiles()
@@ -429,6 +437,11 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
 
    if (origDir)
       origDir->cd();
+
+   if(auto myDb = dynamic_cast<TMemFile*>(fFitDb.get())) {
+      // need to lock the database, because if its writable when pyroot closes it causes a crash
+      *reinterpret_cast<Bool_t*>(reinterpret_cast<unsigned char *>(myDb) + myDb->Class()->GetDataMemberOffset("fWritable")) = false;
+   }
 
    return out;
 }

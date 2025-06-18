@@ -292,6 +292,9 @@ public:
 
       void LoadFits(const char *apath);
 
+      // the directory where fits are cached from scans
+      TDirectory* fitCache() const { return fFitDb.get(); }
+
       // A points over given parameter, number of points between low and high
       int AddPoints(const char *parName, size_t nPoints, double low, double high);
 
