@@ -1050,9 +1050,14 @@ TAxis *xRooNode::GetXaxis() const
       }
    }
 
+   /* no longer 'remembering' xvars when call GetXaxis(), as was causing incorrect obs to go onto node
+    * when e.g. adding histogram with bin errors to a channel - the statFactor and constraint terms were
+    * created first, causing the channel's xaxis to become equal to a globs at some point because of a GetXaxis call
+    * Alternatively we could clear the xvar attribute of all client nodes whenever we 'modify' something
+    * Should do that if processing large workspaces becomes slow
    if (o != dynamic_cast<TObject *>(x)) {
       o->setStringAttribute("xvar", dynamic_cast<TObject *>(x)->GetName());
-   }
+   } */
 
    // decide binning to use
    TString binningName = o->getStringAttribute("binning");
