@@ -1863,7 +1863,7 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
    if (firstToy >= altToys.size())
       return std::pair(std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN());
    int targetIdx =
-      (altToys.size() - firstToy) * ROOT::Math::gaussian_cdf(nSigma) + firstToy; // TODO: Account for weights
+      (altToys.size() - firstToy) * ROOT::Math::gaussian_cdf_c(nSigma) + firstToy; // TODO: Account for weights
    return std::pair(std::get<1>(altToys[targetIdx]), (std::get<1>(altToys[std::min(int(altToys.size()), targetIdx)]) -
                                                       std::get<1>(altToys[std::max(0, targetIdx)])) /
                                                         2.);
