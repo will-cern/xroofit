@@ -12,6 +12,8 @@
 #include "RooFormulaVar.h"
 #include "RooStats/HypoTestInverterResult.h"
 #include <thread>
+#include "TStopwatch.h"
+
 #endif
 
 /**
@@ -115,7 +117,7 @@ xRooNode buildModel(double data, double bkg, double bkg_uncert, double sig, doub
 double testPoint(xRooNode w, double testValue = 1, double altValue = 0, int nToys=1500) {
 
     // create NLL function using simPdf model with obsData
-    auto nll = w["simPdf"]->nll("obsData",{RooFit::Binned()});
+    auto nll = w["simPdf"]->nll("obsData",{RooFit::Binned(1)});
 
 
 
@@ -124,6 +126,8 @@ double testPoint(xRooNode w, double testValue = 1, double altValue = 0, int nToy
 
     auto _pll = hypoTest.pll();
     auto _sigma_mu = hypoTest.sigma_mu();
+
+    hypoTest.Print();
 
     auto clsb_obs = hypoTest.pNull_asymp().first;
     auto clb_obs = hypoTest.pAlt_asymp().first;
@@ -390,10 +394,37 @@ TEST(test1, testSimpleModel) {
     w["simPdf"]->datasets().Add("expData","asimov");
     ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinData(1,"expData"),w["simPdf/chan1"]->GetBinContent(1));
 
+    // generate asimov dataset not part of workspace
+    auto asi = w["simPdf"]->generate("",true);
+    // check can get bin data out of dataset for a given model
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinData(1,asi),w["simPdf/chan1"]->GetBinContent(1));
+
     w.pars()["mu"]->get<RooRealVar>()->setVal(1);
     // check can get at fit result representing snapshot of model state
     ASSERT_DOUBLE_EQ( w["simPdf"]->datasets()["expData"]->fitResult().get<RooFitResult>()->floatParsFinal().getRealValue("mu"),0.);
     std::cout << w["simPdf"]->datasets()["expData"]->fitResult()->GetName() << " " << w["simPdf"]->datasets()["expData"]->fitResult()->GetTitle() << std::endl;
+
+}
+
+TEST(test1, testSimpleModelErrors) {
+
+    RooWorkspace ws("w","w"); // create workspace
+    xRooNode w(ws); // wrap it with an xRooNode to interact with
+
+    w["simPdf/chan1"]->SetXaxis("myObs","dummy obs",5,0,5); // creates a channel with 5 uniform bins between 0 and 5
+
+    w["simPdf/chan1/samp2"]->SetBinContent(1,1);
+    w["simPdf/chan1/samp2"]->SetBinContent(1,0.8,"alpha",1); // creates variation called alpha, assigning value 0.8 to +1sigma
+    w["simPdf/chan1/samp2"]->SetBinContent(1,1.5,"alpha",-1); // asymmetric error
+
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinError(1),(0.5+0.2)/2); // default (symmetric) error will be average of the two asymmetric errors
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinErrorHi(1),0.5); // obtain individual up error
+    ASSERT_DOUBLE_EQ(w["simPdf/chan1"]->GetBinErrorLo(1),-0.2); // obtain individual down error ... follows RooFit convention that down errors are negative
+
+    // check that error computed from toys is similar in value - should at least round to same value @ 1sf
+    EXPECT_NEAR(w["simPdf/chan1"]->GetBinErrorHi(1,"",500),0.5,0.04);
+    EXPECT_NEAR(w["simPdf/chan1"]->GetBinErrorLo(1,"",500),-0.2,0.04);
+
 
 }
 
@@ -412,7 +443,7 @@ TEST(test1,discreteMinimizationTest) {
     w["simPdf/chan1/bkg2"]->Multiply("fac2('myCat==0?0:1',myCat)","func");
     w["simPdf/chan1"]->SetBinData(1,12);
 
-    auto fr = w["simPdf"]->nll("obsData").minimize();
+    auto fr = w["simPdf"]->nll("obsData",{RooFit::EvalBackend("legacy")}).minimize();
 
     // expect cat index = 1 (second case) to be a better fit ...
     EXPECT_EQ( fr->floatParsFinal().getCatIndex("myCat"), 1 );
@@ -421,7 +452,56 @@ TEST(test1,discreteMinimizationTest) {
     w["simPdf/chan1"]->SetBinData(1,4);
 
     // expect cat index = 0 (first case) to be a better fit ...
-    EXPECT_EQ( w["simPdf"]->nll("obsData").minimize()->floatParsFinal().getCatIndex("myCat"), 0 );
+    EXPECT_EQ( w["simPdf"]->nll("obsData",{RooFit::EvalBackend("legacy")}).minimize()->floatParsFinal().getCatIndex("myCat"), 0 );
+}
+
+TEST(test1,discreteMinimizationMultiNLLTest) {
+    // in this test, we will see if multiple NLLs from different workspaces
+    // can be minimized as one function, and give compatible results to a fully parameterized version
+
+    RooWorkspace _ws;xRooNode w(_ws);
+    w["simPdf/chan1"]->SetXaxis(1,0,1);
+    w["simPdf/chan1/bkg"]->SetBinContent(1,5);
+    w["simPdf/chan1/bkg"]->SetBinContent(1,6,"alpha");
+    w["simPdf/chan1/sig"]->SetBinContent(1,1);
+    w["simPdf/chan1/sig"]->Multiply("mu","norm");
+    w["simPdf"]->pars()["alpha"]->Constrain("normal");
+    w["simPdf/chan1"]->SetBinData(1,6);
+
+    w.pars()["mu"]->get<RooRealVar>()->setRange(-10,10);
+
+    auto hs = w.nll("obsData").hypoSpace("mu");
+    hs.scan("plr",11,-3,4);
+    std::shared_ptr<TGraphErrors> plr_scan = hs.graph("ts");
+
+    // can we reproduce this with workspaces with fixed values of the alpha np
+    TGraph plr;
+    std::vector<std::vector<double>> vals; // vectors of nll as function of mu, for each alpha
+    for(double alpha = -1; alpha <= 1; alpha+=0.1) {
+        RooWorkspace _ws2;xRooNode w2(_ws2);
+        w2["simPdf/chan1"]->SetXaxis(1,0,1);
+        w2["simPdf/chan1/bkg"]->SetBinContent(1,5+1.0*alpha);
+        w2["simPdf/chan1/sig"]->SetBinContent(1,1);
+        w2["simPdf/chan1/sig"]->Multiply("mu","norm");
+        w2["simPdf/chan1"]->SetBinData(1,6);
+        w2.pars()["mu"]->get<RooRealVar>()->setRange(-10,10);
+        auto nll2 = w2.nll("obsData");
+        vals.resize(vals.size()+1);
+        for(double mu=-3;mu<=4;mu+=0.1) {
+            w2.pars()["mu"]->get<RooRealVar>()->setVal(mu);
+            vals.back().push_back(nll2->getVal());
+        }
+    }
+    TGraph g2; double mu = -3;
+    for(size_t i=0;i<vals.at(0).size();i++) {
+        double minVal = vals.at(0).at(i);
+        for(auto& v : vals) {
+            minVal = std::min(v.at(i),minVal);
+        }
+        g2.AddPoint(mu,minVal);
+        mu += 0.1;
+    }
+
 
 
 }
@@ -476,6 +556,8 @@ TEST(test1,speedTest) {
 
 }
 
+#include "TROOT.h"
+
 TEST(expensiveTest,fullLimitTest) {
 
    auto printMem = []() {
@@ -491,6 +573,7 @@ TEST(expensiveTest,fullLimitTest) {
 
 
 
+   std::cout << gROOT->IsBatch() << std::endl;
 
    for(int i=0;i<1;i++) {
       TFile f("/tmp/fits_saved2.root","RECREATE");
@@ -655,6 +738,19 @@ TEST(test1,plotTest) {
     }
 }
 
+TEST(test1,drawTest2) {
+    // drawing this single channel was taking well over 1 minute
+    // so used this test to profile the code .. now takes under 10s. Put failure threshold @ 15s
+    TStopwatch s;
+    s.Start();
+    {
+        xRooNode w("~/Downloads/WS-HZZ-STXS.root");
+        w["pdfs/combPdf"]->at(0)->Draw();
+    }
+    ASSERT_LT( s.RealTime(), 15 );
+
+}
+
 
 xRooNode GetNode(const std::string& path) {
 
@@ -678,6 +774,88 @@ TEST(test1,NodeLoadTest) {
     xRooNode node = GetNode("~/Downloads/Fit_1l_allRegions_combined_Fit_1l_model.root");
     auto pdf = node["simPdf"];
     std::cout << "end1\n";
+}
+
+TEST(test1,crashTest) {
+
+    {
+        TFile f("~/Downloads/FitExampleNtuple_combined_FitExampleNtuple_model.root");
+        std::unique_ptr<RooWorkspace> ws(f.Get<RooWorkspace>("combined"));
+
+        xRooNode model(*ws);
+        auto hs = model.nll("obsData").hypoSpace();
+        TFile outWS("wsWithLimit.root", "RECREATE");
+        hs.scan("cls");
+        {std::unique_ptr<RooStats::HypoTestInverterResult> result(hs.result());}
+        outWS.Close();
+        model.SaveAs(outWS.GetName(), "UPDATE");
+    }
+
+    {
+        TFile f("~/Downloads/FitExampleNtuple_combined_FitExampleNtuple_model.root");
+        std::unique_ptr<RooWorkspace> ws(f.Get<RooWorkspace>("combined"));
+        ws->Print();
+    }
+
+
+}
+
+TEST(test1,reuseNLLTest) {
+
+    RooWorkspace workspace;
+    workspace.factory("Gaussian::pdf_1(x[-10, 10], mu[0, -10, 10], sigma[1, 0.1, 10])");
+    workspace.factory("SIMUL::pdf(index_cat[A=0], A=pdf_1)");
+
+    RooAbsPdf &pdf1 = *workspace.pdf("pdf_1");
+    RooAbsPdf &pdf = *workspace.pdf("pdf");
+    RooRealVar &x = *workspace.var("x");
+    RooAbsArg &cat = *workspace.arg("index_cat");
+
+    {
+        // Build simple single-entry datasets so that it's easy to know the
+        // reference result.
+        const double xa = 0.0;
+        const double xb = 1.0;
+
+        RooDataSet data1a{"data_1_a", "data_1_a",  {x, cat}};
+        x.setVal(xa);
+        data1a.add({x, cat});
+        workspace.import(data1a);
+
+        RooDataSet data1b{"data_1_b", "data_1_b", {x, cat}};
+        x.setVal(xb);
+        data1b.add({x, cat});
+        workspace.import(data1b);
+    }
+    RooAbsData &data1a = *workspace.data("data_1_a");
+    RooAbsData &data1b = *workspace.data("data_1_b");
+
+    xRooNode w(workspace);
+
+    auto nll1 = w["pdfs/pdf/A"]->nll("data_1_a");//,{RooFit::EvalBackend("legacy")});
+    auto nllSim = w["pdfs/pdf"]->nll("data_1_a");//,{RooFit::EvalBackend("legacy")});
+
+    double val1A = nll1->getVal();
+    double valSimA = nllSim->getVal();
+
+    nll1.setData(data1b);
+    nllSim.setData(data1b);
+
+    double val1B = nll1->getVal();
+    double valSimB = nllSim->getVal();
+
+    std::cout << "Before SetData()" << std::endl;
+    std::cout << "Simple pdf : " << val1A << std::endl;
+    std::cout << "Sim pdf    : " << valSimA << std::endl;
+
+    std::cout << "After SetData()" << std::endl;
+    std::cout << "Simple pdf : " << val1B << std::endl;
+    std::cout << "Sim pdf    : " << valSimB << std::endl;
+
+    ASSERT_DOUBLE_EQ(val1A,valSimA);
+    ASSERT_DOUBLE_EQ(val1B,valSimB);
+    ASSERT_DOUBLE_EQ(val1A+0.5,val1B); // since b dataset has x=1, so nll is (1-0)^2/(2*1^2) = 0.5 different
+
 }
 
 #endif

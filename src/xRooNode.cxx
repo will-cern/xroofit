@@ -6709,6 +6709,7 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
       *static_cast<TAttLine *>(dataGraph) = *static_cast<TAttLine *>(theHist);
       dataGraph->SetMarkerStyle(20);
       dataGraph->SetLineColor(kBlack);
+      dataGraph->SetMarkerSize(gStyle->GetMarkerSize());
 
       auto _obs = obs();
 
