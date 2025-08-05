@@ -241,11 +241,19 @@ public:
       double fNullVal();
       double fAltVal();
 
+      void setNullVal(double val);
+      void setAltVal(double val);
+      void setObsTS(double val, double err) { obs_ts = val; obs_ts_err=err; fPllType = xRooFit::Asymptotics::Unknown; }
+      void addNullToy(double value, double weight=1., int seed=0) { fPllType = xRooFit::Asymptotics::Unknown;nullToys.emplace_back(std::make_tuple(seed,value,weight)); }
+      void addAltToy(double value, double weight=1., int seed=0) { fPllType = xRooFit::Asymptotics::Unknown;altToys.emplace_back(std::make_tuple(seed,value,weight)); }
+
       std::shared_ptr<const RooAbsCollection> coords; // pars of the nll that will be held const alongside POI
 
       std::shared_ptr<const RooFitResult> fUfit, fNull_cfit, fAlt_cfit, fLbound_cfit;
       std::shared_ptr<const RooFitResult> fGenFit; // if the data was generated, this is the fit is was generated from
       bool isExpected = false;                     // if genFit, flag says is asimov or not
+      double obs_ts = std::numeric_limits<double>::quiet_NaN(); // only specified for unknown pll types
+      double obs_ts_err = std::numeric_limits<double>::quiet_NaN();
 
       std::shared_ptr<xRooHypoPoint>
          fAsimov; // same as this point but pllType is twosided and data is expected post alt-fit
@@ -290,7 +298,6 @@ public:
 
       bool AddModel(const xRooNode &pdf, const char *validity = "");
 
-      void LoadFits(const char *apath);
 
       // the directory where fits are cached from scans
       TDirectory* fitCache() const { return fFitDb.get(); }

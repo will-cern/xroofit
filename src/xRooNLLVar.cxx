@@ -1578,6 +1578,10 @@ void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
    }
    std::cout << " , pllType: " << fPllType << std::endl;
 
+   if(fPllType==xRooFit::Asymptotics::Unknown) {
+      std::cout << " obs ts: " << obs_ts << " +/- " << obs_ts_err << std::endl;
+   }
+
    std::cout << " -        ufit: ";
    if (fUfit) {
       std::cout << fUfit->GetName() << " " << fUfit->minNll() << " (status=" << fUfit->status() << ") (";
@@ -1694,6 +1698,10 @@ xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResul
       fPllType =
          xRooFit::Asymptotics::PLLType(hypoTestResult->GetFitInfo()->getGlobalObservables()->getCatIndex("pllType"));
       isExpected = hypoTestResult->GetFitInfo()->getGlobalObservables()->getRealValue("isExpected");
+
+      // load obsTS value
+      obs_ts = hypoTestResult->GetTestStatisticData();
+      obs_ts_err = hypoTestResult->GetFitInfo()->getGlobalObservables()->getRealValue("obs_ts_err");
 
       // load the toys
       auto toys = hypoTestResult->GetNullDetailedOutput();
@@ -1835,8 +1843,10 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pCLs_asymp(double nSigma)
 
 xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma)
 {
-   if (std::isnan(nSigma))
-      return pll();
+   if (std::isnan(nSigma)) {
+      return (fPllType==xRooFit::Asymptotics::Unknown) ? std::make_pair(obs_ts,obs_ts_err) : pll();
+   }
+
    auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
    auto _sigma_mu = sigma_mu();
    if (!first_poi || (!std::isnan(nSigma) && std::isnan(_sigma_mu.first)))
@@ -1854,8 +1864,9 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_asymp(double nSigma)
 
 xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
 {
-   if (std::isnan(nSigma))
-      return pll();
+   if (std::isnan(nSigma)) {
+      return ts_asymp();
+   }
    // nans should appear in the alt toys first ... so loop until past nans
    size_t firstToy = 0;
    while (firstToy < altToys.size() && std::isnan(std::get<1>(altToys[firstToy])))
@@ -2730,7 +2741,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       _max = std::max(std::get<1>(p), _max);
    }
 
-   auto obs = pll();
+   auto obs = ts_asymp();
    if (!std::isnan(obs.first)) {
       _min = std::min(obs.first - std::abs(obs.first) * 0.1, _min);
       _max = std::max(obs.first + std::abs(obs.first) * 0.1, _max);
@@ -2738,8 +2749,8 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    // these are used down below to add obs p-values to legend, but up here because can trigger fits that create asimov
    auto pNull = pNull_toys();
    auto pAlt = pAlt_toys();
-   auto pNullA = pNull_asymp();
-   auto pAltA = pAlt_asymp();
+   auto pNullA = (fPllType==xRooFit::Asymptotics::Unknown) ? std::pair(std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::quiet_NaN()) : pNull_asymp();
+   auto pAltA = (fPllType==xRooFit::Asymptotics::Unknown) ? std::pair(std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::quiet_NaN()) : pAlt_asymp();
    sigma_mu(true);
    auto asi = (fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit) ? fAsimov->pll().first
                                                                  : std::numeric_limits<double>::quiet_NaN();
@@ -2973,6 +2984,21 @@ double xRooNLLVar::xRooHypoPoint::fAltVal()
    return (first_poi == nullptr) ? std::numeric_limits<double>::quiet_NaN() : first_poi->getVal();
 }
 
+void xRooNLLVar::xRooHypoPoint::setNullVal(double val) {
+   auto first_poi = dynamic_cast<RooAbsRealLValue *>(poi().first());
+   if(!first_poi) {
+      throw std::runtime_error("HypoPoint has no POI, cannot set null value");
+   }
+   first_poi->setVal(val);
+}
+void xRooNLLVar::xRooHypoPoint::setAltVal(double val) {
+   auto first_poi = dynamic_cast<RooAbsArg *>(poi().first());
+   if(!first_poi) {
+      throw std::runtime_error("HypoPoint has no POI, cannot set alt value");
+   }
+   first_poi->setStringAttribute("altVal",TString::Format("%g",val).Data());
+}
+
 xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints, double low, double high,
                                                 double alt_value, const xRooFit::Asymptotics::PLLType &pllType, int tsType)
 {
@@ -3094,9 +3120,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       nllVar->get()->setAttribute("readOnly");
    }
 
-   auto ts_obs = ts_asymp();
-
-   out.SetTestStatisticData(ts_obs.first);
+   out.SetTestStatisticData(ts_asymp().first);
 
    // build a ds to hold all fits ... store coords in the globs list of the nullDist
    // also need to store at least mu_hat value(s)
@@ -3104,12 +3128,13 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    RooArgList fitMeta;
    fitMeta.addClone(RooCategory(
       "pllType", "test statistic type",
-      {{"TwoSided", 0}, {"OneSidedPositive", 1}, {"OneSidedNegative", 2}, {"Uncapped", 3}, {"Unknown", 4}}));
+      {{"TwoSided", 0}, {"OneSidedPositive", 1}, {"OneSidedNegative", 2}, {"OneSidedAbsolute",3}, {"Uncapped", 4}, {"Unknown", 5}}));
    if (ufit()) {
       fitMeta.addClone(ufit()->floatParsFinal());
    }
    fitMeta.setCatIndex("pllType", int(fPllType));
    fitMeta.addClone(RooRealVar("isExpected", "isExpected", int(isExpected)));
+   fitMeta.addClone(RooRealVar("obs_ts_err","obs_ts_err",obs_ts_err));
    fitDetails.addClone(RooCategory("type", "fit type",
                                    {{"ufit", 0},
                                     {"cfit_null", 1},
@@ -3228,7 +3253,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
          pAlt_toys().second); // overrides binomial error used in SamplingDistribution::IntegralAndError
 #endif
 
-   } else {
+   } else if(fPllType != xRooFit::Asymptotics::Unknown) {
 #if ROOT_VERSION_CODE < ROOT_VERSION(6, 27, 00)
       out.fAlternatePValue = pAlt_asymp().first;
       out.fAlternatePValueError = pAlt_asymp().second;
