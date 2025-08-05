@@ -2752,9 +2752,9 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    auto pNullA = (fPllType==xRooFit::Asymptotics::Unknown) ? std::pair(std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::quiet_NaN()) : pNull_asymp();
    auto pAltA = (fPllType==xRooFit::Asymptotics::Unknown) ? std::pair(std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::quiet_NaN()) : pAlt_asymp();
    sigma_mu(true);
-   auto asi = (fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit) ? fAsimov->pll().first
+   auto asi = (fPllType != xRooFit::Asymptotics::Unknown && fAsimov && fAsimov->fUfit && fAsimov->fNull_cfit) ? fAsimov->pll().first
                                                                  : std::numeric_limits<double>::quiet_NaN();
-   if (!std::isnan(asi) && asi > 0 && fPllType != xRooFit::Asymptotics::Unknown) {
+   if (!std::isnan(asi) && asi > 0) {
       // can calculate asymptotic distributions,
       _min = std::min(asi - std::abs(asi), _min);
       _max = std::max(asi + std::abs(asi), _max);
