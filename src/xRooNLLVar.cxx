@@ -700,6 +700,12 @@ xRooNLLVar::xRooFitResult xRooNLLVar::minimize(const std::shared_ptr<ROOT::Fit::
       if (fGlobs)
          std::unique_ptr<RooAbsCollection>(out->constPars().selectCommon(*fGlobs))->setAttribAll("global", true);
    }
+
+   if(fOpts->find("GoF")) {
+      // add pgof to the fit result
+      const_cast<RooArgList &>(out->constPars()).addClone(RooRealVar(".pgof","GoF p-value", pgof()));
+   }
+
    return xRooFitResult(std::make_shared<xRooNode>(out, fPdf), std::make_shared<xRooNLLVar>(*this));
 }
 

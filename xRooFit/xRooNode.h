@@ -340,6 +340,8 @@ public:
    void _ShowVars_(bool set = true); // *TOGGLE* *GETTER=_IsShowVars_
    /** @private */
    bool _IsShowVars_() const;
+   /** @private */
+   void _SetAttribute_(const char* name, const char* value = nullptr); // *MENU*
 
    void SetHidden(bool set = true); // *TOGGLE* *GETTER=IsHidden
    bool IsHidden() const;
@@ -449,7 +451,7 @@ public:
             int seed = 0); // generate a dataset from a pdf node using given fr - if none given will use current fit
 
    /** @private */
-   void _fit_(const char *constParValues = "", const char* options = ""); // *MENU*
+   void _fit_(const char *constParValues = "", const char* options = "GoF"); // *MENU*
    /** @private */
    void _generate_(const char *name = "", bool expected = false); // *MENU*
    /** @private */

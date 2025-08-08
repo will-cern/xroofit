@@ -335,9 +335,14 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
 
       // load list of colors if there is one
       if (auto colors = dynamic_cast<TSeqCollection *>(_ws->obj(gROOT->GetListOfColors()->GetName()))) {
-         gROOT->GetListOfColors()->Clear();
+         TColor::InitializeColors();
+         //gROOT->GetListOfColors()->Clear(); - was getting warnings about colors already defined when overwriting existing list
          for (auto col : *colors) {
-            gROOT->GetListOfColors()->Add(gROOT->GetListOfColors()->IsOwner() ? col->Clone() : col); // in 6.36 root, colors list became owning
+            if(!gROOT->GetListOfColors()->FindObject(col->GetName())) {
+               gROOT->GetListOfColors()->Add(gROOT->GetListOfColors()->IsOwner() ? col->Clone() : col);
+            }
+
+            //gROOT->GetListOfColors()->Add(gROOT->GetListOfColors()->IsOwner() ? col->Clone() : col); // in 6.36 root, colors list became owning
          }
       }
 
@@ -488,6 +493,38 @@ xRooNode::xRooNode(const std::shared_ptr<TObject> &comp, const std::shared_ptr<x
 
 xRooNode::xRooNode(double value) : xRooNode(RooFit::RooConst(value)) {}
 
+void xRooNode::_SetAttribute_(const char* name, const char* value) {
+   TString v(value);
+   v.ToUpper();
+   bool isBool=(v=="TRUE"||v=="FALSE");
+   if(auto a = get<RooAbsArg>(); a) {
+      if(value==nullptr||v=="NULLPTR") {
+         if(a->getAttribute(name)) a->setAttribute(name,false);
+         else if(a->getStringAttribute(name)) a->setStringAttribute(name,nullptr);
+      } else {
+         if(isBool) a->setAttribute(name,(v=="TRUE"));
+         else a->setStringAttribute(name,value);
+      }
+   } else {
+      RooArgList l = argList();
+      for(auto a2 : l) {
+         xRooNode(*a2)._SetAttribute_(name,value);
+      }
+   }
+   // should update this node's state in any browsers ...
+   for(auto a : *gROOT->GetListOfBrowsers()) {
+      TBrowser* b = dynamic_cast<TBrowser*>(a);
+      if(b && GetTreeItem(b)) {
+         if(auto bi = dynamic_cast<TRootBrowser*>(b->GetBrowserImp())) {
+            if (auto fb = dynamic_cast<TGFileBrowser *>(bi->GetActBrowser())) {
+               fb->DoubleClicked(GetTreeItem(b), 0);
+            }
+         }
+      }
+   }
+
+}
+
 void xRooNode::Checked(TObject *obj, bool val)
 {
    if (obj != this)
@@ -549,17 +586,57 @@ void xRooNode::Checked(TObject *obj, bool val)
             } else
                _ws->allVars() = fr->floatParsInit();
          }
-         if (auto item = GetTreeItem(nullptr); item) {
-            // update check marks on siblings
-            if (auto first = item->GetParent()->GetFirstChild()) {
-               do {
-                  if (first->HasCheckBox()) {
-                     auto _obj = static_cast<xRooNode *>(first->GetUserData());
-                     first->CheckItem(_obj->get() && _obj->get()->TestBit(1 << 20));
-                  }
-               } while ((first = first->GetNextSibling()));
+
+         TBrowser* b = nullptr;
+         for(auto a : *gROOT->GetListOfBrowsers()) {
+            b = dynamic_cast<TBrowser*>(a);
+            if(b && GetTreeItem(b)) {
+               break;
             }
          }
+         if(b) {
+            auto p = GetTreeItem(b);
+
+            if(p) {
+               // update check marks on siblings
+               if (auto first = p->GetParent()->GetFirstChild()) {
+                  do {
+                     if (first->HasCheckBox()) {
+                        auto _obj = static_cast<xRooNode *>(first->GetUserData());
+                        first->CheckItem(_obj->get() && _obj->get()->TestBit(1 << 20));
+                     }
+                  } while ((first = first->GetNextSibling()));
+               }
+            }
+
+            // also since const status of pars could have changed, refresh all 'poi' and 'np' open nodes
+            if(auto bi = dynamic_cast<TRootBrowser*>(b->GetBrowserImp())) {
+               if(auto fb = dynamic_cast<TGFileBrowser*>(bi->GetActBrowser())) {
+                  while (p) {
+                     if (TString(p->GetText()).BeginsWith("RooWorkspace::")) {
+                        std::function<void(TGListTreeItem *)> rfunc;
+
+                        rfunc = [&](TGListTreeItem *i) {
+                           if (auto first = i->GetFirstChild()) {
+                              do {
+                                 if (first->IsOpen() &&
+                                     (TString(first->GetText()) == "poi" || TString(first->GetText()) == "np")) {
+                                    fb->DoubleClicked(first, 0);
+                                 } else
+                                    rfunc(first);
+                              } while ((first = first->GetNextSibling()));
+                           }
+                        };
+                        rfunc(p);
+                        break;
+                     } else {
+                        p = p->GetParent();
+                     }
+                  }
+               }
+            }
+         }
+
       }
    }
 }
@@ -3936,6 +4013,9 @@ xRooNode &xRooNode::operator=(const TObject &o)
 void xRooNode::_fit_(const char *constParValues, const char* options)
 {
    try {
+      // re-float all poi and np before fitting
+      np().get<RooArgList>()->setAttribAll("Constant",false);
+      poi().get<RooArgList>()->setAttribAll("Constant",false);
       auto _pars = pars();
       // std::unique_ptr<RooAbsCollection> snap(_pars.argList().snapshot());
       TStringToken pattern(constParValues, ",");
@@ -4005,20 +4085,54 @@ void xRooNode::_fit_(const char *constParValues, const char* options)
          (gROOT->GetListOfBrowsers()->At(0))
             ? dynamic_cast<TGWindow *>(static_cast<TBrowser *>(gROOT->GetListOfBrowsers()->At(0))->GetBrowserImp())
             : gClient->GetRoot();
+      TString gofResult = "";
+      if(_nll.fOpts->find("GoF")) {
+         gofResult = TString::Format("GoF p-value = %g\n",fr->constPars().getRealValue(".pgof"));
+      }
       if (fr->status() != 0) {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished with Bad Status Code",
-                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n-------------%s",
-                                      fr->GetName(), dsetName.Data(), fr->status(), fr->covQual(), statusCodes.Data()),
+                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n%s-------------%s",
+                                      fr->GetName(), dsetName.Data(), fr->status(), fr->covQual(),gofResult.Data(), statusCodes.Data()),
                       kMBIconExclamation, kMBOk);
       } else if (fr->covQual() != 3 && _nll.fitConfig()->ParabErrors()) {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished with Bad Covariance Quality",
-                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n-------------%s",
-                                      fr->GetName(), dsetName.Data(), fr->status(), fr->covQual(), statusCodes.Data()),
+                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n%s-------------%s",
+                                      fr->GetName(), dsetName.Data(), fr->status(), fr->covQual(),gofResult.Data(), statusCodes.Data()),
                       kMBIconExclamation, kMBOk);
       } else {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished Successfully",
-                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n-------------%s",
-                                      fr->GetName(), dsetName.Data(), fr->status(), fr->covQual(), statusCodes.Data()));
+                      TString::Format("%s\nData = %s\nFit Status Code = %d\nCov Quality = %d\n%s-------------%s",
+                                      fr->GetName(), dsetName.Data(), fr->status(), fr->covQual(),gofResult.Data(), statusCodes.Data()));
+      }
+      TBrowser* b = nullptr;
+      for(auto a : *gROOT->GetListOfBrowsers()) {
+         b = dynamic_cast<TBrowser*>(a);
+         if(b && GetTreeItem(b)) {
+            break;
+         }
+      }
+      if(b) {
+         auto p = GetTreeItem(b);
+         while (p) {
+            if (TString(p->GetText()).BeginsWith("RooWorkspace::")) {
+               // found the workspace ... refresh this node, and if there's a fits node, refresh that
+               if(auto bi = dynamic_cast<TRootBrowser*>(b->GetBrowserImp())) {
+                  if(auto fb = dynamic_cast<TGFileBrowser*>(bi->GetActBrowser())) {
+                     fb->DoubleClicked(p,0);
+                     if (auto first = p->GetFirstChild()) {
+                        do {
+                           if (first->IsOpen() && TString(first->GetText())=="fits") {
+                              fb->DoubleClicked(first,0);
+                           }
+                        } while ((first = first->GetNextSibling()));
+                     }
+                  }
+               }
+               break;
+            } else {
+               p = p->GetParent();
+            }
+         }
       }
    } catch (const std::exception &e) {
       new TGMsgBox(
@@ -4034,6 +4148,37 @@ void xRooNode::_generate_(const char *datasetName, bool expected)
 {
    try {
       datasets().Add(datasetName, expected ? "asimov" : "toy");
+      // refresh datasets folder of workspace
+      TBrowser* b = nullptr;
+      for(auto a : *gROOT->GetListOfBrowsers()) {
+         b = dynamic_cast<TBrowser*>(a);
+         if(b && GetTreeItem(b)) {
+            break;
+         }
+      }
+      if(b) {
+         auto p = GetTreeItem(b);
+         while (p) {
+            if (TString(p->GetText()).BeginsWith("RooWorkspace::")) {
+               // found the workspace ... refresh this node, and if there's a datasets node, refresh that
+               if(auto bi = dynamic_cast<TRootBrowser*>(b->GetBrowserImp())) {
+                  if(auto fb = dynamic_cast<TGFileBrowser*>(bi->GetActBrowser())) {
+                     fb->DoubleClicked(p,0);
+                     if (auto first = p->GetFirstChild()) {
+                        do {
+                           if (first->IsOpen() && TString(first->GetText())=="datasets") {
+                              fb->DoubleClicked(first,0);
+                           }
+                        } while ((first = first->GetNextSibling()));
+                     }
+                  }
+               }
+               break;
+            } else {
+               p = p->GetParent();
+            }
+         }
+      }
    } catch (const std::exception &e) {
       new TGMsgBox(
          gClient->GetRoot(),
@@ -4125,6 +4270,37 @@ void xRooNode::_scan_(const char *what, double nToys, const char *xvar, int nBin
       }
 
       _pars.argList() = *snap; // restore pars
+
+      TBrowser* b = nullptr;
+      for(auto a : *gROOT->GetListOfBrowsers()) {
+         b = dynamic_cast<TBrowser*>(a);
+         if(b && GetTreeItem(b)) {
+            break;
+         }
+      }
+      if(b) {
+         auto p = GetTreeItem(b);
+         while (p) {
+            if (TString(p->GetText()).BeginsWith("RooWorkspace::")) {
+               // found the workspace ... refresh this node, and if there's a scans node, refresh that
+               if(auto bi = dynamic_cast<TRootBrowser*>(b->GetBrowserImp())) {
+                  if(auto fb = dynamic_cast<TGFileBrowser*>(bi->GetActBrowser())) {
+                     fb->DoubleClicked(p,0);
+                     if (auto first = p->GetFirstChild()) {
+                        do {
+                           if (first->IsOpen() && TString(first->GetText())=="scans") {
+                              fb->DoubleClicked(first,0);
+                           }
+                        } while ((first = first->GetNextSibling()));
+                     }
+                  }
+               }
+               break;
+            } else {
+               p = p->GetParent();
+            }
+         }
+      }
 
    } catch (const std::exception &e) {
       new TGMsgBox(
@@ -6348,7 +6524,7 @@ xRooNode xRooNode::factors() const
       int _npdfs = p->pdfList().size();
       for (auto &o : p->pdfList()) {
          out.emplace_back(std::make_shared<xRooNode>(*o, *this));
-         if (_npdfs > 5 && o != _main.get())
+         if (_npdfs > 5 && o != _main.get() && out.back()->robs().size()==0) // constraints have no robs in them
             out.back()->fFolder = "!constraints";
       }
    } else if (auto p2 = get<RooProduct>(); p2) {
@@ -9178,6 +9354,10 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                bool used = false;
                do {
                   hh->SetFillColor(gEnv->GetValue("XRooFit.MinFillColor",kP10Blue /* was previously 2*/) + (count++));
+                  if(!gROOT->GetColor(hh->GetFillColor())) {
+                     // color doesn't exist, default it to transparent?
+                     hh->SetFillColor(0);
+                  }
                   // check not already used this color
                   used = false;
                   for (auto ho2 : *ll) {
