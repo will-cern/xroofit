@@ -5292,9 +5292,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
          }
          RooMsgService::instance().setGlobalKillBelow(msglevel);
          return std::shared_ptr<TObject>(_ws->embeddedData(arg->GetName()), [](TObject *) {});
-      } else if (arg->InheritsFrom("RooFitResult") || arg->InheritsFrom("TTree") || arg->IsA() == TStyle::Class() ||
-                 arg->InheritsFrom("RooStats::HypoTestInverterResult") ||
-                 arg->InheritsFrom("RooStats::HypoTestResult") || arg->InheritsFrom("RooStats::ModelConfig")) {
+      } else if (arg->InheritsFrom("TNamed")) { // can add any TNamed to a workspace
          TObject *out_arg = nullptr;
          if(auto fr = dynamic_cast<RooFitResult*>(&*arg); fr && fr->numStatusHistory()==0) {
             // fit results without a status history are treated as snapshots
@@ -5322,21 +5320,7 @@ std::shared_ptr<TObject> xRooNode::acquire(const std::shared_ptr<TObject> &arg, 
             }
          }
          RooMsgService::instance().setGlobalKillBelow(msglevel);
-         /* this doesnt work because caller has its own version of fParent, not the one in the browser
-         for(auto o : *gROOT->GetListOfBrowsers()) {
-             if(auto b = dynamic_cast<TBrowser*>(o); b){
-                 if(auto _b = dynamic_cast<TGFileBrowser*>( dynamic_cast<TRootBrowser*>(b->GetBrowserImp())->fActBrowser
-         ); _b) { if (auto item = _b->fListTree->FindItemByObj(_b->fRootDir,this); item) { auto _tmp = _b->fListLevel;
-                         _b->fListLevel = item;
-                         bool _tmp2 = item->IsOpen();
-                         item->SetOpen(false);
-                         this->Browse(b);
-                         item->SetOpen(_tmp2);
-                         _b->fListLevel = _tmp;
-                     }
-                 }
-             }
-         }*/
+
          return std::shared_ptr<TObject>(out_arg, [](TObject *) {});
       }
       RooMsgService::instance().setGlobalKillBelow(msglevel);
