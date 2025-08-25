@@ -321,7 +321,7 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       high = p->getMax("scan");
    }
    if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
-      p->setRange("scan", std::min(low,high), std::max(low,high));
+      p->setRange("scan", std::min(low, high), std::max(low, high));
    }
    if (p->hasRange("scan")) {
       ::Info("xRooHypoSpace::scan", "Using %s scan range: %g - %g", p->GetName(), p->getMin("scan"), p->getMax("scan"));
@@ -364,12 +364,13 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
 
    // create a fitDatabase if required
    TDirectory *origDir = gDirectory;
-   if(fFitDb) {
+   if (fFitDb) {
       // move to the db, and unlock it if this is a TMemFile
       fFitDb->cd();
-      if(auto myDb = dynamic_cast<TMemFile*>(fFitDb.get())) {
+      if (auto myDb = dynamic_cast<TMemFile *>(fFitDb.get())) {
          // need to unlock the database
-         *reinterpret_cast<Bool_t*>(reinterpret_cast<unsigned char *>(myDb) + myDb->Class()->GetDataMemberOffset("fWritable")) = true;
+         *reinterpret_cast<Bool_t *>(reinterpret_cast<unsigned char *>(myDb) +
+                                     myDb->Class()->GetDataMemberOffset("fWritable")) = true;
       }
    }
    if (!gDirectory || !gDirectory->IsWritable()) {
@@ -385,17 +386,20 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
          new TMemFile("fitDatabase", "RECREATE");
       }*/
       // now we create a TMemFile of our own, so that we don't get in the way of other hypoSpaces
-      fFitDb = std::shared_ptr<TDirectory>(new TMemFile(TString::Format("fitDatabase_%s",TUUID().AsString()),"RECREATE"),[](TDirectory *) {});
+      fFitDb = std::shared_ptr<TDirectory>(
+         new TMemFile(TString::Format("fitDatabase_%s", TUUID().AsString()), "RECREATE"), [](TDirectory *) {});
       // db can last longer than the hypoSpace, so that the fits are fully available in the browser
       // if a scan was initiated through the browser. If user wants to cleanup they can do manually
       // through root's GetListOfFiles()
-      // would like to clean it up ourself when the hypoSpace is destroyed, but would need way to keep alive for the browser
+      // would like to clean it up ourself when the hypoSpace is destroyed, but would need way to keep alive for the
+      // browser
    }
 
    int out = 0;
 
    // enable visualizing by default if scanning in non-batch mode
-   if(!gROOT->IsBatch() && !sType.Contains("visualize")) sType += " visualize";
+   if (!gROOT->IsBatch() && !sType.Contains("visualize"))
+      sType += " visualize";
 
    if (nPoints == 0) {
       // automatic scan
@@ -424,13 +428,15 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       if (nPoints == 1) {
          AddPoint(TString::Format("%s=%g", poi().first()->GetName(), (high + low) / 2.));
          graphs(sType); // triggers computation
-         if(back().status()!=0) out += 1;
+         if (back().status() != 0)
+            out += 1;
       } else {
          double step = (high - low) / (nPoints - 1);
          for (size_t i = 0; i < nPoints; i++) {
             AddPoint(TString::Format("%s=%g", poi().first()->GetName(), low + step * i));
             graphs(sType); // triggers computation
-            if(back().status()!=0) out += 1;
+            if (back().status() != 0)
+               out += 1;
          }
       }
    }
@@ -438,9 +444,10 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
    if (origDir)
       origDir->cd();
 
-   if(auto myDb = dynamic_cast<TMemFile*>(fFitDb.get())) {
+   if (auto myDb = dynamic_cast<TMemFile *>(fFitDb.get())) {
       // need to lock the database, because if its writable when pyroot closes it causes a crash
-      *reinterpret_cast<Bool_t*>(reinterpret_cast<unsigned char *>(myDb) + myDb->Class()->GetDataMemberOffset("fWritable")) = false;
+      *reinterpret_cast<Bool_t *>(reinterpret_cast<unsigned char *>(myDb) +
+                                  myDb->Class()->GetDataMemberOffset("fWritable")) = false;
    }
 
    return out;
@@ -734,7 +741,6 @@ RooArgList xRooNLLVar::xRooHypoSpace::poi()
    return out;
 }
 
-
 void xRooNLLVar::xRooHypoSpace::Print(Option_t * /*opt*/) const
 {
 
@@ -794,7 +800,7 @@ void xRooNLLVar::xRooHypoSpace::Print(Option_t * /*opt*/) const
          auto cfit_lbound = const_cast<xRooHypoPoint &>(at(i)).cfit_lbound(true);
          if (!cfit_lbound) {
          } else {
-            std::cout << ",cfit_lbound:"<< cfit_lbound->status();
+            std::cout << ",cfit_lbound:" << cfit_lbound->status();
             badFits += (xRooNLLVar::xRooHypoPoint::allowedStatusCodes.count(cfit_lbound->status()) == 0);
          }
       }
@@ -1064,10 +1070,10 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
          out->GetHistogram()->GetXaxis()->SetTitle(exp->GetHistogram()->GetXaxis()->GetTitle());
          out->GetHistogram()->GetYaxis()->SetTitle(exp->GetHistogram()->GetYaxis()->GetTitle());
       }
-      TLegend* leg = nullptr;
-      if(out->GetListOfGraphs()->GetEntries()>1) {
+      TLegend *leg = nullptr;
+      if (out->GetListOfGraphs()->GetEntries() > 1) {
          leg = new TLegend(1. - gStyle->GetPadRightMargin() - 0.3, 1. - gStyle->GetPadTopMargin() - 0.35,
-                                1. - gStyle->GetPadRightMargin() - 0.05, 1. - gStyle->GetPadTopMargin() - 0.05);
+                           1. - gStyle->GetPadRightMargin() - 0.05, 1. - gStyle->GetPadTopMargin() - 0.05);
          leg->SetName("legend");
          leg->SetBit(kCanDelete);
 
@@ -1083,8 +1089,8 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
          }
       }
 
-      auto addToLegend = [](TLegend* l, const char* label, const std::pair<double,double> val) {
-         if(l) {
+      auto addToLegend = [](TLegend *l, const char *label, const std::pair<double, double> val) {
+         if (l) {
             l->AddEntry((TObject *)nullptr,
                         TString::Format("%s%s: %g #pm %g%s", std::isfinite(val.second) ? "" : "#color[2]{", label,
                                         val.first, val.second, std::isfinite(val.second) ? "" : "}"),
@@ -1096,27 +1102,27 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
          // add current limit estimates to legend
          if (exp2 && exp2->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp-2")));
-            addToLegend(leg,"-2#sigma",l);
+            addToLegend(leg, "-2#sigma", l);
          }
          if (exp1 && exp1->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp-1")));
-            addToLegend(leg,"-1#sigma",l);
+            addToLegend(leg, "-1#sigma", l);
          }
          if (exp && exp->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*exp));
-            addToLegend(leg,"0#sigma",l);
+            addToLegend(leg, "0#sigma", l);
          }
          if (exp1 && exp1->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp+1")));
-            addToLegend(leg,"+1#sigma",l);
+            addToLegend(leg, "+1#sigma", l);
          }
          if (exp2 && exp2->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*graph(sOpt + "exp+2")));
-            addToLegend(leg,"+2#sigma",l);
+            addToLegend(leg, "+2#sigma", l);
          }
          if (obs && obs->GetN() > 1) {
             auto l = xRooFit::matchPrecision(GetLimit(*obs));
-            addToLegend(leg,"Observed",l);
+            addToLegend(leg, "Observed", l);
          }
       }
       if (testedPoints)
@@ -1549,7 +1555,8 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
          gPad->Clear();
       }
       if (gra) {
-         if(!gPad) TCanvas::MakeDefCanvas();
+         if (!gPad)
+            TCanvas::MakeDefCanvas();
          auto gra2 = static_cast<TMultiGraph *>(gra->DrawClone(sOpt.Contains("same") ? "" : "A"));
          gra2->SetBit(kCanDelete);
          if (sOpt.Contains("pcls") || sOpt.Contains("pnull")) {
