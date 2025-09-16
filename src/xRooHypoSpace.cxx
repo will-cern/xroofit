@@ -370,12 +370,12 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
       if (auto myDb = dynamic_cast<TMemFile *>(fFitDb.get())) {
          // need to unlock the database
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 38, 00)
-      myDb->SetWritable(true);
+         myDb->SetWritable(true);
 #else
          *reinterpret_cast<Bool_t *>(reinterpret_cast<unsigned char *>(myDb) +
                                      myDb->Class()->GetDataMemberOffset("fWritable")) = true;
-      }
 #endif
+      }
    }
    if (!gDirectory || !gDirectory->IsWritable()) {
       // locate a TMemFile in the open list of files and move to that
@@ -455,8 +455,8 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
 #else
       *reinterpret_cast<Bool_t *>(reinterpret_cast<unsigned char *>(myDb) +
                                   myDb->Class()->GetDataMemberOffset("fWritable")) = false;
-   }
 #endif
+   }
    return out;
 }
 
