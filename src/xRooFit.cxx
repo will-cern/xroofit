@@ -632,7 +632,8 @@ public:
             // doing a hesse step, estimate progress based on evaluations
             int nRequired = prevPars.size();
             if (nRequired > 1) {
-               nRequired *= nRequired;
+               nRequired *= (nRequired-1);
+               nRequired /= 2; // since only need to do the a 'triangle' of the hessian matrix
                if (fState == "Hesse3") {
                   nRequired *= 4;
                }
