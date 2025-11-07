@@ -437,29 +437,33 @@ xRooNode::xRooNode(const char *name, const std::shared_ptr<TObject> &comp, const
                     "Inferring initial errors of %d parameters (%s%s) (give all nuisance parameters an error to avoid "
                     "this msg)",
                     int(noErrorPars.size()), (*noErrorPars.begin())->GetName(), (noErrorPars.size() > 1) ? ",..." : "");
-            // get the first top-level pdf
-            browse();
-            for (auto &a : *this) {
-               if (noErrorPars.empty()) {
-                  break;
-               }
-               if (a->fFolder == "!pdfs") {
-                  try {
-                     auto fr = a->floats().reduced(parNames).fitResult("prefit");
-                     if (auto _fr = fr.get<RooFitResult>(); _fr) {
-                        std::set<RooRealVar *> foundPars;
-                        for (auto &v : noErrorPars) {
-                           if (auto arg = dynamic_cast<RooRealVar *>(_fr->floatParsFinal().find(v->GetName()));
-                               arg && arg->hasError()) {
-                              v->setError(arg->getError());
-                              foundPars.insert(v);
+            if (gEnv->GetValue("XRooFit.SkipInitParErrorInference", false)) {
+               Warning("xRooNode", "Skipping because XRooFit.SkipInitParErrorInference=true. This is expert-only, you should fix your workspaces!");
+            } else {
+               // get the first top-level pdf
+               browse();
+               for (auto &a : *this) {
+                  if (noErrorPars.empty()) {
+                     break;
+                  }
+                  if (a->fFolder == "!pdfs") {
+                     try {
+                        auto fr = a->floats().reduced(parNames).fitResult("prefit");
+                        if (auto _fr = fr.get<RooFitResult>(); _fr) {
+                           std::set<RooRealVar *> foundPars;
+                           for (auto &v : noErrorPars) {
+                              if (auto arg = dynamic_cast<RooRealVar *>(_fr->floatParsFinal().find(v->GetName()));
+                                  arg && arg->hasError()) {
+                                 v->setError(arg->getError());
+                                 foundPars.insert(v);
+                              }
+                           }
+                           for (auto &v : foundPars) {
+                              noErrorPars.erase(v);
                            }
                         }
-                        for (auto &v : foundPars) {
-                           noErrorPars.erase(v);
-                        }
+                     } catch (...) {
                      }
-                  } catch (...) {
                   }
                }
             }
