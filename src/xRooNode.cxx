@@ -4194,7 +4194,7 @@ void xRooNode::_fit_(const char *constParValues, const char *options)
             : gClient->GetRoot();
       TString gofResult = "";
       if (_nll.fOpts->find("GoF")) {
-         gofResult = TString::Format("GoF p-value = %g\n", fr->constPars().getRealValue(".pgof"));
+         gofResult = TString::Format("GoF p-value = %g (mainTerm = %g)\n", fr->constPars().getRealValue(".pgof"),fr->constPars().getRealValue(".mainterm_pgof"));
       }
       if (fr->status() != 0) {
          new TGMsgBox(gClient->GetRoot(), w, "Fit Finished with Bad Status Code",
@@ -9252,7 +9252,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       if (!rarNode->components().empty()) {
          auto comps = rarNode->components()[0];
          for (auto &c : *comps) {
-            if (c->fFolder == "!.coeffs")
+            if (c->fFolder == "!.coeffs" || c->fFolder == "!.coeffpars")
                cms_coefs.add(*c->get<RooAbsArg>());
          }
       }
@@ -9261,12 +9261,19 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          std::shared_ptr<TH1> prevHist(static_cast<TH1 *>(h->Clone()));
          prevHist->Reset();
          prevHist->Add(h);
+         // Nov25: discovered cms CMSHistSum has really heavy caching, that wont clear until I clone
+         // i.e. I must first copy the function, then redirect the server, then copy that function
+         // the copy of the copy will give the correct results, not the copy
+         // This wasn't necessary for the CMSHistErrorPropagator class that I had before.
+         std::unique_ptr<RooAbsReal> forig(
+            dynamic_cast<RooAbsReal *>(rarNode->components()[0]->get()->Clone("tmpCopy0")));
          for (auto c : cms_coefs) {
             // seems I have to remake the function each time, as haven't figured out what cache needs clearing?
-            std::unique_ptr<RooAbsReal> f(
-               dynamic_cast<RooAbsReal *>(rarNode->components()[0]->get()->Clone("tmpCopy")));
+
             zero.setAttribute(Form("ORIGNAME:%s", c->GetName())); // used in redirectServers to say what this replaces
-            f->redirectServers(RooArgSet(zero), false, true);     // each time will replace one additional coef
+            forig->redirectServers(RooArgSet(zero), false, true);     // each time will replace one additional coef
+            std::unique_ptr<RooAbsReal> f(dynamic_cast<RooAbsReal *>(forig->Clone("tmpCopy")));
+
             // zero.setAttribute(Form("ORIGNAME:%s",c->GetName()),false); (commented out so that on next iteration
             // will still replace all prev)
             auto hh = xRooNode(*f, *this).BuildHistogram(v);
@@ -9275,6 +9282,11 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                hh->Scale(sf->getVal());
             if (strlen(hh->GetTitle()) == 0) {
                hh->SetTitle(c->GetName()); // ensure all hists has titles
+               // special case for CMS ... if find "_proc_" in the title, take whatever is after that
+               auto idx = TString(hh->GetTitle()).Index("_proc_");
+               if(idx>=0) {
+                  hh->SetTitle(TString(TString(hh->GetTitle())(idx+6,strlen(hh->GetTitle()))));
+               }
                histsWithBadTitles.insert(hh);
             } else if (strcmp(hh->GetName(), hh->GetTitle()) == 0) {
                histsWithBadTitles.insert(hh);
@@ -9284,6 +9296,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             std::shared_ptr<TH1> nextHist(static_cast<TH1 *>(hh->Clone()));
             hh->Add(prevHist.get(), -1.);
             hh->Scale(-1.);
+            // remove the errors ... the above lines will have introduced errors
+            hh->TH1::Reset("ICE"); // calling the base class method explicitly will only clear errors
             hhs.push_back(hh);
             prevHist = nextHist;
          }
