@@ -1976,6 +1976,9 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
    }
 
    if (auto p = get<RooAddPdf>(); p) {
+      auto cc = child.fComp;
+      //bool isConverted = (cc != child.convertForAcquisition(*this, sOpt));
+      child.convertForAcquisition(*this, sOpt);
       if ((child.get<RooAbsPdf>() || (!child.fComp && getObject<RooAbsPdf>(child.GetName())))) {
          auto out = (child.fComp) ? acquire(child.fComp) : getObject<RooAbsArg>(child.GetName());
          // don't add a coef if in 'all-extended' mode and this pdf is extendable
@@ -5261,9 +5264,9 @@ std::shared_ptr<TObject> xRooNode::convertForAcquisition(xRooNode &acquirer, con
 
       fComp = _f;
       return _f;
-   } else if (!get() && sName.BeginsWith("factory:") && acquirer.ws()) {
+   } else if (!get() && (sName.BeginsWith("factory:")||sName.Contains("::")) && acquirer.ws()) {
       TString s(sName);
-      s = TString(s(8, s.Length()));
+      if(sName.BeginsWith("factory:")) s = TString(s(8, s.Length()));
       fComp.reset(acquirer.ws()->factory(s), [](TObject *) {});
       if (fComp) {
          const_cast<xRooNode *>(this)->TNamed::SetName(fComp->GetName());
