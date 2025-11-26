@@ -9171,8 +9171,8 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          double upVal, downVal;
          if (errorsLo || errorsHi) {
             std::sort(vals.begin(), vals.end());
-            upVal = vals.at(std::round(vals.size() * ROOT::Math::gaussian_cdf(1)));
-            downVal = vals.at(std::round(vals.size() * ROOT::Math::gaussian_cdf(-1)));
+            upVal = vals.at(std::floor(vals.size() * ROOT::Math::gaussian_cdf(1)));
+            downVal = vals.at(std::floor(vals.size() * ROOT::Math::gaussian_cdf(-1)));
             if (!errorsLo)
                downVal = 2. * h->GetBinContent(i) - upVal;
             if (!errorsHi)
