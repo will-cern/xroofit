@@ -10,6 +10,7 @@ build:
     - source /release_setup.sh
     - mkdir -p build
     - cd build
+    - env
     - cmake ../xRooFit
     - make -j4
   artifacts:
