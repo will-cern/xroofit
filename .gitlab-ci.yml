@@ -5,7 +5,7 @@ stages:
 
 build:
   stage: build
-  image: gitlab-registry.cern.ch/atlas-sit/docker/centos7-atlasos:latest-gcc11
+  image: gitlab-registry.cern.ch/atlas-sit/docker/centos7-atlasos:1.4.1-gcc11
   script:
     - echo $PATH
     - source /release_setup.sh
