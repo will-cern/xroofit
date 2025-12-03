@@ -7,11 +7,11 @@ build:
   stage: build
   image: gitlab-registry.cern.ch/atlas/statanalysis:0-2-4
   script:
-    - env
+    - echo $PATH
     - source /release_setup.sh
     - mkdir -p build
     - cd build
-    - env
+    - echo $PATH
     - which cmake
     - cmake ../xRooFit
     - make -j4
@@ -22,11 +22,9 @@ build:
       #- pyfittools
 
 
-
-image: python:3.6
-
 send-snapshot:
   stage: deploy
+  image: python:3.6
   rules:
     - if: $CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+/
   script:
