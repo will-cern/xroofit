@@ -5,7 +5,7 @@ stages:
 
 build:
   stage: build
-  image: gitlab-registry.cern.ch/atlas/statanalysis:base_image
+  image: gitlab-registry.cern.ch/atlas/statanalysis:base-image-centos
   script:
     - echo $PATH
     - source /release_setup.sh
