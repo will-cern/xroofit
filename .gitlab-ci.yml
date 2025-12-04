@@ -13,7 +13,7 @@ build:
     - cd build
     - echo $PATH
     - which cmake
-    - cmake ../xRooFit
+    - cmake ../
     - make -j4
   artifacts:
     paths: 
