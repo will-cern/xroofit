@@ -12240,7 +12240,11 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
       }
 #endif
       // const_cast<Node2*>(this)->sterilize(); - tried this to reduce mem leak on readback but no improve
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 38, 00)
       if (!w->writeToFile(sFilename, sOpt != "update")) {
+#else
+      if (w->writeToFile(sFilename, sOpt != "update")) {
+#endif
          Info("SaveAs", "%s saved to %s", w->GetName(), sFilename.Data());
          // save any fitDatabase that is loaded in memory too
          // TODO: We should do this as well for SaveAs on a scan object
