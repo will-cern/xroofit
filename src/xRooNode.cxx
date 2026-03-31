@@ -1907,9 +1907,16 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
          SetTitle(TString(GetTitle()) + " + " + child.GetTitle());
          return *this;
       }
+      auto _arg = child.get<RooAbsArg>();
+      if(auto _ds = dynamic_cast<RooDataSet*>(p); _arg && _ds) {
+         // can add var or function of existing obs to dataset as a column
+         _ds->addColumn(*_arg);
+         _arg->setAttribute("obs");
+         return xRooNode(*_arg,*this);
+      }
       auto _h = child.get<TH1>();
       if (!_h) {
-         throw std::runtime_error("Can only add histogram or dataset to data");
+         throw std::runtime_error("Can only add histogram or var/expr or dataset to data");
       }
       auto _pdf = parentPdf();
       if (!_pdf)
