@@ -1353,6 +1353,10 @@ const char *xRooNode::GetIconName() const
 
 const char *xRooNode::GetNodeType() const
 {
+   if(auto rrs = get<RooRealSumPdf>(); rrs) {
+      // if is BinnedLikelihood show that option
+      if(rrs->getAttribute("BinnedLikelihood")) return "BinnedLikelihood";
+   }
    if (auto o = get(); o && fParent && (fParent->get<RooProduct>() || fParent->get<RooRealSumPdf>())) {
       if (o->InheritsFrom("RooStats::HistFactory::FlexibleInterpVar"))
          return "Overall";
