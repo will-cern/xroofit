@@ -11613,6 +11613,10 @@ void xRooNode::Draw(Option_t *opt)
    if (!hasSame)
       clearPad();
 
+   if(rar->getAttribute("Logy")) {
+      gPad->SetLogy(1);
+   }
+
    if (rar == vv && rar->IsA() == RooRealVar::Class()) {
       // add a TExec to the histogram so that when edited it will propagate to var
       // h->GetListOfFunctions()->Add(h->Clone("self"),"TEXTHIST");
