@@ -9257,6 +9257,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
       bool titleMatchName = true;
       std::map<std::string, TH1 *> histGroups;
       std::vector<TH1 *> hhs;
+      std::set<std::pair<size_t,TH1*>> ordered_hhs;
       std::set<TH1 *> histsWithBadTitles; // these histograms will have their titles autoFormatted
 
       // support for CMS model case where has single component containing many coeffs
@@ -9312,7 +9313,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             hh->Scale(-1.);
             // remove the errors ... the above lines will have introduced errors
             hh->TH1::Reset("ICE"); // calling the base class method explicitly will only clear errors
-            hhs.push_back(hh);
+            ordered_hhs.insert(std::pair(ordered_hhs.size(),hh));
             prevHist = nextHist;
          }
       } else if (get<RooSimultaneous>()) {
@@ -9341,7 +9342,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
                titleMatchName &= (TString(samp->GetName()) == hh->GetTitle() ||
                                   TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
                hh->SetBinContent(hh->GetXaxis()->FindFixBin(chanName), samp->GetContent());
-               hhs.push_back(hh);
+               ordered_hhs.insert(std::pair(ordered_hhs.size(),hh));
             }
          }
       } else {
@@ -9352,7 +9353,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             hh->SetName(samp->GetName());
             if (sf)
                hh->Scale(sf->getVal());
-            hhs.push_back(hh);
+            ordered_hhs.insert(std::pair((samp->get<RooAbsArg>() && samp->get<RooAbsArg>()->getStringAttribute("StackOrder")) ? TString(samp->get<RooAbsArg>()->getStringAttribute("StackOrder")).Atoi() : ordered_hhs.size(),hh));
             if (strlen(hh->GetTitle()) == 0) {
                hh->SetTitle(samp->GetName()); // ensure all hists has titles
                histsWithBadTitles.insert(hh);
@@ -9362,6 +9363,11 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             titleMatchName &= (TString(samp->GetName()) == hh->GetTitle() ||
                                TString(hh->GetTitle()).BeginsWith(TString(samp->GetName()) + "_"));
          }
+      }
+
+      // pull histograms in their order
+      for(auto& [_,hh] : ordered_hhs) {
+         hhs.push_back(hh);
       }
 
       if (!hhs.empty()) {
