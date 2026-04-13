@@ -687,7 +687,7 @@ RooArgList xRooNLLVar::xRooFitResult::ranknp(const char *poi, bool up, bool pref
       auto vv = static_cast<RooRealVar *>(out.at(out.size() - 1));
       vv->setVal(v);
       vv->removeError();
-      vv->removeRange();
+      vv->removeMin();vv->removeMax();//vv->removeRange();
    }
    return out;
 }
@@ -3054,8 +3054,8 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints
          if (tsType == xRooFit::TestStatistic::qmutilde) {
             dynamic_cast<RooRealVar *>(p)->setRange("physical", 0, std::numeric_limits<double>::infinity());
             Info("xRooNLLVar::hypoSpace", "Setting physical range of %s to [0,inf]", p->GetName());
-         } else if (dynamic_cast<RooRealVar *>(p)->hasRange("physical")) {
-            dynamic_cast<RooRealVar *>(p)->removeRange("physical");
+         } else if (auto v = dynamic_cast<RooRealVar *>(p); v->hasRange("physical")) {
+            v->removeMin("physical"); v->removeMax("physical");//v->removeRange("physical");
             Info("xRooNLLVar::hypoSpace", "Removing physical range of %s", p->GetName());
          }
       }
