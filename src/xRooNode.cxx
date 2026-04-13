@@ -829,6 +829,16 @@ void xRooNode::Browse(TBrowser *b)
             formu.ReplaceAll(TString::Format("x[%zu]", i), gv->dependents()[i].GetName());
          }
          _name += formu;
+      } else if(auto pi = v->get<PiecewiseInterpolation>()) {
+         // check if all interpCodes are the same.
+         std::set<int> interpCodes;
+         for(auto& c : pi->interpolationCodes()) interpCodes.insert(c);
+         if(interpCodes.size()==1) { _name  += TString::Format(" [InterpCode=%d]",*interpCodes.begin()); }
+      } else if(auto fiv = v->get<RooStats::HistFactory::FlexibleInterpVar>()) {
+         // check if all interpCodes are the same.
+         std::set<int> interpCodes;
+         for(auto& c : fiv->interpolationCodes()) interpCodes.insert(c==4 ? 5 : c); // in definition of FlexibleInterpVar 4 gets replaced with 5
+         if(interpCodes.size()==1) { _name  += TString::Format(" [InterpCode=%d]",*interpCodes.begin()); }
       }
       // tool tip defaults to displaying name and title, so temporarily set name to obj name if has one
       // and set title to the object type
@@ -2804,6 +2814,16 @@ void xRooNode::Print(Option_t *opt) const
                   formu.ReplaceAll(TString::Format("x[%zu]", i), gv->dependents()[i].GetName());
                }
                _suffix += formu;
+            } else if(auto pi = get<PiecewiseInterpolation>()) {
+               // check if all interpCodes are the same. Will include in the NodeType
+               std::set<int> interpCodes;
+               for(auto& c : pi->interpolationCodes()) interpCodes.insert(c);
+               if(interpCodes.size()==1) { _suffix  += TString::Format(" [InterpCode=%d]",*interpCodes.begin()); }
+            } else if(auto fiv = get<RooStats::HistFactory::FlexibleInterpVar>()) {
+               // check if all interpCodes are the same.
+               std::set<int> interpCodes;
+               for(auto& c : fiv->interpolationCodes()) interpCodes.insert(c==4 ? 5 : c); // in definition of FlexibleInterpVar 4 gets replaced with 5
+               if(interpCodes.size()==1) { _suffix  += TString::Format(" [InterpCode=%d]",*interpCodes.begin()); }
             }
             std::cout << get()->ClassName() << "::" << get()->GetName() << _suffix.Data() << std::endl;
          }
@@ -2864,6 +2884,16 @@ void xRooNode::Print(Option_t *opt) const
                      formu.ReplaceAll(TString::Format("x[%zu]", j), gv->dependents()[j].GetName());
                   }
                   _suffix += formu;
+               } else if(auto pi = k->get<PiecewiseInterpolation>()) {
+                  // check if all interpCodes are the same. Will include in the NodeType
+                  std::set<int> interpCodes;
+                  for(auto& c : pi->interpolationCodes()) interpCodes.insert(c);
+                  if(interpCodes.size()==1) { _suffix  += TString::Format(" [InterpCode=%d]",*interpCodes.begin()); }
+               } else if(auto fiv = k->get<RooStats::HistFactory::FlexibleInterpVar>()) {
+                  // check if all interpCodes are the same.
+                  std::set<int> interpCodes;
+                  for(auto& c : fiv->interpolationCodes()) interpCodes.insert(c==4 ? 5 : c); // in definition of FlexibleInterpVar 4 gets replaced with 5
+                  if(interpCodes.size()==1) { _suffix  += TString::Format(" [InterpCode=%d]",*interpCodes.begin()); }
                }
                std::cout << k->get()->ClassName() << "::" << k->get()->GetName() << _suffix.Data() << std::endl;
             }
