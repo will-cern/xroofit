@@ -2113,11 +2113,12 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
             if (_obs.empty()) {
                // using X axis to construct hist
                auto _ax = dynamic_cast<Axis2 *>(GetXaxis());
-               auto t = TH1::AddDirectoryStatus();
-               TH1::AddDirectory(false);
-               auto h =
-                  std::make_unique<TH1D>(child.GetName(), child.GetTitle(), _ax->GetNbins(), _ax->binning()->array());
-               TH1::AddDirectory(t);
+               std::unique_ptr<TH1D> h;
+               {
+                  TDirectory::TContext ctx{nullptr}; // No self-registration to directories
+                  h = std::make_unique<TH1D>(child.GetName(), child.GetTitle(), _ax->GetNbins(),
+                                             _ax->binning()->array());
+               }
                h->GetXaxis()->SetName(TString::Format("%s;%s", _ax->GetParent()->GetName(), _ax->GetName()));
                // technically convertForAcquisition has already acquired so no need to re-acquire but should be harmless
                _func = std::dynamic_pointer_cast<RooAbsArg>(acquire(xRooNode(*h).convertForAcquisition(*this)));
@@ -2132,11 +2133,12 @@ xRooNode xRooNode::Add(const xRooNode &child, Option_t *opt)
                      break;
                   }
                }
-               auto t = TH1::AddDirectoryStatus();
-               TH1::AddDirectory(false);
-               auto h = std::make_unique<TH1D>(child.GetName(), child.GetTitle(), _x->numBins(binningName),
-                                               _x->getBinningPtr(binningName)->array());
-               TH1::AddDirectory(t);
+               std::unique_ptr<TH1D> h;
+               {
+                  TDirectory::TContext ctx{nullptr}; // No self-registration to directories
+                  h = std::make_unique<TH1D>(child.GetName(), child.GetTitle(), _x->numBins(binningName),
+                                             _x->getBinningPtr(binningName)->array());
+               }
                h->GetXaxis()->SetName(
                   TString::Format("%s;%s", dynamic_cast<TObject *>(_x)->GetName(), binningName.Data()));
                // technically convertForAcquisition has already acquired so no need to re-acquire but should be harmless
@@ -4553,16 +4555,14 @@ bool xRooNode::SetBinContent(int bin, double value, const char *par, double parV
          if (auto ax = GetXaxis(); ax) {
             std::shared_ptr<TH1D> h;
             auto _b = dynamic_cast<Axis2 *>(ax)->binning();
-            auto t = TH1::AddDirectoryStatus();
-            TH1::AddDirectory(false);
             if (_b->isUniform()) {
+               TDirectory::TContext ctx{nullptr}; // No self-registration to directories
                h.reset(new TH1D(GetName(), GetTitle(), _b->numBins(), _b->lowBound(), _b->highBound()));
             } else {
+               TDirectory::TContext ctx{nullptr}; // No self-registration to directories
                h.reset(new TH1D(GetName(), GetTitle(), _b->numBins(), _b->array()));
             }
             h->SetOption("nostyle"); // don't transfer style when added
-            h->SetDirectory(nullptr);
-            TH1::AddDirectory(t);
             h->GetXaxis()->SetName(TString::Format("%s;%s", ax->GetParent()->GetName(), ax->GetName()));
             fComp = h;
          }
@@ -8621,8 +8621,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
    TObject *vv = rar;
 
-   auto t = TH1::AddDirectoryStatus();
-   TH1::AddDirectory(false);
+
    TH1 *h = nullptr;
    if (!v) {
       if (binStart != -1 || binEnd != -1) { // allow v to stay nullptr if doing integral (binStart=binEnd=-1)
@@ -8636,6 +8635,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          vv = dynamic_cast<TObject *>(v);
       } else {
          // make a single-bin histogram of just this value
+         TDirectory::TContext ctx{nullptr}; // No self-registration to directories
          h = new TH1D(rar->GetName(), rar->GetTitle(), 1, 0, 1);
          h->GetXaxis()->SetBinLabel(1, rar->GetName());
          h->GetXaxis()->SetTimeFormat(rar->GetName());
@@ -8646,16 +8646,21 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    bool setTitle = false;
    if (templateHist) {
       // using template hist for the binning
-      h = static_cast<TH1 *>(templateHist->Clone(rar->GetName()));
+      {
+         TDirectory::TContext ctx{nullptr}; // No self-registration to directories
+         h = static_cast<TH1 *>(templateHist->Clone(rar->GetName()));
+      }
       if (h->GetListOfFunctions())
          h->GetListOfFunctions()->Clear();
-      h->SetDirectory(0);
       h->SetTitle(rar->GetTitle());
       h->Reset();
    } else if (x) {
       if (x == rar) {
          // self histogram ...
-         h = new TH1D(rar->GetName(), rar->GetTitle(), 1, 0, 1);
+         {
+            TDirectory::TContext ctx{nullptr}; // No self-registration to directories
+            h = new TH1D(rar->GetName(), rar->GetTitle(), 1, 0, 1);
+         }
          h->Sumw2();
          h->GetXaxis()->SetBinLabel(1, rar->GetName());
          h->SetBinContent(1, rar->getVal());
@@ -8681,9 +8686,11 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          binningName = rar->GetName();
       if (x->hasBinning(binningName)) {
          if (x->getBinning(binningName).isUniform()) {
+            TDirectory::TContext ctx{nullptr}; // No self-registration to directories
             h = new TH1D(rar->GetName(), rar->GetTitle(), x->numBins(binningName) <= 0 ? 100 : x->numBins(binningName),
                          x->getMin(binningName), x->getMax(binningName));
          } else {
+            TDirectory::TContext ctx{nullptr}; // No self-registration to directories
             h = new TH1D(rar->GetName(), rar->GetTitle(), x->numBins(binningName), x->getBinning(binningName).array());
          }
          h->GetXaxis()->SetTitle(x->getBinning(binningName).GetTitle());
@@ -8698,17 +8705,23 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
             if (_bins.empty() || std::abs(_bins.back() - b) > 1e-5 * _bins.back())
                _bins.push_back(b);
          } // found sometimes get virtual duplicates in the binning
+         TDirectory::TContext ctx{nullptr}; // No self-registration to directories
          h = new TH1D(rar->GetName(), rar->GetTitle(), _bins.size() - 1, &_bins[0]);
          delete _boundaries;
       } else if (!x->hasMax() || !x->hasMin()) {
          // use current value of x to estimate range with
+         TDirectory::TContext ctx{nullptr}; // No self-registration to directories
          h = new TH1D(rar->GetName(), rar->GetTitle(), v->numBins(), x->getVal() * 0.2, x->getVal() * 5);
       } else {
+         TDirectory::TContext ctx{nullptr}; // No self-registration to directories
          h = new TH1D(rar->GetName(), rar->GetTitle(), v->numBins(), x->getBinning().array());
       }
       h->Sumw2();
    } else if (!h) {
-      h = new TH1D(rar->GetName(), rar->GetTitle(), v->numBins(rar->GetName()), 0, v->numBins(rar->GetName()));
+      {
+         TDirectory::TContext ctx{nullptr}; // No self-registration to directories
+         h = new TH1D(rar->GetName(), rar->GetTitle(), v->numBins(rar->GetName()), 0, v->numBins(rar->GetName()));
+      }
       if (auto cat = dynamic_cast<RooAbsCategoryLValue *>(v)) {
          int i = 1;
          std::map<int, std::string> cats; // fill into a map to preserve index ordering
@@ -8724,7 +8737,7 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
    if (auto o = dynamic_cast<TObject *>(v); o && !setTitle) {
       h->GetXaxis()->SetTitle(o->GetTitle());
    }
-   TH1::AddDirectory(t);
+
    if (v) {
       if (h->GetXaxis()->IsAlphanumeric()) {
          // store the variable name in the TimeFormat property as well, b.c. alphanumeric requires axis name to be
@@ -10904,14 +10917,7 @@ void xRooNode::Draw(Option_t *opt)
       histCopy->SetBit(kCanDelete);
       auto _axis = (doHorizontal ? histCopy->GetYaxis() : histCopy->GetXaxis());
 
-      /*
-            auto t = TH1::AddDirectoryStatus();
-            TH1::AddDirectory(false);
-            auto hist = new TH1F(TString::Format(".%s_pullFrame", GetName()), fr->GetTitle(), std::max(graph->GetN(),
-         1), -0.5, std::max(graph->GetN(), 1) - 0.5); hist->SetStats(false); TH1::AddDirectory(t);
-            hist->SetBit(kCanDelete);
-            */
-      //      auto hist = graph->GetHistogram();
+
       graph->GetHistogram()->GetXaxis()->Set(std::max(graph->GetN(), 1), -0.5, std::max(graph->GetN(), 1) - 0.5);
       for (int ii = 1; ii <= _axis->GetNbins(); ii++) {
          graph->GetHistogram()->GetXaxis()->SetBinLabel(ii, _axis->GetBinLabel(ii));
