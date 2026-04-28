@@ -683,17 +683,11 @@ void xRooNode::Browse(TBrowser *b)
          blockBrowse = false;
       } else {
          auto _b = dynamic_cast<TGFileBrowser *>(GETACTBROWSER(dynamic_cast<TRootBrowser *>(b2->GetBrowserImp())));
-         if (_b)
+         if (_b) {
             _b->AddFSDirectory("Workspaces", nullptr, "SetRootDir");
-         /*auto l = Node2::Class()->GetMenuList();
-         auto o = new CustomClassMenuItem(TClassMenuItem::kPopupUserFunction,Node2::Class(),
-                                          "blah blah blah","BlahBlah",0,"Option_t*",-1,true);
-         //o->SetCall(o,"BlahBlah","Option_t*",-1);
-         l->AddFirst(o);*/
-         // b->BrowseObject(this);
-         _b->GotoDir(nullptr);
-         _b->Add(this, GetName());
-         // b->Add(this);
+            _b->GotoDir(nullptr);
+            _b->Add(this, GetName());
+         }
       }
       return;
    }
