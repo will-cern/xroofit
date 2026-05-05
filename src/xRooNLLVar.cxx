@@ -743,7 +743,7 @@ double xRooNLLVar::getEntryVal(size_t entry) const
    *std::unique_ptr<RooAbsCollection>(_pdf->getObservables(_data)) = *_data->get(entry);
    // if (auto s = dynamic_cast<RooSimultaneous*>(_pdf.get());s) return
    // -_data->weight()*s->getPdf(s->indexCat().getLabel())->getLogVal(_data->get());
-   return -_data->weight() * _pdf->getLogVal(_data->get());
+   return (_data->weight()==0) ? 0 : (-_data->weight() * _pdf->getLogVal(_data->get()));
 }
 
 std::set<std::string> xRooNLLVar::binnedChannels() const
