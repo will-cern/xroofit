@@ -6316,14 +6316,10 @@ xRooNode xRooNode::vars() const
          }
       }
    } else if (auto w = get<RooWorkspace>(); w) {
-      for (auto a : w->allVars()) {
-         out.emplace_back(std::make_shared<xRooNode>(*a, *this));
-         out.get<RooArgList>()->add(*a);
-      }
-      // add all cats as well
-      for (auto a : w->allCats()) {
-         out.emplace_back(std::make_shared<xRooNode>(*a, *this));
-         out.get<RooArgList>()->add(*a);
+      for (auto a : w->components()) {
+         if(a->InheritsFrom(RooRealVar::Class()) || a->InheritsFrom(RooCategory::Class()) || a->InheritsFrom(RooConstVar::Class())) {
+            out.emplace_back(std::make_shared<xRooNode>(*a, *this));
+         }
       }
    }
    return out;
