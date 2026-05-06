@@ -6930,6 +6930,31 @@ xRooNode xRooNode::datasets() const
    return out;
 }
 
+xRooNode xRooNode::parents() const {
+   xRooNode out(".parents",nullptr,*this);
+   if(auto a = get<RooAbsArg>()) {
+      for(auto c : a->clients()) {
+         out.push_back(std::make_shared<xRooNode>(*c, *this));
+      }
+   }
+   return out;
+}
+
+xRooNode xRooNode::args() const {
+   if(auto w = get<RooWorkspace>()) {
+      xRooNode out(".args",w->components(),*this);
+      out.browse(); // populate
+      return out;
+   } else if(auto a = get<RooAbsArg>()) {
+      xRooNode out(".args",std::make_shared<RooArgList>(), *this);
+      out.get<RooArgList>()->setName((GetPath() + ".args").c_str());
+      a->treeNodeServerList(out.get<RooArgList>());
+      out.browse(); // populate
+      return out;
+   }
+   return nullptr;
+}
+
 std::shared_ptr<xRooNode> xRooNode::getBrowsable(const char *name) const
 {
    for (auto b : fBrowsables) {
@@ -8004,6 +8029,21 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
    }
 
    return get<RooArgList>() ? xRooNode(std::make_shared<RooArgList>(), fParent) : *this;
+}
+
+xRooNode xRooNode::reduced(const std::function<bool(const xRooNode&)> selector) const {
+   if(empty()) {
+      const_cast<xRooNode&>(*this).browse();
+   }
+   // build a list of children to keep
+   std::string childNames;
+   for(auto& c : *this) {
+      if(selector(*c)) {
+         if(!childNames.empty()) childNames += ",";
+         childNames += c->GetName();
+      }
+   }
+   return reduced(childNames); // calls main method above ... this will ensure we construct a reduced version of ourself
 }
 
 // xRooNode xRooNode::generate(bool expected) const {
