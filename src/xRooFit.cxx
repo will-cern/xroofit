@@ -543,22 +543,30 @@ ROOT::Math::IOptions *xRooFit::defaultFitConfigOptions()
    return const_cast<ROOT::Math::IOptions *>(defaultFitConfig()->MinimizerOptions().ExtraOptions());
 }
 
+void printCerr(const char* msg) {
+   if (Py_IsInitialized()) {
+      PySys_WriteStderr("%s\n", msg);
+   } else {
+      std::cerr << msg << std::endl;
+   }
+}
+void printCout(const char* msg) {
+   if (Py_IsInitialized()) {
+      PySys_WriteStdout("%s\n", msg);
+   } else {
+      std::cout << msg << std::endl;
+   }
+}
+
 class ProgressMonitor : public RooAbsReal {
 public:
    void (*oldHandlerr)(int) = nullptr;
    static ProgressMonitor *me;
    static bool fInterrupt;
-   static void printCerr(const char* msg) {
-      if (Py_IsInitialized()) {
-         PySys_WriteStderr("%s\n", msg);
-      } else {
-         std::cerr << msg << std::endl;
-      }
-   }
    static void interruptHandler(int signum)
    {
       if (signum == SIGINT) {
-         std::cout << "Minimization interrupted ... will exit as soon as possible" << std::endl;
+         printCout("Minimization interrupted ... will exit as soon as possible");
          // TODO: create a global mutex for this
          fInterrupt = true;
       } else {
@@ -634,7 +642,7 @@ public:
          s.Reset();
          std::stringstream sout;
 
-         sout << TDatime().AsString() << ":(" <<  (counter) << ") (" << evalRate << "Hz) ";
+         sout << TDatime().AsString() << ":(" <<  (counter) << "|" << evalRate << "Hz)";
          if (!fState.empty())
             sout << " : " << fState;
          if (counter2) {
@@ -649,7 +657,7 @@ public:
                sout << " (~" << int(100.0 * (counter - counter2) / nRequired) << "%)";
             }
          }
-         sout << " : " << minVal << " Delta = " << (minVal - prevMin);
+         sout << " : " << minVal << " Delta=" << (minVal - prevMin);
          if (minVal < prevMin) {
             sout << " : ";
             // compare minPars and prevPars, print biggest deltas
@@ -708,10 +716,10 @@ public:
    mutable int counter = 0;
    int counter2 = 0; // used to estimate progress of a Hesse calculation
 
-private:
-   RooRealProxy fFunc;
    mutable double minVal = std::numeric_limits<double>::infinity();
    mutable double prevMin = std::numeric_limits<double>::infinity();
+private:
+   RooRealProxy fFunc;
    mutable RooArgList minPars;
    mutable RooArgList prevPars;
    mutable int prevCounter = 0;
@@ -1103,11 +1111,11 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
          // specified Also note that if fits are failing because of edm over max, it can be a good idea to activate the
          // Offset option when building nll
          if (printLevel >= -1) {
-            Warning("fitTo", "%s %s%s Status=%d (edm=%f, tol=%f, strat=%d), tries=#%d...", fitName.Data(),
+            printCerr(TString::Format("Warning: %s %s%s Status=%d (edm=%f, tol=%f, strat=%d), tries=#%d...", fitName.Data(),
                     _minimizer.fitter()->Config().MinimizerType().c_str(),
                     _minimizer.fitter()->Config().MinimizerAlgoType().c_str(), status,
                     _minimizer.fitter()->Result().Edm(), _minimizer.fitter()->Config().MinimizerOptions().Tolerance(),
-                    _minimizer.fitter()->Config().MinimizerOptions().Strategy(), tries);
+                    _minimizer.fitter()->Config().MinimizerOptions().Strategy(), tries).Data());
          }
 
          // decide what to do next based on strategy sequence
@@ -1205,6 +1213,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
                fff->fState = TString::Format("Hesse%d", _minimizer.fitter()->Config().MinimizerOptions().Strategy());
                fff->counter2 = fff->counter;
+               fff->prevMin = fff->minVal; // reset minimum when change to hesse. Helps see if hesse eval gives new lower values
             }
 
             //_nll->getVal(); // for reasons I dont understand, if nll evaluated before hesse call the edm is smaller? -
@@ -1244,8 +1253,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             }
             if ((_status != 0 || _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() != 3) && status == 0 &&
                 printLevel >= -1) {
-               Warning("fitTo", "%s hesse status is %d, covQual=%d", fitName.Data(), _status,
-                       _minimizer.fitter()->GetMinimizer()->CovMatrixStatus());
+               printCerr(TString::Format("Warning: %s hesse status is %d, covQual=%d", fitName.Data(), _status,
+                       _minimizer.fitter()->GetMinimizer()->CovMatrixStatus()).Data());
             }
 
             if (sIdx >= m_hessestrategy.Length() - 1) {
@@ -1269,6 +1278,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
                fff->fState = "Minos";
                fff->counter2 = 0;
+               fff->prevMin = fff->minVal;
             }
             auto _status = _minimizer.minos(*mpars);
             statusHistory.push_back(std::pair("Minos", _status));
@@ -1297,9 +1307,11 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
           out->edm() > _minimizer.fitter()->Config().MinimizerOptions().Tolerance() * 1e-3 && out->status() != 3) {
          // hesse may have updated edm by using a better strategy than used in the minimization
          // so print a warning about this
-         std::cerr << "Warning: post-Hesse edm " << out->edm() << " greater than allowed by tolerance "
+         std::stringstream ss;
+         ss << "Warning: post-Hesse edm " << out->edm() << " > tolerance max edm:"
                    << _minimizer.fitter()->Config().MinimizerOptions().Tolerance() * 1e-3
-                   << ", consider increasing minimization strategy" << std::endl;
+                   << ". Consider increasing your minimization strategy";
+         printCerr(ss.str().c_str());
          // Dec24: As this is a new warning, will not update status code for now, so edm will be large
          // but in the future we should probably update the code to 3 so that users don't miss this warning.
          // out->setStatus(3); // edm above max
