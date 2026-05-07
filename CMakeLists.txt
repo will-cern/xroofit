@@ -1,11 +1,17 @@
 cmake_minimum_required( VERSION 3.10 FATAL_ERROR )
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+
+
 project(xRooFit)
 
 option(ENABLE_TESTS "Enable compilation of tests" OFF)
 
 if(APPLE)
+    #clion lldb built-in version is 15.0.5, incompatible with DWARFv5 which is what latest clang compiler uses
+    # so must go back to dwarf4 to get builtin debugger working
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -gdwarf-4 -O0")
     add_definitions(-DAPPLE)
 endif()
 
@@ -45,9 +51,10 @@ file(GLOB SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*.cxx)
 
 ROOT_GENERATE_DICTIONARY(G__xRooFit ${HEADERS} LINKDEF src/LinkDef.h)
 
+find_package(Python REQUIRED COMPONENTS Development)
 
 add_library(xRooFit SHARED ${SOURCES} G__xRooFit )
-target_link_libraries(xRooFit ${_root_libraries})
+target_link_libraries(xRooFit ${_root_libraries} Python::Python)
 
 target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)

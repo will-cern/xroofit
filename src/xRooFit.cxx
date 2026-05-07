@@ -64,6 +64,8 @@
 #include "TROOT.h"
 #include "TBrowser.h"
 
+#include "Python.h"
+
 BEGIN_XROOFIT_NAMESPACE
 
 std::shared_ptr<RooLinkedList> xRooFit::sDefaultNLLOptions = nullptr;
@@ -546,6 +548,13 @@ public:
    void (*oldHandlerr)(int) = nullptr;
    static ProgressMonitor *me;
    static bool fInterrupt;
+   static void printCerr(const char* msg) {
+      if (Py_IsInitialized()) {
+         PySys_WriteStderr("%s\n", msg);
+      } else {
+         std::cerr << msg << std::endl;
+      }
+   }
    static void interruptHandler(int signum)
    {
       if (signum == SIGINT) {
@@ -625,7 +634,7 @@ public:
          s.Reset();
          std::stringstream sout;
 
-         sout << (counter) << ") (" << evalRate << "Hz) " << TDatime().AsString();
+         sout << TDatime().AsString() << ":(" <<  (counter) << ") (" << evalRate << "Hz) ";
          if (!fState.empty())
             sout << " : " << fState;
          if (counter2) {
@@ -685,7 +694,7 @@ public:
             }
             gSystem->ProcessEvents();
          }
-         std::cerr << sout.str() << std::endl;
+         printCerr(sout.str().c_str());//std::cerr << sout.str() << std::endl;
 
          prevMin = minVal;
          prevCounter = counter;
