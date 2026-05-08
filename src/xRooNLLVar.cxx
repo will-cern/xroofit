@@ -1593,7 +1593,20 @@ void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
       if (!std::isnan(v->getVal()))
          any_alt = true;
    }
-   std::cout << " , pllType: " << fPllType << std::endl;
+   std::cout << " , pllType: ";
+   switch(fPllType) {
+   case 0:
+      std::cout << "qmu"; break;
+   case 1:
+      std::cout << "qmu or qmutilde"; break; // should check for 'physical' to decide if is latter
+   case 2:
+      std::cout << "q0"; break;
+   case 4:
+      std::cout << "u0"; break;
+   default:
+      std::cout << "unknown"; break;
+   }
+   std::cout << std::endl;
 
    if (fPllType == xRooFit::Asymptotics::Unknown) {
       std::cout << " obs ts: " << obs_ts << " +/- " << obs_ts_err << std::endl;
@@ -3072,11 +3085,13 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints
       if (nPoints > 0) {
          out.AddPoints(parName, nPoints, low, high);
       } else {
-         if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
+         //if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
             for (auto p : out.poi()) {
-               dynamic_cast<RooRealVar *>(p)->setRange("scan", low, high);
+               if(auto r = dynamic_cast<RooRealVar *>(p)) {
+                  r->setRange("scan", std::isnan(low) ? r->getMin() : low, std::isnan(high) ? r->getMax() : high);
+               }
             }
-         }
+         //}
       }
       return out;
    }
@@ -3085,11 +3100,13 @@ xRooNLLVar::xRooHypoSpace xRooNLLVar::hypoSpace(const char *parName, int nPoints
    if (nPoints > 0)
       hs.AddPoints(parName, nPoints, low, high);
    else {
-      if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
-         for (auto p : hs.poi()) {
-            dynamic_cast<RooRealVar *>(p)->setRange("scan", low, high);
-         }
+      //if (!std::isnan(low) && !std::isnan(high) && !(std::isinf(low) && std::isinf(high))) {
+      for (auto p : hs.poi()) {
+            if(auto r = dynamic_cast<RooRealVar *>(p)) {
+               r->setRange("scan", std::isnan(low) ? r->getMin() : low, std::isnan(high) ? r->getMax() : high);
+            }
       }
+      //}
    }
    return hs;
 }
@@ -3124,6 +3141,10 @@ xRooNLLVar::hypoSpace(const char *parName, const xRooFit::Asymptotics::PLLType &
 
    for (auto poi : s.poi()) {
       poi->setStringAttribute("altVal", std::isnan(alt_value) ? nullptr : TString::Format("%f", alt_value));
+      // default scan range to range of poi
+      if(auto r = dynamic_cast<RooRealVar*>(poi)) {
+         r->setRange("scan", r->getMin(), r->getMax());
+      }
    }
 
    return s;
@@ -3303,7 +3324,7 @@ std::string cling::printValue(const xRooNLLVar::xValueWithError *v)
 {
    if (!v)
       return "xValueWithError: nullptr\n";
-   return Form("%f +/- %f", v->first, v->second);
+   return Form("%g +/- %g", v->first, v->second);
 }
 std::string cling::printValue(const std::map<std::string, xRooNLLVar::xValueWithError> *m)
 {
