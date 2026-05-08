@@ -2680,6 +2680,15 @@ xRooNLLVar::hypoPoint(const char *poiValues, double alt_value, const xRooFit::As
          _type = xRooFit::Asymptotics::OneSidedPositive;
       } else {
          _type = xRooFit::Asymptotics::Uncapped;
+         // for uncapped, should check min is not at physical boundary
+         for (auto b : out.poi()) {
+            if(auto r = dynamic_cast<RooRealVar*>(b)) {
+               if(r->hasRange("physical") && r->getMin()>= r->getMin("physical")) {
+                  ::Info("xRooNLLVar::hypoPoint","fitting min of %s is at physical limit, but using uncapped test-statistic, so will set to -max = %g",r->GetName(),-r->getMax());
+                  r->setMin(-r->getMax());
+               }
+            }
+         }
       }
    }
 
