@@ -1921,7 +1921,7 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
    if (allowedStatusCodes.find(_ufit->status()) == allowedStatusCodes.end()) {
       return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    }
-   if (auto _first_poi = dynamic_cast<RooRealVar *>(poi().first());
+   if (auto _first_poi = dynamic_cast<RooRealVar *>(poi().first()); fPllType != xRooFit::Asymptotics::Uncapped &&
        _first_poi && _first_poi->getMin("physical") > _first_poi->getMin() &&
        mu_hat().getVal() < _first_poi->getMin("physical")) {
       // replace _ufit with fit "boundary" conditional fit
