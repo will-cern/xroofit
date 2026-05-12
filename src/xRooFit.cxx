@@ -516,7 +516,7 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig()
    extraOpts->SetValue("OptimizeConst", 2); // if 0 will disable constant term optimization and cache-and-track of the
                                             // NLL. 1 = just caching, 2 = cache and track
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 29, 00)
-   extraOpts->SetValue("StrategySequence", "0s01s12s2s3m");
+   extraOpts->SetValue("StrategySequence", "0s01s12s2s3"); // 'm' would indicate use migradImproved from minuit v1. Dropped from default for 6.40
    extraOpts->SetValue("HesseStrategySequence", "23");
 #else
    extraOpts->SetValue("StrategySequence", "0s01s12s2m");
