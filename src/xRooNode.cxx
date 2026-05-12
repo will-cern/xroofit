@@ -7923,7 +7923,9 @@ xRooNode xRooNode::reduced(const std::string &_range, bool invert) const
             _cat.setLabel(cName);
             bool matchAny = false;
             for (auto &p : patterns) {
-               if (cName.Contains(TRegexp(p, true))) {
+               TString pNoCatName(p);
+               if(pNoCatName.Contains('=')) pNoCatName = pNoCatName(pNoCatName.Index('=')+1,pNoCatName.Length());
+               if (cName.Contains(TRegexp(p, true)) || cName.Contains(TRegexp(pNoCatName, true))) {
                   matchAny = true;
                   break;
                }
