@@ -1597,7 +1597,7 @@ void xRooNLLVar::xRooHypoPoint::Print(Option_t *) const
    }
    std::cout << " , pllType: ";
    switch (fPllType) {
-   case 0: std::cout << "qmu"; break;
+   case 0: std::cout << "tmu"; break;
    case 1: std::cout << "qmu or qmutilde"; break; // should check for 'physical' to decide if is latter
    case 2: std::cout << "q0"; break;
    case 4: std::cout << "u0"; break;
