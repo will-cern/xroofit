@@ -1775,6 +1775,14 @@ std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(boo
          // dynamic_cast<RooRealVar *>(p)->removeRange("physical"); -- can't use this as will modify shared property
          if (auto v = dynamic_cast<RooRealVar *>(p)) {
             v->deleteSharedProperties(); // effectively removes all custom ranges
+            if(v->getVal()==0) {
+               // for discovery tests, we generate asimov at mu!=0 and then evaluate the two sided
+               // at some value of mu. Normally we would use mu=0 but if we have a bin
+               // with only signal contribution (no bkg) will get asimov data in that bin
+               // and no prediction ... the cfit(mu=0) will never succeed on this
+               // so lets move to half the alt value instead (the value used to generate)
+               v->setVal(theFit->constPars().getRealValue(v->GetName())*0.5);
+            }
          }
       }
 
@@ -1799,15 +1807,18 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma
    auto first_poi = dynamic_cast<RooRealVar *>(poi().first());
    if (!first_poi)
       return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
-   auto _sigma_mu = sigma_mu();
+   double lowBound = first_poi->getMin("physical");
+   double hiBound = first_poi->getMax("physical");
+   // don't need to calculate sigma_mu if physical boundaries at infinity, PValue doesn't depend on it
+   auto _sigma_mu = (lowBound==-std::numeric_limits<double>::infinity() && hiBound==std::numeric_limits<double>::infinity()) ? std::pair<double, double>(0, 0) : sigma_mu();
    double nom = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first, fNullVal(), fNullVal(), _sigma_mu.first,
-                                             first_poi->getMin("physical"), first_poi->getMax("physical"));
+                                             lowBound, hiBound );
    double up =
       xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first + ts_asymp(nSigma).second, fNullVal(), fNullVal(),
-                                   _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
+                                   _sigma_mu.first, lowBound, hiBound);
    double down =
       xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first - ts_asymp(nSigma).second, fNullVal(), fNullVal(),
-                                   _sigma_mu.first, first_poi->getMin("physical"), first_poi->getMax("physical"));
+                                   _sigma_mu.first, lowBound, hiBound);
    return std::pair(nom, std::max(std::abs(up - nom), std::abs(down - nom)));
 }
 
@@ -2248,8 +2259,8 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::sigma_mu(bool readOnly)
    }
 
    auto out = asi->pll(readOnly);
-   return std::pair<double, double>(std::abs(fNullVal() - fAltVal()) / sqrt(out.first),
-                                    out.second * 0.5 * std::abs(fNullVal() - fAltVal()) /
+   return std::pair<double, double>(std::abs(asi->fNullVal() - fAltVal()) / sqrt(out.first),
+                                    out.second * 0.5 * std::abs(asi->fNullVal() - fAltVal()) /
                                        (out.first * sqrt(out.first)));
 }
 
