@@ -1775,13 +1775,13 @@ std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(boo
          // dynamic_cast<RooRealVar *>(p)->removeRange("physical"); -- can't use this as will modify shared property
          if (auto v = dynamic_cast<RooRealVar *>(p)) {
             v->deleteSharedProperties(); // effectively removes all custom ranges
-            if(v->getVal()==0) {
+            if (v->getVal() == 0) {
                // for discovery tests, we generate asimov at mu!=0 and then evaluate the two sided
                // at some value of mu. Normally we would use mu=0 but if we have a bin
                // with only signal contribution (no bkg) will get asimov data in that bin
                // and no prediction ... the cfit(mu=0) will never succeed on this
                // so lets move to half the alt value instead (the value used to generate)
-               v->setVal(theFit->constPars().getRealValue(v->GetName())*0.5);
+               v->setVal(theFit->constPars().getRealValue(v->GetName()) * 0.5);
             }
          }
       }
@@ -1810,15 +1810,16 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pNull_asymp(double nSigma
    double lowBound = first_poi->getMin("physical");
    double hiBound = first_poi->getMax("physical");
    // don't need to calculate sigma_mu if physical boundaries at infinity, PValue doesn't depend on it
-   auto _sigma_mu = (lowBound==-std::numeric_limits<double>::infinity() && hiBound==std::numeric_limits<double>::infinity()) ? std::pair<double, double>(0, 0) : sigma_mu();
+   auto _sigma_mu =
+      (lowBound == -std::numeric_limits<double>::infinity() && hiBound == std::numeric_limits<double>::infinity())
+         ? std::pair<double, double>(0, 0)
+         : sigma_mu();
    double nom = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first, fNullVal(), fNullVal(), _sigma_mu.first,
-                                             lowBound, hiBound );
-   double up =
-      xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first + ts_asymp(nSigma).second, fNullVal(), fNullVal(),
-                                   _sigma_mu.first, lowBound, hiBound);
-   double down =
-      xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first - ts_asymp(nSigma).second, fNullVal(), fNullVal(),
-                                   _sigma_mu.first, lowBound, hiBound);
+                                             lowBound, hiBound);
+   double up = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first + ts_asymp(nSigma).second, fNullVal(),
+                                            fNullVal(), _sigma_mu.first, lowBound, hiBound);
+   double down = xRooFit::Asymptotics::PValue(fPllType, ts_asymp(nSigma).first - ts_asymp(nSigma).second, fNullVal(),
+                                              fNullVal(), _sigma_mu.first, lowBound, hiBound);
    return std::pair(nom, std::max(std::abs(up - nom), std::abs(down - nom)));
 }
 
