@@ -975,7 +975,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
    if (!out) {
       int strategy = fitConfig.MinimizerOptions().Strategy();
       // Note: AsymptoticCalculator enforces not less than 1 on tolerance - should we do so too?
-      if (_progress && printLevel>=-1) {
+      if (_progress && printLevel>=-2) {
          _nll = new ProgressMonitor(*_nll, _progress);
          ProgressMonitor::fInterrupt = false;
       }
@@ -1317,7 +1317,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
          }
       }
 
-      if (printLevel>=-1 && miniStrat < _minimizer.fitter()->Config().MinimizerOptions().Strategy() && hesse &&
+      if (printLevel>=-2 && miniStrat < _minimizer.fitter()->Config().MinimizerOptions().Strategy() && hesse &&
           out->edm() > _minimizer.fitter()->Config().MinimizerOptions().Tolerance() * 1e-3 && out->status() != 3) {
          // hesse may have updated edm by using a better strategy than used in the minimization
          // so print a warning about this
@@ -1434,7 +1434,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
          fitConfig.MinimizerOptions().SetMinimizerType(actualFirstMinimizer);
       }
 
-      if (_progress && printLevel>=-1) {
+      if (_progress && printLevel>=-2) {
          delete _nll;
       }
    }
