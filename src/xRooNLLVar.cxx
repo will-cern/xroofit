@@ -2615,6 +2615,10 @@ xRooNLLVar::hypoPoint(const char *poiValues, double alt_value, const xRooFit::As
    AutoRestorer snap(*fFuncVars);
 
    out.nllVar = std::make_shared<xRooNLLVar>(*this);
+   // clear the underlying RooAbsReal, so that we don't accidentally alter it (e.g. setAttribute readOnly)
+   // and therefore alter the xRooNLLVar object we are creating this hypoPoint from
+   // basically ensure the hypoPoint has an independent version of the function
+   out.nllVar->reset();
    out.fData = getData();
 
    TStringToken pattern(poiValues, ",");
@@ -3151,6 +3155,10 @@ xRooNLLVar::hypoSpace(const char *parName, const xRooFit::Asymptotics::PLLType &
       throw std::runtime_error("You must specify at least one POI for the hypoSpace");
    }*/
    s.fNlls[s.fPdfs.begin()->second] = std::make_shared<xRooNLLVar>(*this);
+   // clear the underlying RooAbsReal, so that we don't accidentally alter it (e.g. setAttribute readOnly)
+   // and therefore alter the xRooNLLVar object we are creating this hypoPoint from
+   // basically ensure the hypoPoint has an independent version of the function
+   s.fNlls[s.fPdfs.begin()->second]->reset();
    s.fTestStatType = pllType;
 
    for (auto poi : s.poi()) {
