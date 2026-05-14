@@ -1271,9 +1271,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
                             .Data());
             }
 
-            if (sIdx >= m_hessestrategy.Length() - 1) {
-               break; // run out of strategies to try, stop
-            }
+
 
             if (_status == 0 && _minimizer.fitter()->GetMinimizer()->CovMatrixStatus() == 3) {
                // covariance is valid!
@@ -1282,6 +1280,11 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
                // set the statusHistory to the cov status, since that's more informative
                statusHistory.back().second = _minimizer.fitter()->GetMinimizer()->CovMatrixStatus();
             }
+
+            if (sIdx >= m_hessestrategy.Length() - 1) {
+               break; // run out of strategies to try, stop
+            }
+
             sIdx++;
          } // end of hesse attempt loop
       }
