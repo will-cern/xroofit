@@ -1319,13 +1319,13 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       }
 
       if (printLevel >= -2 && miniStrat < _minimizer.fitter()->Config().MinimizerOptions().Strategy() && hesse &&
-          out->edm() > _minimizer.fitter()->Config().MinimizerOptions().Tolerance() * 1e-3 && out->status() != 3) {
+          out->edm() > _minimizer.fitter()->Config().MinimizerOptions().Tolerance() * 1e-2 && out->status() != 3) {
          // hesse may have updated edm by using a better strategy than used in the minimization
          // so print a warning about this
          std::stringstream ss;
          ss << "Warning: post-Hesse edm " << out->edm()
-            << " > tolerance max edm:" << _minimizer.fitter()->Config().MinimizerOptions().Tolerance() * 1e-3
-            << ". Consider increasing your minimization strategy";
+            << " > 10xMaxEDM (MaxEDM=" << _minimizer.fitter()->Config().MinimizerOptions().Tolerance() * 1e-3
+            << "). Consider increasing your minimization strategy";
          printCerr(ss.str().c_str());
          // Dec24: As this is a new warning, will not update status code for now, so edm will be large
          // but in the future we should probably update the code to 3 so that users don't miss this warning.
