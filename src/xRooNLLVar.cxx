@@ -3360,7 +3360,7 @@ std::string cling::printValue(const XROOFIT_NAMESPACE_NAME::xRooNLLVar::xValueWi
 {
    if (!v)
       return "xValueWithError: nullptr\n";
-   return Form("%g +/- %g", v->first, v->second);
+   return v->__repr__();
 }
 std::string cling::printValue(const std::map<std::string, XROOFIT_NAMESPACE_NAME::xRooNLLVar::xValueWithError> *m)
 {
