@@ -1471,7 +1471,7 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::getVal(const char *what)
             TString toyNum = sWhat(sWhat.Index("toys=") + 5, sWhat.Length());
             size_t nToys = toyNum.Atoi();
             size_t nToysAlt = (toyNum.Atof() - nToys) * nToys;
-            if (nToysAlt == 0 && !toyNum.Contains('.'))
+            if (nToysAlt == 0 && !toyNum.Contains('.') && !doNull)
                nToysAlt = nToys;
             if (nullToys.size() < nToys) {
                addNullToys(nToys - nullToys.size());
