@@ -8061,6 +8061,7 @@ xRooNode xRooNode::reduced(const std::function<bool(const xRooNode &)> selector)
       const_cast<xRooNode &>(*this).browse();
    }
    // build a list of children to keep
+   std::string noName = "___"; // assume this is never a name
    std::string childNames;
    for (auto &c : *this) {
       if (selector(*c)) {
@@ -8069,6 +8070,7 @@ xRooNode xRooNode::reduced(const std::function<bool(const xRooNode &)> selector)
          childNames += c->GetName();
       }
    }
+   if(childNames.empty()) childNames = noName; // if childNames was blank it would return the full list;
    return reduced(childNames); // calls main method above ... this will ensure we construct a reduced version of ourself
 }
 
