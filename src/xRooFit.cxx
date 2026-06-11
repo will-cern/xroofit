@@ -1307,6 +1307,14 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       // signal(SIGINT,gOldHandlerr);
       out = std::unique_ptr<RooFitResult>{_minimizer.save(fitName, resultTitle)};
 
+      // if the final result is not valid, RooFit will mark the status as -1. But we should override that with the
+      // more informative status of the last fit ...
+      // for safety, will only override if status of last result is not 0 (don't want to report success when actually bad)
+      if(out->status()==-1 && !_minimizer.fitter()->Result().IsValid() && _minimizer.fitter()->Result().Status()) {
+         out->setStatus(_minimizer.fitter()->Result().Status());
+      }
+
+
       // if status is 0 (min succeeded) but the covQual isn't fully accurate but requested hesse, reflect that in the
       // status
       if (out->status() == 0 && out->covQual() != 3 && hesse) {
