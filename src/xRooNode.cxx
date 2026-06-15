@@ -8717,8 +8717,6 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
          TDirectory::TContext ctx{nullptr}; // No self-registration to directories
          h = static_cast<TH1 *>(templateHist->Clone(rar->GetName()));
       }
-      if (h->GetListOfFunctions())
-         h->GetListOfFunctions()->Clear();
       h->SetTitle(rar->GetTitle());
       h->Reset();
    } else if (x) {
