@@ -1078,6 +1078,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             _minimizerPtr = std::move(_minimizerPtr2);
             _minimizer = _minimizerPtr.get();
             sIdx++;
+            statusHistory.emplace_back("Reset",0);
             continue;
          } else {
             strategy = int(m_strategy(sIdx) - '0');
