@@ -7067,8 +7067,21 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
       dataGraph->SetTitle(TString::Format("%s;%s;Events", dataGraph->GetTitle(), theHist->GetXaxis()->GetTitle()));
       *static_cast<TAttMarker *>(dataGraph) = *static_cast<TAttMarker *>(theHist);
       *static_cast<TAttLine *>(dataGraph) = *static_cast<TAttLine *>(theHist);
+
+      // default style based on if generated or not
+
+     if(auto w = theData->weightVar(); w && w->getStringAttribute("fitResult")) {
+         // is generated
+         dataGraph->SetLineColor(kBlue);
+         if(w->getAttribute("expected")) {
+            // is asimov
+            dataGraph->SetLineColor(kGreen+2);
+         }
+      } else {
+        dataGraph->SetLineColor(kBlack);
+      }
       dataGraph->SetMarkerStyle(20);
-      dataGraph->SetLineColor(kBlack);
+      dataGraph->SetMarkerColor(dataGraph->GetLineColor());
       dataGraph->SetMarkerSize(gStyle->GetMarkerSize());
 
       auto _obs = obs();
@@ -11310,22 +11323,31 @@ void xRooNode::Draw(Option_t *opt)
          // drawing dataset associated to a simultaneous means must find subpads with variation names
          // may not have subpads if drawning a "Yield" plot ...
          bool doneDraw = false;
-         for (auto c : s->bins()) {
-            auto _pad = dynamic_cast<TPad *>(gPad->GetPrimitive(c->GetName()));
+         // in the case of hybrid datasets, the parentPdf will be a reducedPdf ...
+         // but if the dataset has been added to, then there may be additional entries
+         // in other channels ... so loop over all labels of the categorical
+         // and for ones we don't have a channel for, just draw directly on
+
+         for (auto [catName,catVal] : s->get<RooSimultaneous>()->indexCat()) {
+            auto _pad = dynamic_cast<TPad *>(gPad->GetPrimitive(TString::Format("%s=%s",s->get<RooSimultaneous>()->indexCat().GetName(),catName.c_str())));
             if (!_pad)
                continue; // channel was hidden?
             // attach as a child before calling datasets(), so that if this dataset is external to workspace it is
             // included still attaching the dataset ensures dataset reduction for the channel is applied
-            c->push_back(std::make_shared<xRooNode>(*this));
-            auto ds = c->datasets().find(GetName());
-            c->resize(c->size() - 1); // remove the child we attached
-            if (!ds) {
-               std::cout << " no ds " << GetName() << " - this should never happen!" << std::endl;
-               continue;
-            }
             auto tmp = gPad;
             _pad->cd();
-            ds->Draw(opt);
+            if(auto c = s->bins().find(catName)) {
+               c->push_back(std::make_shared<xRooNode>(*this));
+               auto ds = c->datasets().find(GetName());
+               c->resize(c->size() - 1); // remove the child we attached
+               if (!ds) {
+                  std::cout << " no ds " << GetName() << " - this should never happen!" << std::endl;
+                  continue;
+               }
+               ds->Draw(opt);
+            } else {
+               Draw(opt);
+            }
             doneDraw = true;
             tmp->cd();
          }
