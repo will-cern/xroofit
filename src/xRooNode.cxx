@@ -8257,10 +8257,10 @@ double new_getPropagatedError(const RooAbsReal &f, const RooFitResult &fr, const
 
       if (asymHi || asymLo) {
          errVal = frrrv->getErrorHi();
-         rrv.setVal(cenVal + errVal);
+         rrv.setVal(errVal > 0 ? std::min(cenVal + errVal,rrv.getMax()) : std::max(cenVal + errVal,rrv.getMin()));
          plusVar = f.getVal(nset);
          errVal = frrrv->getErrorLo();
-         rrv.setVal(cenVal + errVal);
+         rrv.setVal(errVal > 0 ? std::min(cenVal + errVal,rrv.getMax()) : std::max(cenVal + errVal,rrv.getMin()));
          minusVar = f.getVal(nset);
          if (asymHi) {
             // pick the one that moved result 'up' most
@@ -8274,10 +8274,10 @@ double new_getPropagatedError(const RooAbsReal &f, const RooFitResult &fr, const
       } else {
          errVal = sqrt(V(ivar, ivar));
          // Make Plus variation
-         rrv.setVal(cenVal + errVal);
+         rrv.setVal(std::min(cenVal + errVal,rrv.getMax()));
          plusVar = f.getVal(nset);
          // Make Minus variation
-         rrv.setVal(cenVal - errVal);
+         rrv.setVal(std::max(cenVal - errVal,rrv.getMin()));
          minusVar = f.getVal(nset);
       }
       F[ivar] = (plusVar - minusVar) * 0.5;
