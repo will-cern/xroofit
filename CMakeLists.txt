@@ -51,10 +51,9 @@ file(GLOB SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*.cxx)
 
 ROOT_GENERATE_DICTIONARY(G__xRooFit ${HEADERS} LINKDEF src/LinkDef.h)
 
-find_package(Python REQUIRED COMPONENTS Development)
 
 add_library(xRooFit SHARED ${SOURCES} G__xRooFit )
-target_link_libraries(xRooFit PUBLIC ${_root_libraries} PRIVATE Python::Python)
+target_link_libraries(xRooFit PUBLIC ${_root_libraries})
 
 target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)
