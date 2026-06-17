@@ -7070,15 +7070,15 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
 
       // default style based on if generated or not
 
-     if(auto w = theData->weightVar(); w && w->getStringAttribute("fitResult")) {
+      if (auto w = theData->weightVar(); w && w->getStringAttribute("fitResult")) {
          // is generated
-         dataGraph->SetLineColor(kGreen+2);
-         if(w->getAttribute("expected")) {
+         dataGraph->SetLineColor(kGreen + 2);
+         if (w->getAttribute("expected")) {
             // is asimov
             dataGraph->SetLineColor(kBlue);
          }
       } else {
-        dataGraph->SetLineColor(kBlack);
+         dataGraph->SetLineColor(kBlack);
       }
       dataGraph->SetMarkerStyle(20);
       dataGraph->SetMarkerColor(dataGraph->GetLineColor());
@@ -8083,7 +8083,8 @@ xRooNode xRooNode::reduced(const std::function<bool(const xRooNode &)> selector)
          childNames += c->GetName();
       }
    }
-   if(childNames.empty()) childNames = noName; // if childNames was blank it would return the full list;
+   if (childNames.empty())
+      childNames = noName;     // if childNames was blank it would return the full list;
    return reduced(childNames); // calls main method above ... this will ensure we construct a reduced version of ourself
 }
 
@@ -8257,10 +8258,10 @@ double new_getPropagatedError(const RooAbsReal &f, const RooFitResult &fr, const
 
       if (asymHi || asymLo) {
          errVal = frrrv->getErrorHi();
-         rrv.setVal(errVal > 0 ? std::min(cenVal + errVal,rrv.getMax()) : std::max(cenVal + errVal,rrv.getMin()));
+         rrv.setVal(errVal > 0 ? std::min(cenVal + errVal, rrv.getMax()) : std::max(cenVal + errVal, rrv.getMin()));
          plusVar = f.getVal(nset);
          errVal = frrrv->getErrorLo();
-         rrv.setVal(errVal > 0 ? std::min(cenVal + errVal,rrv.getMax()) : std::max(cenVal + errVal,rrv.getMin()));
+         rrv.setVal(errVal > 0 ? std::min(cenVal + errVal, rrv.getMax()) : std::max(cenVal + errVal, rrv.getMin()));
          minusVar = f.getVal(nset);
          if (asymHi) {
             // pick the one that moved result 'up' most
@@ -8274,10 +8275,10 @@ double new_getPropagatedError(const RooAbsReal &f, const RooFitResult &fr, const
       } else {
          errVal = sqrt(V(ivar, ivar));
          // Make Plus variation
-         rrv.setVal(std::min(cenVal + errVal,rrv.getMax()));
+         rrv.setVal(std::min(cenVal + errVal, rrv.getMax()));
          plusVar = f.getVal(nset);
          // Make Minus variation
-         rrv.setVal(std::max(cenVal - errVal,rrv.getMin()));
+         rrv.setVal(std::max(cenVal - errVal, rrv.getMin()));
          minusVar = f.getVal(nset);
       }
       F[ivar] = (plusVar - minusVar) * 0.5;
@@ -11328,15 +11329,16 @@ void xRooNode::Draw(Option_t *opt)
          // in other channels ... so loop over all labels of the categorical
          // and for ones we don't have a channel for, just draw directly on
 
-         for (auto [catName,catVal] : s->get<RooSimultaneous>()->indexCat()) {
-            auto _pad = dynamic_cast<TPad *>(gPad->GetPrimitive(TString::Format("%s=%s",s->get<RooSimultaneous>()->indexCat().GetName(),catName.c_str())));
+         for (auto [catName, catVal] : s->get<RooSimultaneous>()->indexCat()) {
+            auto _pad = dynamic_cast<TPad *>(gPad->GetPrimitive(
+               TString::Format("%s=%s", s->get<RooSimultaneous>()->indexCat().GetName(), catName.c_str())));
             if (!_pad)
                continue; // channel was hidden?
             // attach as a child before calling datasets(), so that if this dataset is external to workspace it is
             // included still attaching the dataset ensures dataset reduction for the channel is applied
             auto tmp = gPad;
             _pad->cd();
-            if(auto c = s->bins().find(catName)) {
+            if (auto c = s->bins().find(catName)) {
                c->push_back(std::make_shared<xRooNode>(*this));
                auto ds = c->datasets().find(GetName());
                c->resize(c->size() - 1); // remove the child we attached

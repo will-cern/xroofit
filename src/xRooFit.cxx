@@ -983,7 +983,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       }
       auto logger = (logSize > 0) ? std::make_unique<cout_redirect>(logs, logSize) : nullptr;
       std::unique_ptr<RooMinimizer> _minimizerPtr = std::make_unique<RooMinimizer>(*_nll);
-      RooMinimizer* _minimizer = _minimizerPtr.get();
+      RooMinimizer *_minimizer = _minimizerPtr.get();
       _minimizer->fitter()->Config() = fitConfig;
       //      if(fitConfig.MinimizerOptions().ExtraOptions()) {
       //         //for loading hesse options
@@ -1071,8 +1071,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             break; // jumping straight to a hesse evaluation
          } else if (m_strategy(sIdx) == 'r') {
             // reset minimizer
-resetMinimization:
-            tries=0;
+         resetMinimization:
+            tries = 0;
             *floatPars = *floatInitVals; // resets floats
             std::unique_ptr<RooMinimizer> _minimizerPtr2 = std::make_unique<RooMinimizer>(*_nll);
             auto initPars = _minimizerPtr2->fitter()->Config().ParamsSettings();
@@ -1082,9 +1082,9 @@ resetMinimization:
             _minimizerPtr = std::move(_minimizerPtr2);
             _minimizer = _minimizerPtr.get();
             sIdx++;
-            statusHistory.emplace_back("Reset",0);
+            statusHistory.emplace_back("Reset", 0);
             if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
-               fff->counter2 = 0; // may have become non-zero if progressed to hesse and then resumed
+               fff->counter2 = 0;          // may have become non-zero if progressed to hesse and then resumed
                fff->prevMin = fff->minVal; // reset minimum
             }
             continue;
@@ -1259,7 +1259,7 @@ resetMinimization:
             // auto _status = (_minimizer->fitter()->CalculateHessErrors()) ? _minimizer->fitter()->Result().Status() :
             // -1;
             auto _status = _minimizer->hesse(); // note: I have seen that you can get 'full covariance quality' without
-                                               // running hesse ... is that expected?
+                                                // running hesse ... is that expected?
             // note: hesse status will be -1 if hesse failed (no covariance matrix)
             // otherwise the status appears to be whatever was the status before
             // note that hesse succeeds even if the cov matrix it calculates is forced pos def. Failure is only
@@ -1310,8 +1310,9 @@ resetMinimization:
             sIdx++;
          } // end of hesse attempt loop
          // experimental feature to resume fits invalidated by hesse
-         if( gEnv->GetValue("XRooFit.ResumeInvalidFits", false) &&
-             (statusHistory.back().second == 1 || statusHistory.back().second==2) && mini_sIdx < (m_strategy.Length() - 1) ) {
+         if (gEnv->GetValue("XRooFit.ResumeInvalidFits", false) &&
+             (statusHistory.back().second == 1 || statusHistory.back().second == 2) &&
+             mini_sIdx < (m_strategy.Length() - 1)) {
             sIdx = mini_sIdx;
             goto resetMinimization;
          }
@@ -1339,11 +1340,11 @@ resetMinimization:
 
       // if the final result is not valid, RooFit will mark the status as -1. But we should override that with the
       // more informative status of the last fit ...
-      // for safety, will only override if status of last result is not 0 (don't want to report success when actually bad)
-      if(out->status()==-1 && !_minimizer->fitter()->Result().IsValid() && _minimizer->fitter()->Result().Status()) {
+      // for safety, will only override if status of last result is not 0 (don't want to report success when actually
+      // bad)
+      if (out->status() == -1 && !_minimizer->fitter()->Result().IsValid() && _minimizer->fitter()->Result().Status()) {
          out->setStatus(_minimizer->fitter()->Result().Status());
       }
-
 
       // if status is 0 (min succeeded) but the covQual isn't fully accurate but requested hesse, reflect that in the
       // status

@@ -1282,7 +1282,8 @@ xRooNLLVar::xRooHypoSpace::findlimit(const char *opt, double relUncert, unsigned
          gPad->Clear();
          gra->DrawClone("A")->SetBit(kCanDelete);
          gPad->RedrawAxis();
-         gra->SetMinimum(1e-9);gra->SetMaximum(1);
+         gra->SetMinimum(1e-9);
+         gra->SetMaximum(1);
          gra->GetHistogram()->GetYaxis()->SetRangeUser(1e-9, 1);
          gPad->Modified();
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
