@@ -7072,10 +7072,10 @@ TGraph *xRooNode::BuildGraph(RooAbsLValue *v, bool includeZeros, TVirtualPad *fr
 
      if(auto w = theData->weightVar(); w && w->getStringAttribute("fitResult")) {
          // is generated
-         dataGraph->SetLineColor(kBlue);
+         dataGraph->SetLineColor(kGreen+2);
          if(w->getAttribute("expected")) {
             // is asimov
-            dataGraph->SetLineColor(kGreen+2);
+            dataGraph->SetLineColor(kBlue);
          }
       } else {
         dataGraph->SetLineColor(kBlack);
