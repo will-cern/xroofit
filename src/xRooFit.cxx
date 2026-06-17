@@ -64,6 +64,8 @@
 #include "TROOT.h"
 #include "TBrowser.h"
 
+#include "TEnv.h"
+
 #include "Python.h"
 
 BEGIN_XROOFIT_NAMESPACE
@@ -1069,6 +1071,8 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             break; // jumping straight to a hesse evaluation
          } else if (m_strategy(sIdx) == 'r') {
             // reset minimizer
+resetMinimization:
+            tries=0;
             *floatPars = *floatInitVals; // resets floats
             std::unique_ptr<RooMinimizer> _minimizerPtr2 = std::make_unique<RooMinimizer>(*_nll);
             auto initPars = _minimizerPtr2->fitter()->Config().ParamsSettings();
@@ -1079,6 +1083,10 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
             _minimizer = _minimizerPtr.get();
             sIdx++;
             statusHistory.emplace_back("Reset",0);
+            if (auto fff = dynamic_cast<ProgressMonitor *>(_nll); fff) {
+               fff->counter2 = 0; // may have become non-zero if progressed to hesse and then resumed
+               fff->prevMin = fff->minVal; // reset minimum
+            }
             continue;
          } else {
             strategy = int(m_strategy(sIdx) - '0');
@@ -1153,6 +1161,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
          tries--;
          sIdx++;
       }
+      auto mini_sIdx = sIdx;
 
       /* Minuit2 status codes:
        * status = 0    : OK
@@ -1300,6 +1309,12 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
 
             sIdx++;
          } // end of hesse attempt loop
+         // experimental feature to resume fits invalidated by hesse
+         if( gEnv->GetValue("XRooFit.ResumeInvalidFits", false) &&
+             (statusHistory.back().second == 1 || statusHistory.back().second==2) && mini_sIdx < (m_strategy.Length() - 1) ) {
+            sIdx = mini_sIdx;
+            goto resetMinimization;
+         }
       }
 
       // call minos if requested on any parameters
