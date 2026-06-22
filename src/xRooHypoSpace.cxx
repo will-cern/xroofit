@@ -424,16 +424,18 @@ int xRooNLLVar::xRooHypoSpace::scan(const char *type, size_t nPoints, double low
             }
          }
       } else if (sType.Contains("ts")) {
-         // add a point at the current poi value
-         // use that to determine ufit value and use uncertainty to set an approx range
-         AddPoint(TString::Format("%s=%g", poi().first()->GetName(), poi().getRealValue(poi().first()->GetName())));
-         graphs(sType); // triggers computation
+         if(size()==0) {
+            // add a point at the current poi value
+            // use that to determine ufit value and use uncertainty to set an approx range
+            AddPoint(TString::Format("%s=%g", poi().first()->GetName(), poi().getRealValue(poi().first()->GetName())));
+            graphs(sType); // triggers computation
+         }
          if (back().status() != 0) {
             out += 1;
          } else {
             // fit was ok, so use the values to determine an appropriate range
-            low = std::max(low, back().mu_hat().getVal() - back().mu_hat().getError() * 3);
-            high = std::min(high, back().mu_hat().getVal() + back().mu_hat().getError() * 3);
+            low = std::max(std::isnan(low) ? p->getMin() : low, back().mu_hat().getVal() - back().mu_hat().getError() * 3);
+            high = std::min(std::isnan(high) ? p->getMax() : high, back().mu_hat().getVal() + back().mu_hat().getError() * 3);
             nPoints = 20;
             double step = (high - low) / (nPoints - 1);
             for (size_t i = 0; i < nPoints; i++) {
