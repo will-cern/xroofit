@@ -1,5 +1,38 @@
 # Advanced Fitting and Diagnostics
 
+## Generating Datasets
+
+Datasets can be generated from PDFs — either as toy datasets (random Poisson
+fluctuations) or as expected (Asimov) datasets where each bin equals its
+prediction:
+
+```python
+# Toy dataset (random Poisson fluctuations)
+myDS = w["pdfs/simPdf"].generate(expected=False)
+
+# Asimov dataset (each bin set to its expected value)
+myDS = w["pdfs/simPdf"].generate(expected=True)
+
+# Use a generated dataset to build an NLL (pass the node directly, not a name)
+nll = w["pdfs/simPdf"].nll(myDS)
+```
+
+### Hybrid Datasets (Asimov in SR, observed in CR)
+
+Use `reduced()` to generate over a subset of channels and combine with
+`Add()`:
+
+```python
+# Generate Asimov data only for channels starting with "SR"
+asiData = w["pdfs/simPdf"].reduced("SR*").generate(expected=True)
+# Append the real observed data from channels starting with "CR"
+asiData.Add(w["pdfs/simPdf"].reduced("CR*").datasets()["obsData"])
+# Then build the NLL on the hybrid dataset
+nll = w["pdfs/simPdf"].nll(asiData)
+```
+
+
+
 ## Fit Configuration
 
 The NLL function carries its own fit config. View the current settings with

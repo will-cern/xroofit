@@ -149,3 +149,18 @@ w["pdfs/simPdf/channelName"].SetBinData(binNumber, value, "obsData")
 ```
 
 The dataset name defaults to `"obsData"` if unspecified.
+
+### Generating Toy or Asimov Datasets from a PDF
+
+Datasets can also be generated programmatically from the model itself, without
+providing real data. See the **Generating Datasets** section in
+[fitting-diagnostics.md](fitting-diagnostics.md) for the full API.
+
+In brief:
+
+```python
+toyDS  = w["pdfs/simPdf"].generate(expected=False)  # toy (Poisson-fluctuated)
+asiDS  = w["pdfs/simPdf"].generate(expected=True)   # Asimov (expected values)
+nll    = w["pdfs/simPdf"].nll(asiDS)                # pass node directly
+```
+
