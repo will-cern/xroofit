@@ -98,6 +98,7 @@ This xRooNLLVar object has several special methods, e.g. for fitting and toy dat
 #include "TKey.h"
 #include "TRegexp.h"
 #include "TStopwatch.h"
+#include "TEnv.h"
 
 BEGIN_XROOFIT_NAMESPACE
 
@@ -1458,35 +1459,48 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::getVal(const char *what)
 
    bool readOnly = sWhat.Contains("readonly");
 
-   if (!readOnly) {
-      if (toys) {
-         sigma_mu(); // means we will be able to evaluate the asymptotic values too
-      }
+   if (toys && !readOnly) {
+      sigma_mu(); // means we will be able to evaluate the asymptotic values too
       // only add toys if actually required
-      if (getVal(sWhat + " readonly").second != 0) {
-         if (sWhat.Contains("toys=")) {
-            // extract number of toys required ... format is "nullToys.altToysFraction" if altToysFraction=0 then use
-            // same for both, unless explicitly set (i.e. N.0) then means we want no alt toys
-            // e.g. if doing just pnull significance
-            TString toyNum = sWhat(sWhat.Index("toys=") + 5, sWhat.Length());
-            size_t nToys = toyNum.Atoi();
-            size_t nToysAlt = (toyNum.Atof() - nToys) * nToys;
-            if (nToysAlt == 0 && !toyNum.Contains('.') && !doNull)
-               nToysAlt = nToys;
-            if (nullToys.size() < nToys) {
-               addNullToys(nToys - nullToys.size());
+
+      size_t nToys = 0;
+      size_t nToysAlt = 0;
+      bool autoToys = !sWhat.Contains("toys=");
+      if(!autoToys) {
+         // extract number of toys required ... format is "nullToys.altToysFraction" if altToysFraction=0 then use
+         // same for both, unless explicitly set (i.e. N.0) then means we want no alt toys
+         // e.g. if doing just pnull significance
+         TString toyNum = sWhat(sWhat.Index("toys=") + 5, sWhat.Length());
+         nToys = toyNum.Atoi();
+         nToysAlt = (toyNum.Atof() - nToys) * nToys;
+         if (nToysAlt == 0 && !toyNum.Contains('.') && !doNull)
+            nToysAlt = nToys;
+         if (nullToys.size() < nToys) {
+            addNullToys(nToys - nullToys.size());
+         }
+         if (altToys.size() < nToysAlt) {
+            addAltToys(nToysAlt - altToys.size());
+         }
+      } else {
+         // auto toys
+         if(doCLs) {
+            auto obs = getVal(sWhat + " readonly");
+            double target=0.05; double relErrThreshold = 2;
+            double diff = (target < 0) ? obs.first : std::abs(obs.first - target);
+            double err = obs.second;
+            size_t maxToys = gEnv->GetValue("XRooFit.MaxToys",10000);
+            size_t nAltToys = 100;
+            // target mode is only used in auto toy generation
+            if((nullToys.size() < maxToys || altToys.size()<nAltToys) && (std::isnan(err) || (err > 1e-4 && diff <= relErrThreshold * err))) {
+               // auto toy-generating for limits .. do in blocks of 100
+               addCLsToys(nAltToys, 0/*seed*/, 0.05, nSigma);
             }
-            if (altToys.size() < nToysAlt) {
-               addAltToys(nToysAlt - altToys.size());
-            }
-         } else if (doCLs && toys) {
-            // auto toy-generating for limits .. do in blocks of 100
-            addCLsToys(100, 0, 0.05, nSigma);
-         } else if (toys) {
+         } else {
             throw std::runtime_error("Auto-generating toys for anything other than CLs not yet supported, please "
                                      "specify number of toys with 'toys=N' ");
          }
       }
+
    }
 
    struct RestoreNll {
@@ -2381,6 +2395,8 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
       throw std::runtime_error("Cannot add toys, invalid conditional fit");
    }
 
+   maxToys = std::min(maxToys,(size_t)gEnv->GetValue("XRooFit.MaxToys",10000));
+
    auto condition = [&]() { // returns true if need more toys
       if (std::isnan(target))
          return false;
@@ -2399,6 +2415,8 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
                alt = (pAlt.second * pNull.first > pNull.second * pAlt.first);
                if ((alt ? pAlt.second : pNull.second) < 1e-4)
                   return false; // stop if error gets too small
+               if( ((alt) ? altToys.size() : nullToys.size()) >= maxToys )
+                  return false; // stop if hit maxToys
             }
             return true;
          }
@@ -2567,52 +2585,6 @@ void xRooNLLVar::xRooHypoPoint::addCLsToys(int nToys, int seed, double target, d
 {
    addToys(false, nToys, seed, target, target_nSigma, true);
    return;
-   //
-   //   auto condition = [&](bool doingAlt=false) { // returns true if need more toys
-   //      if(std::isnan(target)) return false;
-   //      auto pval = pCLs_toys(target_nSigma);
-   //      if (!std::isnan(pval.first)) {
-   //         double diff = std::abs(pval.first - target);
-   //         double err = pval.second;
-   //         if (err > 1e-4 && diff <= 2 * pval.second) {
-   //            return true; // more toys needed
-   //            // decide which type we'd want to generate
-   //            // if it matches the type we are generating, then return true
-   //            auto pNull = pNull_toys(target_nSigma);
-   //            auto pAlt = pAlt_toys(target_nSigma);
-   //            if ((doingAlt ? pAlt.second : pNull.second) < 1e-4) return false; // stop if error gets too small
-   //            bool doAlt = (pAlt.second * pNull.first > pNull.second * pAlt.first);
-   //            return doAlt == doingAlt;
-   //         }
-   //      }
-   //      return false;
-   //   };
-   //   while(condition()) {
-   //      bool doAlt = false;
-   //      double relErrThreshold = 2;
-   //      if(nullToys.size()<size_t(nToys)) {
-   //         addToys(false,nToys);continue;
-   //      } else if(altToys.size()<size_t(nToys)) {
-   //         addToys(true,nToys);continue;
-   //      } else {
-   //         // see which have bigger errors ... generate more of that ...
-   //         auto pNull = pNull_toys(target_nSigma);
-   //         auto pAlt = pAlt_toys(target_nSigma);
-   //         doAlt = (pAlt.second*pNull.first > pNull.second*pAlt.first);
-   //         if( (doAlt ? pAlt.second : pNull.second) < 1e-4 ) break; // stop if error gets too small
-   //         auto pCLs = pCLs_toys(target_nSigma);
-   //         relErrThreshold = (doAlt) ? (pNull.second/pNull.first) : (pAlt.second/pAlt.first);
-   //         relErrThreshold = std::min(2.,std::abs(relErrThreshold));
-   //         std::cout << "Current pCLs = " << pCLs.first << " +/- " << pCLs.second
-   //                   << " (pNull = " << pNull.first << " +/- " << pNull.second
-   //                  << " , pAlt = " << pAlt.first << " +/- " << pAlt.second << ") ... generating more " << (doAlt ?
-   //                  "alt" : "null") << " toys " << relErrThreshold  << std::endl;
-   //
-   //      }
-   //      if( addToys(doAlt, nToys/*, seed, -1, target_nSigma,relErrThreshold*/) == 0) {
-   //         break; // no toys got added, so stop looping
-   //      }
-   //   }
 }
 
 xRooNLLVar::xRooHypoPoint

@@ -287,7 +287,7 @@ public:
       xValueWithError pX_toys(bool alt, double nSigma = std::numeric_limits<double>::quiet_NaN());
       size_t addToys(bool alt, int nToys, int initialSeed = 0, double target = std::numeric_limits<double>::quiet_NaN(),
                      double target_nSigma = std::numeric_limits<double>::quiet_NaN(), bool targetCLs = false,
-                     double relErrThreshold = 2., size_t maxToys = 10000);
+                     double relErrThreshold = 2., size_t maxToys = -1);
    };
 
    // use alt_value = nan to skip the asimov calculations
