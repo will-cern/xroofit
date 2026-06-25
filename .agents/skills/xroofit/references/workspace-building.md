@@ -164,3 +164,10 @@ asiDS  = w["pdfs/simPdf"].generate(expected=True)   # Asimov (expected values)
 nll    = w["pdfs/simPdf"].nll(asiDS)                # pass node directly
 ```
 
+### Saving the workspace
+
+The workspace can be saved to disk with:
+
+```python
+w.SaveAs("workspace.root")
+```
