@@ -82,7 +82,7 @@ w.floats().Print()                                   # list floating pars
 ```python
 # Option 1 — StatAnalysis (recommended for ATLAS users)
 # In the shell:
-#   setupATLAS && asetup StatAnalysis,0.7,latest
+#   setupATLAS && asetup StatAnalysis,0.8,latest
 import ROOT as XRF               # xRooFit built on top of ROOT
 
 # Option 2 — ROOT's bundled version (≥ 6.30)
@@ -108,7 +108,7 @@ ROOT 6.38 on EL9.
 ### Building a workspace from scratch
 
 ```python
-import ROOT as XRF
+import ROOT as XRF # if built on top of ROOT
 
 w = XRF.xRooNode("RooWorkspace", "combined", "my workspace")
 
@@ -186,17 +186,17 @@ fr.floatParsFinal().find("mu_sig").getErrorLo()
 
 ### Fit status and covariance quality
 
-| Code      | Meaning                                                   |
-| --------- | --------------------------------------------------------- |
-| status=0  | Last algorithm ran successfully (valid fit)               |
-| status=1  | Covariance forced positive-definite → try higher Strategy |
-| status=2  | Covariance invalid (Hesse strategy 3 only)                |
-| status=3  | EDM above threshold → increase Tolerance (max ~10)        |
-| status≥4  | Fit cannot be trusted                                     |
-| covQual=3 | Positive-definite covariance (required)                   |
-| covQual=2 | Forced positive-definite (status=1)                       |
-| covQual=1 | Approximation only (status=2)                             |
-| covQual=0 | Unavailable (no floating parameters)                      |
+| Code      | Meaning                                                                                |
+| --------- | -------------------------------------------------------------------------------------- |
+| status=0  | Last algorithm ran successfully (valid fit, but check correlations & pulls)            |
+| status=1  | Covariance forced positive-definite → try higher Strategy                              |
+| status=2  | Covariance invalid (Hesse strategy 3 only)                                             |
+| status=3  | EDM above threshold → increase Tolerance (max ~10)                                     |
+| status≥4  | Fit cannot be trusted                                                                  |
+| covQual=3 | Positive-definite covariance (required for trustworthy parameter errors)               |
+| covQual=2 | Forced positive-definite (status=1)                                                    |
+| covQual=1 | Approximation only (status=2)                                                          |
+| covQual=0 | Unavailable (no floating parameters)                                                   |
 
 Tune fit hyperparameters:
 
@@ -260,7 +260,7 @@ nll.pgof()           # p-value including constraint term (use for toys only)
 ```python
 totErr  = fr.floatParsFinal().find("mu_sig").getError()
 statErr = fr.conditionalError("mu_sig", "alpha_*,gamma_*", up=True, approx=True)
-systErr = XRF.TMath.Sqrt(totErr**2 - statErr**2)
+systErr = (totErr**2 - statErr**2)**0.5
 ```
 
 ## Gotchas
@@ -280,9 +280,6 @@ systErr = XRF.TMath.Sqrt(totErr**2 - statErr**2)
 - **Python method forwarding**: In Python, `w["path"].someMethod()` can call
   either `xRooNode.someMethod()` or the underlying RooFit object's method. In
   C++ you must use `w["path"].get<ClassName>()->someMethod()`.
-- **All energies in MeV in ATLAS**: When setting axis ranges for observables
-  derived from reconstructed physics objects, use MeV not GeV unless explicitly
-  converting.
 - **Tolerance ≤ 10**: Setting `Tolerance > 10` has been observed to cause
   incorrect parameter uncertainties even with covQual=3.
 
