@@ -31,7 +31,7 @@ test:
   script:
     - source /release_setup.sh
     - source build/setup.sh
-    - python3 test/test_single_bin_cls.py
+    - python3 -m unittest discover -s test
 
 
 send-snapshot:
