@@ -29,8 +29,7 @@ To verify that the project is correctly configured and the xRooFit library can b
 ```bash
 python3 -c "import ROOT; print(ROOT.xRooFit.GetVersion())"
 ```
-This should output the version string matching `build/versioning/xRooFitVersion.h`.
+This should output the version string matching `build/versioning/xRooFitVersion.h`
 
-> [!NOTE]
-> If a conflict arises with the host system's default ROOT (e.g. Homebrew ROOT version mismatch causing `fatal error: 'TError.h' file not found`), agents must first source the StatAnalysis setup script (either the local one at `~/CLionProjects/StatAnalysis/install-0.8/setup.sh` or the cvmfs equivalent) to load the correct compiler, Python, and ROOT versions.
+
 
