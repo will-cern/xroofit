@@ -1794,8 +1794,8 @@ std::shared_ptr<xRooNLLVar::xRooHypoPoint> xRooNLLVar::xRooHypoPoint::asimov(boo
                // at some value of mu. Normally we would use mu=0 but if we have a bin
                // with only signal contribution (no bkg) will get asimov data in that bin
                // and no prediction ... the cfit(mu=0) will never succeed on this
-               // so lets move to half the alt value instead (the value used to generate)
-               v->setVal(theFit->constPars().getRealValue(v->GetName()) * 0.5);
+               // so lets move to 0.1% the alt value instead (the value used to generate)
+               v->setVal(theFit->constPars().getRealValue(v->GetName()) * gEnv->GetValue("XRooFit.AsimovNullValFactor",1e-3));
             }
          }
       }
