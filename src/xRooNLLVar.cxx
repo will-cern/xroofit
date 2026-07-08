@@ -2839,6 +2839,7 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       h->SetLineColor(isAlt ? kRed : kBlue);
       h->SetLineWidth(2);
       h->SetMarkerSize(0);
+      h->SetStats(false);
       h->SetBit(kCanDelete);
       return h;
    };
