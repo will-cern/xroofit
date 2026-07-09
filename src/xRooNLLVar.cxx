@@ -337,7 +337,7 @@ void xRooNLLVar::Print(Option_t *)
       std::cout << "  MinimizerOptions: " << std::endl;
       fFitConfig->MinimizerOptions().Print();
    }
-   std::cout << "Last Rebuild Log Output: " << fFuncCreationLog << std::endl;
+   std::cout << "Last Rebuild Log Output: " << std::endl << fFuncCreationLog << std::endl;
 }
 
 void xRooNLLVar::reinitialize()
