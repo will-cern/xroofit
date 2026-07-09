@@ -236,6 +236,19 @@ print(w.nll("obsData").hypoSpace().limits())
 Available test statistics: `tmu`, `qmu`, `qmutilde` (default for upper limits),
 `q0`, `u0` (for discovery).
 
+### Validating asymptotic limits with toys
+
+```python
+# After computing asymptotic limits, validate at the observed limit with toys:
+hp = w.nll("obsData").hypoPoint(value=limits["obs"].value(), alt_value=0)
+hp.addNullToys(2000)
+hp.addAltToys(2000)
+print(hp.pCLs_toys())  # should agree with hp.pCLs_asymp()
+hp.Draw()              # overlay toys with asymptotic (dashed line)
+```
+
+See `references/hypothesis-testing.md` for full toy debugging workflow.
+
 ### Discovery significance
 
 ```python
@@ -282,6 +295,16 @@ systErr = (totErr**2 - statErr**2)**0.5
   C++ you must use `w["path"].get<ClassName>()->someMethod()`.
 - **Tolerance ≤ 10**: Setting `Tolerance > 10` has been observed to cause
   incorrect parameter uncertainties even with covQual=3.
+- **POI range and toys**: Avoid tight finite bounds on the POI (e.g. `[-3, +3]`).
+  Minuit applies internal parameter transformations at boundaries which distort
+  the fit. For toy-based limits, set the POI lower bound to a small negative
+  value (e.g. `-1e-5`) to prevent negative bin predictions while still allowing
+  convergence onto 0 for bkg-only fits. Use `w.poi()[0].setRange(-1e-5,
+  float('inf'))`. Also use `Strategy(2)` to avoid post-Hesse EDM warnings.
+- **Bad toys from negative predictions**: In signal-dominated bins, toys with 0
+  events can cause the fit to drive the POI negative, leading to negative total
+  bin predictions and a non-differentiable NLL. This manifests as NaN test
+  statistic values and status=3 fits. Fix with a small negative POI lower bound.
 
 ## Interop
 
