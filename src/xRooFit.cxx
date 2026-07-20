@@ -362,7 +362,12 @@ xRooFit::generateFrom(RooAbsPdf &pdf, const RooFitResult &_fr, bool expected, in
                    std::abs(boundaries.back() - rr) > 1e-5 * boundaries.back())
                   boundaries.push_back(rr);
             } // sometimes get virtual duplicates of boundaries
-            r->setBinning(RooBinning(boundaries.size() - 1, &boundaries[0]));
+
+            // only replace the binning if necessary, i.e. if binning changed ...
+            // this ensures we don't replace a RooUniformBinning with a RooBinning, even if should be compatible
+            if(boundaries.size() < res->size()) {
+               r->setBinning(RooBinning(boundaries.size() - 1, &boundaries[0]));
+            }
             delete res;
          } else if (r->numBins(r->getBinning().GetName()) == 0 && expected) {
             // no bins ... in order to generate expected we need to have some bins
