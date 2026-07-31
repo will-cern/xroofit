@@ -1,0 +1,17 @@
+# This is config that should be found if doing an install-free link against xRooFit local build
+# i.e. where you do a cmake configure and build of project, source the setup script, and then
+# just go ahead and try find_package(xRooFit) in your project
+
+get_filename_component(_dir "${CMAKE_CURRENT_LIST_FILE}" PATH)
+get_filename_component(_prefix "${_dir}" ABSOLUTE) # the build directory
+
+# Import the targets.
+include("${_prefix}/pkg/xroofit-targets.cmake")
+
+# add ROOT dependency
+include( CMakeFindDependencyMacro )
+find_dependency( ROOT COMPONENTS MathCore RIO Core Tree Hist TreePlayer RooFit RooFitCore Matrix Gpad Graf RooStats HistPainter HistFactory Gui Ged RooFitHS3)
+
+# Report other information.
+set(XROOFIT_INCLUDE_DIRS "$ENV{ROOT_INCLUDE_PATH}") # xRooFit's headers were added to this env var in setup.sh
+set(XROOFIT_LIBRARIES xRooFit)

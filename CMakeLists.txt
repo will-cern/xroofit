@@ -58,6 +58,9 @@ target_link_libraries(xRooFit PUBLIC ${_root_libraries})
 target_sources(xRooFit PRIVATE ${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h)
 set_source_files_properties(${CMAKE_BINARY_DIR}/versioning/xRooFitVersion.h PROPERTIES GENERATED TRUE)
 target_include_directories(xRooFit BEFORE PRIVATE ${CMAKE_BINARY_DIR}/versioning)
+target_include_directories(xRooFit
+        PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}> $<INSTALL_INTERFACE:include>)
+
 add_dependencies(xRooFit xRooFit_version)
 target_compile_options(xRooFit PRIVATE -Wall -Wpedantic -Wunused-variable -Wunused-parameter -Wextra -Wshadow)
 target_compile_features(xRooFit PUBLIC cxx_std_17)
@@ -74,6 +77,7 @@ file(APPEND ${SETUP} "export PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}:\${PYTHONPAT
 file(APPEND ${SETUP} "export ROOT_INCLUDE_PATH=${CMAKE_CURRENT_SOURCE_DIR}:\${ROOT_INCLUDE_PATH}\n")
 file(APPEND ${SETUP} "export LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:${ROOT_LIBRARY_DIR}:\${LD_LIBRARY_PATH}\n")
 file(APPEND ${SETUP} "export DYLD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:\${DYLD_LIBRARY_PATH}\n")
+file(APPEND ${SETUP} "export CMAKE_PREFIX_PATH=${CMAKE_CURRENT_BINARY_DIR}:\${CMAKE_PREFIX_PATH}\n")
 ## file(APPEND ${SETUP} "export PATH=\${PATH}:${CMAKE_CURRENT_SOURCE_DIR}/scripts\n")
 string(ASCII 27 Esc)
 message(STATUS "${Esc}[1;35mIMPORTANT: In future sessions you just have to remember to run:
@@ -97,10 +101,21 @@ install(TARGETS xRooFit
 install(EXPORT xroofit-targets
         DESTINATION lib/xroofit)
 
+export(
+        EXPORT xroofit-targets
+        FILE "${CMAKE_CURRENT_BINARY_DIR}/pkg/xroofit-targets.cmake"
+)
+
 # Create and install package configuration and version files.
 configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/pkg/xroofit-config.cmake.in
         ${CMAKE_BINARY_DIR}/pkg/xroofit-config.cmake @ONLY)
+
+# this next config file is for building against an uninstalled version of project
+# we should not install this configure file!
+configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/pkg/xroofit-config.local.cmake.in
+        ${CMAKE_BINARY_DIR}/xroofit-config.cmake @ONLY)
 
 execute_process(
         COMMAND git describe --always --dirty --tags

@@ -61,11 +61,11 @@ source setup.sh
 
 ### Building Projects against xRooFit
 
-Below is an example CMakeLists.txt and cxx file to demonstrate how to compile c++ against this project in a way that will work whether you have `xRooFit` available as a standalone project or what to use it from the installation that comes with ROOT. 
+Below is an example CMakeLists.txt and cxx file to demonstrate how to compile c++ against this project (assuming you did a `make install`) in a way that will work whether you have `xRooFit` available as a standalone project or what to use it from the installation that comes with ROOT. 
 
 CMakeLists.txt:
 
-```python
+```cmake
 cmake_minimum_required(VERSION 3.27)
 project(TestProject)
 
@@ -102,6 +102,18 @@ int main() {
   return 0;
 }
 
+```
+
+Note that if you just build (and setup.sh) the project, without installing it, you should still be able to build project against xRooit. Just use the `xRooFit` target:
+
+```cmake
+cmake_minimum_required(VERSION 3.27)
+project(TestProject)
+
+find_package( xRooFit REQUIRED )
+
+add_executable(testApp test.cxx)
+target_link_libraries(testApp PRIVATE xRooFit)
 ```
 
 ### Using xRooNode
