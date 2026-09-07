@@ -487,8 +487,10 @@ std::shared_ptr<RooLinkedList> xRooFit::defaultNLLOptions()
       delete l;
    });
    sDefaultNLLOptions->Add(RooFit::Offset().Clone());
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 41, 00)
    // disable const-optimization at the construction step ... can happen in the minimization though
    sDefaultNLLOptions->Add(RooFit::Optimize(0).Clone());
+#endif
    return sDefaultNLLOptions;
 }
 
@@ -519,8 +521,10 @@ std::shared_ptr<ROOT::Fit::FitConfig> xRooFit::defaultFitConfig()
    fitConfig.MinimizerOptions().SetExtraOptions(ROOT::Math::GenAlgoOptions());
    // have to const cast to set extra options
    auto extraOpts = const_cast<ROOT::Math::IOptions *>(fitConfig.MinimizerOptions().ExtraOptions());
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 41, 00)
    extraOpts->SetValue("OptimizeConst", 2); // if 0 will disable constant term optimization and cache-and-track of the
                                             // NLL. 1 = just caching, 2 = cache and track
+#endif
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 29, 00)
    extraOpts->SetValue(
       "StrategySequence",
@@ -628,11 +632,12 @@ public:
    {
       fFunc->printMultiline(os, contents, verbose, indent);
    }
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 41, 00)
    void constOptimizeTestStatistic(ConstOpCode opcode, bool doAlsoTrackingOpt) override
    {
       fFunc->constOptimizeTestStatistic(opcode, doAlsoTrackingOpt);
    }
-
+#endif
    double evaluate() const override
    {
       if (fInterrupt) {
@@ -1025,7 +1030,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
       TString actualFirstMinimizer = _minimizer->fitter()->Config().MinimizerType();
 
       int status = 0;
-
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 41, 00)
       int constOptimize = 2;
       _minimizer->fitter()->Config().MinimizerOptions().ExtraOptions()->GetValue("OptimizeConst", constOptimize);
       if (constOptimize) {
@@ -1045,7 +1050,7 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
          // warning - if the nll was previously activated then it seems like deactivating may break it.
          nll.constOptimizeTestStatistic(RooAbsArg::DeActivate);
       }
-
+#endif
       int sIdx = -1;
       TString minim = _minimizer->fitter()->Config().MinimizerType();
       TString algo = _minimizer->fitter()->Config().MinimizerAlgoType();
@@ -1336,9 +1341,6 @@ std::shared_ptr<const RooFitResult> xRooFit::minimize(RooAbsReal &nll,
          }
       }
 
-      // DO NOT DO THIS - seems to mess with the NLL function in a way that breaks the cache - reactivating wont fix
-      // if(constOptimize) { _minimizer->optimizeConst(0); } // doing this because saw happens in RooAbsPdf::minimizeNLL
-      // method
 
       // signal(SIGINT,gOldHandlerr);
       out = std::unique_ptr<RooFitResult>{_minimizer->save(fitName, resultTitle)};

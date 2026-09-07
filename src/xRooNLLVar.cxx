@@ -1308,11 +1308,13 @@ void xRooNLLVar::SetOption(const RooCmdArg &opt)
    } else if (strcmp(opt.GetName(), "PrintLevel") == 0) {
       fitConfig()->MinimizerOptions().SetPrintLevel(opt.getInt(0));
    } else {
+#if ROOT_VERSION_CODE < ROOT_VERSION(6, 41, 00)
       if (strcmp(opt.GetName(), "Optimize") == 0) {
          // this flag will trigger constOptimizeTestStatistic to be called on the nll in createNLL method
          // we should ensure that the fitconfig setting is consistent with it ...
          fitConfigOptions()->SetValue("OptimizeConst", opt.getInt(0));
       }
+#endif
       if (auto prevObject = fOpts->FindObject(opt.GetName()); prevObject) {
          // replace previous option
          fOpts->Replace(prevObject, opt.Clone(nullptr));
