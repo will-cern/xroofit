@@ -8691,7 +8691,7 @@ xRooNode xRooNode::histo(const xRooNode &vars, const xRooNode &fr, bool content,
 {
 
    if (!vars.fComp && strlen(vars.GetName())) {
-      return histo(xRooNode::vars().reduced(vars.GetName()), fr, content, errors);
+      return histo(xRooNode::vars().reduced(vars.GetName()), fr, content, errors,stack,errorsHi,errorsLo,nErrorToys);
    }
 
    xRooNode out(TString::Format("%s.histo", GetName()), nullptr, *this);
