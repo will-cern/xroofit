@@ -5,7 +5,7 @@
 #include "RooFit.h"
 
 #include "Rtypes.h"
-#include "Riostream.h"
+#include <iostream>
 #include "TEnv.h"
 
 #include "xRooFitVersion.h"
