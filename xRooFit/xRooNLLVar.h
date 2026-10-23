@@ -512,6 +512,13 @@ public:
    bool kReuseNLL = true;
 };
 
+// define xRooHypoSpace class here, since inherits from above so need declaration
+class xRooHypoSpace : public xRooNLLVar::xRooHypoSpace {
+public:
+   using xRooNLLVar::xRooHypoSpace::xRooHypoSpace;
+   ClassDefOverride(xRooHypoSpace, 0)
+};
+
 END_XROOFIT_NAMESPACE
 
 
