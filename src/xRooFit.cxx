@@ -2100,7 +2100,7 @@ std::pair<double, double> xRooFit::matchPrecision(const std::pair<double, double
       auto tmp = out.second;
       out.second = round_to_digits(out.second, 2);
       int expo = (out.second == 0) ? 0 : (int)std::floor(std::log10(std::abs(out.second)));
-      if (TString::Format("%e", out.second)(0) != '1') {
+      if (TString::Format("%e", std::abs(out.second))(0) != '1') {
          out.second = round_to_digits(tmp, 1);
          out.first = (expo >= 0) ? round(out.first) : round_to_decimal(out.first, -expo);
       } else if (out.second != 0) {
