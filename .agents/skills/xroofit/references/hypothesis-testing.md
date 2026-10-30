@@ -130,6 +130,91 @@ scanType = "cls toys"         # auto: 100-toy blocks until 2σ
                               # confidence on pCLs, max 10k
 ```
 
+### Full toy-based CLs scan example
+
+A complete example running a CLs limit with toys, extracting limits,
+and drawing test statistic distributions for each scanned point:
+
+```python
+import ROOT
+ROOT.gROOT.SetBatch(True)
+
+w = ROOT.xRooNode("workspace.root")
+poi = w.poi()[0].GetName()
+
+# Build NLL and hypothesis space
+hs = w["pdfs/simPdf"].nll("obsData", [ROOT.xRooFit.Tolerance(1)]).hypoSpace(
+    poi, ROOT.xRooFit.TestStatistic.qmutilde
+)
+
+# Scan with 10000 null + 10000 alt toys per point
+# Arguments: scanType, nPoints, min, max, nSigmas
+hs.scan("cls toys=10000", 10, 0, 0.8, [0, 1, 2, -1, -2, float("nan")])
+
+# Extract limits
+limits = hs.limits()
+print(f"Expected 95% CL limit: {limits['0'].value():.4g}")
+print(f"Observed 95% CL limit: {limits['obs'].value():.4g}")
+print(limits)
+
+# Draw the CLs scan (p-value vs POI)
+hs.Draw()
+ROOT.gPad.SaveAs("cls_scan.png")
+
+# Draw test statistic distributions for each scanned hypothesis point
+for i, hp in enumerate(hs):
+    mu = hp.fNullVal()
+    c = ROOT.TCanvas(f"c_{i}", f"TS dist, {poi}={mu:.4g}", 800, 600)
+    hp.Draw()  # draws null+alt TS distributions, observed value, p-values
+    c.SaveAs(f"ts_dist_{poi}_{mu:.4g}.png")
+
+# Save result to workspace
+w.Add(hs.result())
+w.SaveAs("workspace_cls_toys.root")
+```
+
+**Key points:**
+- `hp.Draw()` is the simplest way to visualise the test statistic
+  distributions at each hypothesis point. It draws both null and alt
+  distributions, the observed TS value, and annotates the p-values.
+- After a toy scan, each `hp` in `hs` has its `nullToys` and `altToys`
+  vectors populated (see [Toy data structure](#toy-data-structure) below).
+
+### Extracting individual test statistic values from toys
+
+After running a toy scan, you can extract the raw TS values from each
+hypothesis point. This is useful for custom plotting, further analysis,
+or exporting to external tools.
+
+```python
+import ROOT
+import math
+
+# After running hs.scan("cls toys=...", ...)
+for i, hp in enumerate(hs):
+    mu = hp.fNullVal()
+
+    # Extract null hypothesis TS values
+    null_ts = [ROOT.std.get[1](hp.nullToys.at(j))
+               for j in range(hp.nullToys.size())]
+
+    # Extract alt hypothesis TS values
+    alt_ts = [ROOT.std.get[1](hp.altToys.at(j))
+              for j in range(hp.altToys.size())]
+
+    # Filter out NaN (bad toys) if desired
+    null_ts_good = [v for v in null_ts if math.isfinite(v)]
+    alt_ts_good = [v for v in alt_ts if math.isfinite(v)]
+
+    print(f"{poi}={mu:.4g}: {len(null_ts)} null toys "
+          f"({len(null_ts) - len(null_ts_good)} bad), "
+          f"{len(alt_ts)} alt toys "
+          f"({len(alt_ts) - len(alt_ts_good)} bad)")
+```
+
+See [Toy data structure](#toy-data-structure) for the full tuple layout
+(seed, ts_value, weight).
+
 ### Validating asymptotic limits with toys (single-point)
 
 The recommended workflow for validating an asymptotic CLs result is:
@@ -188,23 +273,77 @@ Each tuple contains:
 
 | Index (`std::get<N>`) | Content              | Notes                          |
 | --------------------- | -------------------- | ------------------------------ |
-| 0                     | Random seed          | Reproducible via `generateAlt` / `generateNull` |
+| 0                     | Random seed          | Reproducible via `generateNull` / `generateAlt` |
 | 1                     | Test statistic value | NaN indicates a failed ("bad") toy |
-| 2                     | Weight               | Currently always 1             |
+| 2                     | Weight               | Use as histogram weight when filling TS distributions |
 
 Access in Python:
 
 ```python
-seed   = ROOT.std.get[0](hp.altToys[i])
-ts_val = ROOT.std.get[1](hp.altToys[i])
-weight = ROOT.std.get[2](hp.altToys[i])
+seed   = ROOT.std.get[0](hp.nullToys.at(i))
+ts_val = ROOT.std.get[1](hp.nullToys.at(i))
+weight = ROOT.std.get[2](hp.nullToys.at(i))
+```
+
+Bulk extraction of all TS values:
+
+```python
+# All null hypothesis test statistic values
+null_ts = [ROOT.std.get[1](hp.nullToys.at(i))
+           for i in range(hp.nullToys.size())]
+
+# All alt hypothesis test statistic values
+alt_ts = [ROOT.std.get[1](hp.altToys.at(i))
+          for i in range(hp.altToys.size())]
+```
+
+### Regenerating a specific toy
+
+The seed stored in each toy tuple can be used to exactly reproduce that
+toy's pseudodata. This is essential for debugging bad toys or inspecting
+individual toy datasets.
+
+```python
+# Get the seed from a specific toy
+seed = ROOT.std.get[0](hp.nullToys.at(i))
+
+# Regenerate the toy — returns a new xRooHypoPoint
+toyPoint = hp.generateNull(seed=seed)
+# Similarly for alt toys:
+# toyPoint = hp.generateAlt(seed=seed)
+
+# The toy data is the "observed" data of the returned hypoPoint.
+# data() returns a pair: (RooAbsData, RooArgSet)
+#   .first  = the toy dataset (includes global observables since ROOT 6.28)
+#   .second = legacy global observables set (now embedded in the dataset)
+toyData = toyPoint.data().first
+
+# Draw the model with the toy data overlaid
+w["pdfs/simPdf"].Draw()
+ROOT.xRooNode(toyData).Draw("same")
+
+# Fit the toy data to inspect convergence
+fr = w["pdfs/simPdf"].nll(toyData).minimize()
+fr.Print()
 ```
 
 ### Inspecting toy distributions
 
 ```python
-hs.Print()    # list hypoPoints
-hs[4].Draw()  # draw test statistic distribution for 5th point
+# List all hypoPoints and their status
+hs.Print()
+
+# Draw test statistic distribution for a single hypothesis point
+# This is the simplest and recommended way to visualize TS distributions.
+# It draws both null and alt distributions, the observed TS value,
+# and annotates p-values in the legend.
+hs[4].Draw()  # 5th point
+
+# Draw distributions for ALL scanned points
+for i, hp in enumerate(hs):
+    c = ROOT.TCanvas(f"c_{i}", "", 800, 600)
+    hp.Draw()
+    c.SaveAs(f"ts_point_{i}.png")
 ```
 
 For capped test statistics (all except `u0`), check for toys with ts < 0. These

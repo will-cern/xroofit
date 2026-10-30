@@ -236,18 +236,41 @@ print(w.nll("obsData").hypoSpace().limits())
 Available test statistics: `tmu`, `qmu`, `qmutilde` (default for upper limits),
 `q0`, `u0` (for discovery).
 
-### Validating asymptotic limits with toys
+### CLs limits with toys
 
 ```python
-# After computing asymptotic limits, validate at the observed limit with toys:
+# Full toy-based scan (e.g. 10k null + 10k alt toys per point):
+hs.scan("cls toys=10000", 10, 0, 0.8, [0, 1, 2, -1, -2, float("nan")])
+
+# Validate asymptotic at observed limit with a single hypoPoint:
 hp = w.nll("obsData").hypoPoint(value=limits["obs"].value(), alt_value=0)
 hp.addNullToys(2000)
 hp.addAltToys(2000)
 print(hp.pCLs_toys())  # should agree with hp.pCLs_asymp()
-hp.Draw()              # overlay toys with asymptotic (dashed line)
 ```
 
-See `references/hypothesis-testing.md` for full toy debugging workflow.
+### Toy test statistic distributions
+
+```python
+# Draw TS distributions at each scanned hypothesis point:
+for i, hp in enumerate(hs):
+    hp.Draw()   # null+alt distributions, observed value, p-values
+    ROOT.gPad.SaveAs(f"ts_point_{i}.png")
+
+# Extract raw TS values from toys (each toy is a tuple: seed, ts, weight):
+null_ts = [ROOT.std.get[1](hp.nullToys.at(i))
+           for i in range(hp.nullToys.size())]
+alt_ts  = [ROOT.std.get[1](hp.altToys.at(i))
+           for i in range(hp.altToys.size())]
+
+# Regenerate a specific toy from its seed:
+seed = ROOT.std.get[0](hp.nullToys.at(i))
+toyPoint = hp.generateNull(seed=seed)  # returns xRooHypoPoint
+toyData  = toyPoint.data().first       # the toy dataset as RooAbsData
+```
+
+See `references/hypothesis-testing.md` for full toy scan example,
+debugging bad toys, and interpreting TS distributions.
 
 ### Discovery significance
 
@@ -335,5 +358,7 @@ For detailed content beyond this overview, consult the reference files:
   uncertainties (Schur complement), stat/syst/mc-stat breakdown, Shifted GO
   method, conditional fits (`fr.cfit()`)
 - **`references/hypothesis-testing.md`** — Test statistic definitions (tmu, qmu,
-  qmutilde, q0, u0), full verbose limit-setting example, toy-based limits, limit
-  troubleshooting, hypoPoint methods/fits tables, limit-setting checklist
+  qmutilde, q0, u0), full verbose limit-setting example, toy-based CLs scans,
+  drawing toy TS distributions (`hp.Draw()`), extracting individual TS values
+  from `nullToys`/`altToys`, regenerating toys with `generateNull`/`generateAlt`,
+  limit troubleshooting, hypoPoint methods/fits tables, limit-setting checklist
