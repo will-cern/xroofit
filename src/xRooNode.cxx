@@ -12434,7 +12434,15 @@ void xRooNode::SaveAs(const char *filename, Option_t *option) const
 
    } else if (auto w = get<RooWorkspace>(); w) {
       // ensure the current color set is saved in the workspace
-      w->import(*gROOT->GetListOfColors(), true);
+      // so not overwrite existing list of colors though, as will invalidate our existing node
+      auto colors = gROOT->GetListOfColors();
+      if(auto currentCols = dynamic_cast<TObjArray*>(w->genobj(colors->GetName()))) {
+         currentCols->RemoveAll();
+         currentCols->AddAll(colors); // maybe need to clone colors??
+      } else {
+         w->import(*gROOT->GetListOfColors(), false);
+      }
+
 
       if (sFilename.EndsWith(".json")) {
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 26, 00)
