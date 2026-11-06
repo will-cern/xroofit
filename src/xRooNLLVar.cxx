@@ -1930,8 +1930,9 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
       return std::pair(std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN());
    int targetIdx =
       (altToys.size() - firstToy) * ROOT::Math::gaussian_cdf_c(nSigma) + firstToy; // TODO: Account for weights
-   return std::pair(std::get<1>(altToys[targetIdx]), (std::get<1>(altToys[std::min(int(altToys.size()), targetIdx)]) -
-                                                      std::get<1>(altToys[std::max(0, targetIdx)])) /
+   // use difference to either neighbour toys as the uncertainty
+   return std::pair(std::get<1>(altToys[targetIdx]), (std::get<1>(altToys[std::min(int(altToys.size()), targetIdx+1)]) -
+                                                      std::get<1>(altToys[std::max(0, targetIdx-1)])) /
                                                         2.);
 }
 
@@ -2317,7 +2318,7 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pX_toys(bool alt, double 
             result += std::get<2>(toy);
          if (std::get<1>(toy) >= _ts.first - _ts.second)
             result_err_up += std::get<2>(toy);
-         if (std::get<1>(toy) >= _ts.first - _ts.second)
+         if (std::get<1>(toy) >= _ts.first + _ts.second)
             result_err_down += std::get<2>(toy);
       }
    }
@@ -2397,7 +2398,8 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
       throw std::runtime_error("Cannot add toys, invalid conditional fit");
    }
 
-   maxToys = std::min(maxToys,(size_t)gEnv->GetValue("XRooFit.MaxToys",10000));
+   // if request more than the maxToys, we will generate them!
+   maxToys = std::max(size_t(nToys),std::min(maxToys,(size_t)gEnv->GetValue("XRooFit.MaxToys",10000)));
 
    auto condition = [&]() { // returns true if need more toys
       if (std::isnan(target))
@@ -2830,10 +2832,10 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
       //            }
       //        }
       if (fPOIName())
-         title += TString::Format("%s' = %g", fPOIName(), (isAlt) ? fAltVal() : fNullVal());
+         title += TString::Format("%s' = %g", (poi().first())->GetTitle(), (isAlt) ? fAltVal() : fNullVal());
       title += TString::Format(" , N_{toys}=%d", int((isAlt) ? altToys.size() : nullToys.size()));
       if (nBadOrZero > 0)
-         title += TString::Format(" (N_{bad/0}=%d)", int(nBadOrZero));
+         title += TString::Format(" (N_{bad|0}=%d)", int(nBadOrZero));
       title += ";";
       title += tsTitle();
       title += TString::Format(";Probability Mass");
@@ -2880,13 +2882,13 @@ void xRooNLLVar::xRooHypoPoint::Draw(Option_t *opt)
    }
 
    if (h->GetEntries() > 0) {
-      h->Draw("esame");
+      h->Draw("histesame");
    } else {
       h->Draw("axissame"); // for unknown reason if second histogram empty it still draws with two weird bars???
    }
    h = altHist;
    if (h->GetEntries() > 0) {
-      h->Draw("esame");
+      h->Draw("histesame");
    } else {
       h->Draw("axissame"); // for unknown reason if second histogram empty it still draws with two weird bars???
    }

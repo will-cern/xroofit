@@ -204,9 +204,11 @@ public:
          //  old way ... now doing like in pCLs_asymp by calculating the two variations ... but this is pessimistic
          //  assumes p-values are anticorrelated!
          //  so reverting to old
-         return std::pair<double, double>(nom, (alt.first - alt.second <= 0)
+         /*return std::pair<double, double>(nom, (alt.first - alt.second <= 0)
                                                   ? std::numeric_limits<double>::infinity()
-                                                  : (sqrt(pow(null.second, 2) + pow(alt.second * nom, 2)) / alt.first));
+                                                  : (sqrt(pow(null.second, 2) + pow(alt.second * nom, 2)) / alt.first));*/
+         // do standard error propagation, treating uncerts as uncorrelated
+         return std::pair<double, double>(nom, (sqrt(pow(null.second, 2) + pow(alt.second * nom, 2)) / alt.first));
          // return std::pair(nom,std::max(std::abs(up - nom), std::abs(down - nom)));
       }
       xValueWithError ts_toys(double nSigma = std::numeric_limits<double>::quiet_NaN()); // test statistic value
@@ -348,20 +350,13 @@ public:
 
       // get currently available limit, with error. Use nSigma = nan for observed limit
       xValueWithError limit(const char *type = "cls", double nSigma = std::numeric_limits<double>::quiet_NaN()) const;
-      int scan(const char *type, size_t nPoints, double low = std::numeric_limits<double>::quiet_NaN(),
+      int scan(const char *type = "cls", size_t nPoints = 0, double low = std::numeric_limits<double>::quiet_NaN(),
                double high = std::numeric_limits<double>::quiet_NaN(),
                const std::vector<double> &nSigmas = {0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()},
                double relUncert = 0.1);
-      int scan(const char *type = "cls",
-               const std::vector<double> &nSigmas = {0, 1, 2, -1, -2, std::numeric_limits<double>::quiet_NaN()},
-               double relUncert = 0.1)
-      {
-         return scan(type, 0, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN(),
-                     nSigmas, relUncert);
-      }
       int scan(const char *type, double nSigma, double relUncert = 0.1)
       {
-         return scan(type, std::vector<double>{nSigma}, relUncert);
+         return scan(type,0, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN(), std::vector<double>{nSigma}, relUncert);
       }
 
       // key is nSigma or "obs" for observed
@@ -378,10 +373,10 @@ public:
       RooStats::HypoTestInverterResult *result();
 
    private:
-      // estimates where corresponding pValues graph becomes equal to 0.05
+      // estimates where corresponding pValues graph becomes equal to target (uses 0.05 by default, can override with xRooHypoSpace.CL TEnv var
       // linearly interpolates log(pVal) when obtaining limits.
       // returns value and error
-      static xValueWithError GetLimit(const TGraph &pValues, double target = std::numeric_limits<double>::quiet_NaN());
+      static xValueWithError GetLimit(const TGraphErrors &pValues, double target = std::numeric_limits<double>::quiet_NaN());
 
       static RooArgList toArgs(const char *str);
 

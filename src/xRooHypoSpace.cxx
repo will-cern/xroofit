@@ -37,6 +37,8 @@
 #include "RooStats/HypoTestInverterResult.h"
 #include "TEnv.h"
 
+#include "TRandom3.h"
+
 #include "./PythonInterface.h"
 
 BEGIN_XROOFIT_NAMESPACE
@@ -486,7 +488,7 @@ xRooNLLVar::xRooHypoSpace::limits(const char *opt, const std::vector<double> &nS
       relUncert = std::numeric_limits<double>::infinity(); // no NLL available so just get whatever limit we can
    }
 
-   scan(opt, nSigmas, relUncert);
+   scan(opt, 0, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN(), nSigmas, relUncert);
 
    std::map<std::string, xRooNLLVar::xValueWithError> out;
    for (auto nSigma : nSigmas) {
@@ -908,11 +910,11 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(
          auto x = out->Clone("up");
          x->SetBit(kCanDelete);
          dynamic_cast<TAttFill *>(x)->SetFillStyle(nSigma == 2 ? 3005 : 3004);
-         dynamic_cast<TAttFill *>(x)->SetFillColor(kBlack);
+         dynamic_cast<TAttFill *>(x)->SetFillColor(nSigma == 2 ? (kOrange-3) : (kGreen+3));
          out->GetListOfFunctions()->Add(x, "F");
          x = out->Clone("down");
          x->SetBit(kCanDelete);
-         dynamic_cast<TAttFill *>(x)->SetFillColor(kBlack);
+         dynamic_cast<TAttFill *>(x)->SetFillColor(nSigma == 2 ? (kOrange-3) : (kGreen+3));
          dynamic_cast<TAttFill *>(x)->SetFillStyle(nSigma == 2 ? 3005 : 3004);
          out->GetListOfFunctions()->Add(x, "F");
       }
@@ -997,6 +999,8 @@ std::shared_ptr<TGraphErrors> xRooNLLVar::xRooHypoSpace::graph(
       if (std::isnan(pval.first) || (pval.second != 0 && (p.nullToys.size() < nToys || p.altToys.size() < nToysAlt) && (sOpt.Contains("toys=") ||   (sOpt.Contains("toys") && !sOpt.Contains("toys=") && doCLs && pval.second > 1e-4 && diff <= relErrThreshold * pval.second))) ) {
          if (p.status() != 0) { // if status is 0 then bad pval is really just absence of fits, not bad fits
             badPoints()->SetPoint(badPoints()->GetN(), _x, 0);
+         } else if(sOpt.Contains("toys") && !(std::isnan(nSigma) && std::isnan(pval.first))) {
+            std::cout << " warning: discarding nSigma=" << nSigma << " point @ " << _x << " ... more toys needed (" << pval.first << " +/- " << pval.second << ")" << std::endl;
          }
       } else {
          out->InsertPointBefore(idx, _x, pval.first);
@@ -1100,7 +1104,7 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
       // for(auto& hp : *this) { if(hp.isExpected) {doObs=false; break;} }
       auto obs = (doObs) ? graph(sOpt) : nullptr;
 
-      out = std::make_shared<TMultiGraph>(GetName(), GetTitle());
+      out = std::make_shared<TMultiGraph>(GetName(), TString::Format("%s [%s]",GetTitle(),sOpt.Data()));
       if (exp2 && exp2->GetN() > 1)
          out->Add(static_cast<TGraph *>(exp2->Clone()), "FP");
       if (exp1 && exp1->GetN() > 1)
@@ -1135,14 +1139,15 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
          line->SetBit(kCanDelete);
          out->GetListOfFunctions()->Add(line, "L");
       }
+
       if (exp) {
          out->GetHistogram()->GetXaxis()->SetTitle(exp->GetHistogram()->GetXaxis()->GetTitle());
          out->GetHistogram()->GetYaxis()->SetTitle(exp->GetHistogram()->GetYaxis()->GetTitle());
       }
       TLegend *leg = nullptr;
       if (out->GetListOfGraphs()->GetEntries() > 1) {
-         leg = new TLegend(1. - gStyle->GetPadRightMargin() - 0.3, 1. - gStyle->GetPadTopMargin() - 0.35,
-                           1. - gStyle->GetPadRightMargin() - 0.05, 1. - gStyle->GetPadTopMargin() - 0.05);
+         leg = new TLegend(1. - gStyle->GetPadRightMargin() - 0.26, 1. - gStyle->GetPadTopMargin() - 0.40,
+                           1. - gStyle->GetPadRightMargin() - 0.01, 1. - gStyle->GetPadTopMargin() - 0.01);
          leg->SetName("legend");
          leg->SetBit(kCanDelete);
 
@@ -1155,6 +1160,52 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
             } else {
                leg->AddEntry(g, "", "LPE");
             }
+         }
+      }
+      if(sOpt.Contains("toys")) {
+         TGraph *line = new TGraph;
+         line->SetName("fbadnull");line->SetLineStyle(2);line->SetEditable(false);
+         TGraph *line2 = new TGraph;
+         line2->SetName("fbadalt");line->SetLineStyle(2);line->SetEditable(false);
+         double maxFrac = 0, maxFrac2 = 0;
+         for(auto hp : *this) {
+            if(!hp.nullToys.empty()) {
+               size_t nBad = 0;
+               for(auto& toy : hp.nullToys) {
+                  if(std::isnan(std::get<1>(toy)) || std::get<2>(toy)==0) nBad++;
+               }
+               line->AddPoint(hp.fNullVal(),double(nBad)/hp.nullToys.size());
+               maxFrac = std::max(maxFrac,double(nBad)/hp.nullToys.size());
+            }
+            if(!hp.altToys.empty()) {
+               size_t nBad = 0;
+               for(auto& toy : hp.altToys) {
+                  if(std::isnan(std::get<1>(toy)) || std::get<2>(toy)==0) nBad++;
+               }
+               line2->AddPoint(hp.fNullVal(),double(nBad)/hp.altToys.size());
+               maxFrac2 = std::max(maxFrac2,double(nBad)/hp.altToys.size());
+            }
+         }
+         if(line->GetN()) {
+            line->Sort();
+            line->SetMarkerStyle(20);
+            line->SetMarkerColor(kBlue);
+            line->SetTitle(TString::Format("Bad Null Toys Frac [max=%g%%]", maxFrac * 100));
+            line->SetBit(kCanDelete);
+            out->Add(line, "P");
+            leg->AddEntry(line,"","P");
+         } else {
+            delete line;
+         }
+         if(line2->GetN()) {
+            line2->Sort();
+            line2->SetMarkerStyle(20);
+            line2->SetMarkerColor(kRed);
+            line2->SetTitle(TString::Format("Bad Alt Toys Frac [max=%g%%]", maxFrac2 * 100));
+            out->Add(line2, "P");
+            leg->AddEntry(line2,"","P");
+         } else {
+            delete line2;
          }
       }
 
@@ -1200,8 +1251,10 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
       if (visualize) {
          if (!gPad && gROOT->GetSelectedPad())
             gROOT->GetSelectedPad()->cd();
-         if (gPad)
+         if (gPad) {
             gPad->Clear();
+            gPad->SetLogy(false); // users used to looking at p-value plots on a linear scale
+         }
          auto gra2 = static_cast<TMultiGraph *>(out->DrawClone("A"));
          gra2->SetBit(kCanDelete);
          if (sOpt.Contains("pcls") || sOpt.Contains("pnull")) {
@@ -1223,14 +1276,622 @@ std::shared_ptr<TMultiGraph> xRooNLLVar::xRooHypoSpace::graphs(const char *opt)
    return out;
 }
 
-xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pValues, double target)
+#include <TGraphErrors.h>
+#include <TRandom3.h>
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <vector>
+
+// ================================================================
+// Small dense matrix class and Cholesky routines.
+// No external matrix library required.
+// ================================================================
+
+namespace GPDetail {
+
+struct Matrix {
+   int rows;
+   int cols;
+   std::vector<double> data;
+
+   Matrix(int r, int c)
+      : rows(r), cols(c), data(r * c, 0.0) {}
+
+   double& operator()(int i, int j) {
+      return data[i * cols + j];
+   }
+
+   double operator()(int i, int j) const {
+      return data[i * cols + j];
+   }
+};
+
+using Vector = std::vector<double>;
+
+constexpr double pi = 3.14159265358979323846;
+
+double kernel(double x1, double x2, double ell, double amplitude)
+{
+   const double dx = (x1 - x2) / ell;
+   return amplitude * amplitude * std::exp(-0.5 * dx * dx);
+}
+
+// Cholesky decomposition: A = L * L^T.
+// A small diagonal jitter is added if necessary.
+bool cholesky(const Matrix& A, Matrix& L)
+{
+   const int n = A.rows;
+
+   if (A.rows != A.cols) {
+      return false;
+   }
+
+   double scale = 0.0;
+
+   for (int i = 0; i < n; ++i) {
+      scale = std::max(scale, std::abs(A(i, i)));
+   }
+
+   scale = std::max(scale, 1e-30);
+
+   for (int attempt = 0; attempt < 9; ++attempt) {
+      L = Matrix(n, n);
+
+      const double jitter =
+         attempt == 0 ? 0.0 :
+                      scale * 1e-12 * std::pow(10.0, attempt - 1);
+
+      bool success = true;
+
+      for (int i = 0; i < n && success; ++i) {
+         for (int j = 0; j <= i; ++j) {
+            double sum = A(i, j);
+
+            if (i == j) {
+               sum += jitter;
+            }
+
+            for (int k = 0; k < j; ++k) {
+               sum -= L(i, k) * L(j, k);
+            }
+
+            if (i == j) {
+               if (!(sum > 0.0)) {
+                  success = false;
+                  break;
+               }
+
+               L(i, j) = std::sqrt(sum);
+            } else {
+               L(i, j) = sum / L(j, j);
+            }
+         }
+      }
+
+      if (success) {
+         return true;
+      }
+   }
+
+   return false;
+}
+
+// Solve L * x = b, where L is lower triangular.
+Vector forwardSolve(const Matrix& L, const Vector& b)
+{
+   const int n = static_cast<int>(b.size());
+   Vector x(n, 0.0);
+
+   for (int i = 0; i < n; ++i) {
+      double sum = b[i];
+
+      for (int j = 0; j < i; ++j) {
+         sum -= L(i, j) * x[j];
+      }
+
+      x[i] = sum / L(i, i);
+   }
+
+   return x;
+}
+
+// Solve L^T * x = b, where L is lower triangular.
+Vector backwardSolve(const Matrix& L, const Vector& b)
+{
+   const int n = static_cast<int>(b.size());
+   Vector x(n, 0.0);
+
+   for (int i = n - 1; i >= 0; --i) {
+      double sum = b[i];
+
+      for (int j = i + 1; j < n; ++j) {
+         sum -= L(j, i) * x[j];
+      }
+
+      x[i] = sum / L(i, i);
+   }
+
+   return x;
+}
+
+// Solve A * x = b using A = L * L^T.
+Vector solveCholesky(const Matrix& L, const Vector& b)
+{
+   return backwardSolve(L, forwardSolve(L, b));
+}
+
+// Log marginal likelihood of the GP.
+double logMarginalLikelihood(
+   const Vector& x,
+   const Vector& y,
+   const Vector& errors,
+   double ell,
+   double amplitude)
+{
+   const int n = static_cast<int>(x.size());
+
+   Matrix K(n, n);
+
+   for (int i = 0; i < n; ++i) {
+      for (int j = 0; j < n; ++j) {
+         K(i, j) = kernel(x[i], x[j], ell, amplitude);
+      }
+
+      // Measurement uncertainty.
+      K(i, i) += errors[i] * errors[i];
+
+      // Numerical jitter.
+      K(i, i) += 1e-10 * amplitude * amplitude;
+   }
+
+   Matrix L(n, n);
+
+   if (!cholesky(K, L)) {
+      return -std::numeric_limits<double>::infinity();
+   }
+
+   const Vector alpha = solveCholesky(L, y);
+
+   double logDet = 0.0;
+
+   for (int i = 0; i < n; ++i) {
+      logDet += 2.0 * std::log(L(i, i));
+   }
+
+   double quadratic = 0.0;
+
+   for (int i = 0; i < n; ++i) {
+      quadratic += y[i] * alpha[i];
+   }
+
+   return -0.5 * quadratic
+          -0.5 * logDet
+          -0.5 * n * std::log(2.0 * pi);
+}
+
+// Return the requested quantile of a vector.
+double quantile(Vector values, double probability)
+{
+   if (values.empty()) {
+      return std::numeric_limits<double>::quiet_NaN();
+   }
+
+   std::sort(values.begin(), values.end());
+
+   const double position = probability * (values.size() - 1);
+
+   const auto lo = static_cast<std::size_t>(position);
+   const auto hi = std::min(lo + 1, values.size() - 1);
+
+   const double fraction = position - lo;
+
+   return values[lo] * (1.0 - fraction)
+          + values[hi] * fraction;
+}
+
+// Find the first sign-changing crossing on an ordered grid.
+double firstCrossing(
+   const Vector& x,
+   const Vector& f,
+   double alpha)
+{
+   for (std::size_t i = 0; i < x.size(); ++i) {
+      const double current = f[i] - alpha;
+
+      if (current == 0.0) {
+         return x[i];
+      }
+
+      if (i == 0) {
+         continue;
+      }
+
+      const double previous = f[i - 1] - alpha;
+
+      if ((previous < 0.0) != (current < 0.0)) {
+         const double fraction =
+            -previous / (current - previous);
+
+         return x[i - 1]
+                + fraction * (x[i] - x[i - 1]);
+      }
+   }
+
+   return std::numeric_limits<double>::quiet_NaN();
+}
+
+} // namespace GPDetail
+
+
+// ================================================================
+// Public interface.
+// ================================================================
+
+struct CrossingResult {
+   double median = std::numeric_limits<double>::quiet_NaN();
+   double errorLow = std::numeric_limits<double>::quiet_NaN();
+   double errorHigh = std::numeric_limits<double>::quiet_NaN();
+
+   // Fraction of sampled functions which cross alpha.
+   double crossingRate = 0.0;
+
+   // Best-fit GP hyperparameters, in original x/y units.
+   double lengthScale = 0.0;
+   double amplitude = 0.0;
+};
+
+
+CrossingResult findCrossing(
+   const TGraphErrors& graph,
+   double alpha,
+   unsigned int nToys = 10000,
+   unsigned int nGrid = 400,
+   unsigned int randomSeed = 12345,
+   double extrapolation = 10.0)
+{
+   using namespace GPDetail;
+
+   if (graph.GetN() < 2) {
+      throw std::runtime_error(
+         "At least two graph points are required");
+   }
+
+   if (nToys == 0 || nGrid < 2) {
+      throw std::invalid_argument(
+         "Invalid number of toys or grid points");
+   }
+
+   if (extrapolation < 0.0) {
+      throw std::invalid_argument(
+         "Extrapolation must be non-negative");
+   }
+
+   // ------------------------------------------------------------
+   // Read and sort graph points.
+   // ------------------------------------------------------------
+
+   struct Point {
+      double x;
+      double y;
+      double error;
+   };
+
+   std::vector<Point> points;
+   points.reserve(graph.GetN());
+
+   for (int i = 0; i < graph.GetN(); ++i) {
+      double x, y;
+      graph.GetPoint(i, x, y);
+
+      const double error = graph.GetErrorY(i);
+
+      if (!std::isfinite(x) || !std::isfinite(y) ||
+          !std::isfinite(error) || error < 0.0) {
+         throw std::runtime_error(
+            "Invalid graph point or uncertainty");
+      }
+
+      points.push_back({x, y, error});
+   }
+
+   std::sort(points.begin(), points.end(),
+             [](const Point& a, const Point& b) {
+                return a.x < b.x;
+             });
+
+   for (std::size_t i = 1; i < points.size(); ++i) {
+      if (!(points[i].x > points[i - 1].x)) {
+         throw std::invalid_argument(
+            "Duplicate x values are not supported");
+      }
+   }
+
+   const int n = static_cast<int>(points.size());
+
+   const double dataMin = points.front().x;
+   const double dataMax = points.back().x;
+   const double xScale = dataMax - dataMin;
+
+   if (!(xScale > 0.0)) {
+      throw std::invalid_argument(
+         "Graph points must have distinct x values");
+   }
+
+   // Scale x to [0,1] and y to a sensible numerical range.
+   Vector x(n), y(n), errors(n);
+
+   double yScale = std::abs(alpha);
+
+   for (const auto& p : points) {
+      yScale = std::max(yScale, std::abs(p.y));
+      yScale = std::max(yScale, p.error);
+   }
+
+   if (!(yScale > 0.0)) {
+      yScale = 1.0;
+   }
+
+   for (int i = 0; i < n; ++i) {
+      x[i] = (points[i].x - dataMin) / xScale;
+      y[i] = points[i].y / yScale;
+      errors[i] = points[i].error / yScale;
+   }
+
+   alpha /= yScale;
+
+   // ------------------------------------------------------------
+   // Determine the search range from the graph.
+   // extrapolation=0 means no extrapolation.
+   // extrapolation=0.2 extends the range by 20% of the data
+   // x-span at each end. [ actually go just to the right! ]
+   // ------------------------------------------------------------
+
+   const double xmin = dataMin;// - extrapolation * xScale;
+   const double xmax = dataMax + extrapolation * xScale;
+
+   // Preserve approximately the same grid spacing when extending
+   // the search range.
+   const unsigned int nGridTotal =
+      std::max(nGrid, static_cast<unsigned int>(
+                         std::ceil(nGrid * (1.0 + extrapolation))));
+
+   Vector xGrid(nGridTotal);
+
+   for (unsigned int i = 0; i < nGridTotal; ++i) {
+      const double t = static_cast<double>(i) / (nGridTotal - 1);
+
+      const double physicalX = xmin + t * (xmax - xmin);
+
+      xGrid[i] = (physicalX - dataMin) / xScale;
+   }
+
+   // ------------------------------------------------------------
+   // Find hyperparameters by maximising the marginal likelihood.
+   // ------------------------------------------------------------
+
+   double bestEll = 0.0;
+   double bestAmplitude = 0.0;
+
+   double bestLikelihood =
+      -std::numeric_limits<double>::infinity();
+
+   // scan 3000 possible length scales and amplitudes for the GP kernel
+   // scanning between 0.003 and 10 for length scale, and between 0.03 and 30 for amplitude
+   // these are for the standardized data point values
+   constexpr unsigned int nEll = 60;
+   constexpr unsigned int nAmplitude = 50;
+
+   const double minEll = 0.003;
+   const double maxEll = 10.0;
+
+   const double minAmplitude = 0.03;
+   const double maxAmplitude = 30.0;
+
+   for (unsigned int i = 0; i < nEll; ++i) {
+      const double t = static_cast<double>(i) / (nEll - 1);
+
+      const double ell = std::exp(
+         std::log(minEll) * (1.0 - t)
+         + std::log(maxEll) * t);
+
+      for (unsigned int j = 0; j < nAmplitude; ++j) {
+         const double u =
+            static_cast<double>(j) / (nAmplitude - 1);
+
+         const double amplitude = std::exp(
+            std::log(minAmplitude) * (1.0 - u)
+            + std::log(maxAmplitude) * u);
+
+         const double likelihood =
+            logMarginalLikelihood(
+               x, y, errors, ell, amplitude);
+
+         if (likelihood > bestLikelihood) {
+            bestLikelihood = likelihood;
+            bestEll = ell;
+            bestAmplitude = amplitude;
+         }
+      }
+   }
+
+   if (!std::isfinite(bestLikelihood)) {
+      throw std::runtime_error(
+         "Could not find valid GP hyperparameters");
+   }
+
+   // ------------------------------------------------------------
+   // Construct training covariance and its Cholesky factor.
+   // ------------------------------------------------------------
+
+   Matrix K(n, n);
+
+   for (int i = 0; i < n; ++i) {
+      for (int j = 0; j < n; ++j) {
+         K(i, j) = kernel(
+            x[i], x[j], bestEll, bestAmplitude);
+      }
+
+      K(i, i) += errors[i] * errors[i];
+      K(i, i) += 1e-10 * bestAmplitude * bestAmplitude; // adding small value to the diagonal helps keep kernel non-singular
+   }
+
+   Matrix L(n, n);
+
+   if (!cholesky(K, L)) {
+      throw std::runtime_error(
+         "Could not factorise training covariance");
+   }
+
+   const Vector alphaVector = solveCholesky(L, y);
+
+   // ------------------------------------------------------------
+   // Covariance between training points and grid points.
+   // Kstar has dimensions n x nGridTotal.
+   // ------------------------------------------------------------
+
+   Matrix Kstar(n, nGridTotal);
+
+   for (int i = 0; i < n; ++i) {
+      for (unsigned int j = 0; j < nGridTotal; ++j) {
+         Kstar(i, j) = kernel(
+            x[i], xGrid[j], bestEll, bestAmplitude);
+      }
+   }
+
+   // Posterior mean: Kstar^T * K^-1 * y.
+   Vector mean(nGridTotal, 0.0);
+
+   for (unsigned int j = 0; j < nGridTotal; ++j) {
+      for (int i = 0; i < n; ++i) {
+         mean[j] += Kstar(i, j) * alphaVector[i];
+      }
+   }
+
+   // ------------------------------------------------------------
+   // Posterior covariance:
+   // Kstarstar - Kstar^T * K^-1 * Kstar.
+   //
+   // First calculate V = L^-1 * Kstar.
+   // ------------------------------------------------------------
+
+   Matrix V(n, nGridTotal);
+
+   for (unsigned int j = 0; j < nGridTotal; ++j) {
+      Vector column(n);
+
+      for (int i = 0; i < n; ++i) {
+         column[i] = Kstar(i, j);
+      }
+
+      const Vector solved = forwardSolve(L, column);
+
+      for (int i = 0; i < n; ++i) {
+         V(i, j) = solved[i];
+      }
+   }
+
+   Matrix posteriorCovariance(nGridTotal, nGridTotal);
+
+   for (unsigned int i = 0; i < nGridTotal; ++i) {
+      for (unsigned int j = 0; j <= i; ++j) {
+         double value =
+            kernel(xGrid[i], xGrid[j],
+                   bestEll, bestAmplitude);
+
+         for (int k = 0; k < n; ++k) {
+            value -= V(k, i) * V(k, j);
+         }
+
+         posteriorCovariance(i, j) = value;
+         posteriorCovariance(j, i) = value;
+      }
+   }
+
+   // ------------------------------------------------------------
+   // Draw correlated functions from the latent GP posterior.
+   // ------------------------------------------------------------
+
+   // The posterior covariance is for all the grid point predicted means
+   // i.e. the grid size says how many points we are making predictions for
+   // and there will be strong correlation between neighbour points
+   // dictated by the length scale hyperparameter
+   // the actual predictions are in the 'mean' vector
+
+   Matrix posteriorL(nGridTotal, nGridTotal);
+
+   if (!cholesky(posteriorCovariance, posteriorL)) {
+      throw std::runtime_error(
+         "Could not factorise posterior covariance");
+   }
+
+   TRandom3 random(randomSeed);
+
+   Vector z(nGridTotal);
+   Vector sample(nGridTotal);
+
+   std::vector<double> crossings;
+   crossings.reserve(nToys);
+
+   for (unsigned int toy = 0; toy < nToys; ++toy) {
+      for (unsigned int i = 0; i < nGridTotal; ++i) {
+         z[i] = random.Gaus(0.0, 1.0);
+      }
+
+      // sample = posterior mean + posteriorL * z
+      for (unsigned int i = 0; i < nGridTotal; ++i) {
+         sample[i] = mean[i];
+
+         for (unsigned int j = 0; j <= i; ++j) {
+            sample[i] += posteriorL(i, j) * z[j];
+         }
+      }
+
+      const double crossing =
+         firstCrossing(xGrid, sample, alpha);
+
+      if (std::isfinite(crossing)) {
+         crossings.push_back(dataMin + crossing * xScale);
+      }
+   }
+
+   // ------------------------------------------------------------
+   // Summarise the crossing distribution.
+   // ------------------------------------------------------------
+
+   CrossingResult result;
+
+   result.crossingRate =
+      static_cast<double>(crossings.size()) / nToys;
+
+   result.lengthScale = bestEll * xScale;
+   result.amplitude = bestAmplitude * yScale;
+
+   if (!crossings.empty()) {
+      const double q16 = quantile(crossings, 0.16);
+      const double q50 = quantile(crossings, 0.50);
+      const double q84 = quantile(crossings, 0.84);
+
+      result.median = q50;
+      result.errorLow = q50 - q16;
+      result.errorHigh = q84 - q50;
+   }
+
+   return result;
+}
+
+
+
+xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::GetLimit(const TGraphErrors &pValues, double target)
 {
 
    if (std::isnan(target)) {
       target = 1. - gEnv->GetValue("xRooHypoSpace.CL", 95.) / 100.;
    }
 
-   auto gr = std::make_shared<TGraph>(pValues);
+   auto gr = std::make_shared<TGraphErrors>(pValues);
    // remove any nan points and duplicates
    int i = 0;
    std::set<double> existingX;
@@ -1242,19 +1903,45 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoSpace::GetLimit(const TGraph &pV
       } else {
          existingX.insert(gr->GetPointX(i));
          // convert to log ....
-         gr->SetPointY(i, log(std::max(gr->GetPointY(i), 1e-10)));
+         auto newVal = log(std::max(gr->GetPointY(i), 1e-10));
+         gr->SetPointError(i,0,log(std::max(gr->GetPointY(i)+gr->GetErrorY(i),1e-10))-newVal);
+         gr->SetPointY(i, newVal);
          i++;
       }
    }
 
+   double alpha = log(target);
+
    gr->Sort();
+
+   // set this env var to activate new experimental GP interpolation
+   // recommend trying 40. Can't be less <= 2
+   int gridSize = gEnv->GetValue("XRooHypoSpace.GaussianProcessLimitInterpolationGridPoints",0);
+   if(gridSize>2) {
+      try {
+         // this GP model assumes at large distances the y-values tend to 0, so we only allow right-extrapolation
+         // since p-values are ususally falling with increasing mu
+         auto result =
+            findCrossing(*gr, alpha, 1000 /*nToys*/,
+                         gridSize /*grid size ... is actually 11x bigger than this because of extrapolation factor*/);
+         // check if result is beyond the first or last point ... if so, will set error to inf
+         if (result.median < gr->GetPointX(0))
+            result.errorLow = std::numeric_limits<double>::infinity();
+         if (result.median > gr->GetPointX(gr->GetN() - 1))
+            result.errorHigh = std::numeric_limits<double>::infinity();
+         return std::pair<double, double>{result.median,
+                                          (result.errorHigh > result.errorLow) ? result.errorHigh : -result.errorLow};
+      } catch (std::runtime_error) {
+         // happens if too few points or no crossing point
+         return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
+      }
+   }
 
    // simple linear extrapolation to critical value ... return nan if problem
    if (gr->GetN() < 2) {
       return std::pair<double, double>(std::numeric_limits<double>::quiet_NaN(), 0);
    }
 
-   double alpha = log(target);
 
    bool above = gr->GetPointY(0) > alpha;
    for (int ii = 1; ii < gr->GetN(); ii++) {
@@ -1324,6 +2011,7 @@ xRooNLLVar::xRooHypoSpace::findlimit(const char *opt, double relUncert, unsigned
          if (!gPad)
             gra->Draw(); // in 6.28 DrawClone wont make the gPad defined :( ... so Draw then clear and Draw Clone
          gPad->Clear();
+         gPad->SetLogy(false); // show progress in linear always, as this is what users normally expect to look at
          auto gra2 = static_cast<TMultiGraph *>(gra->DrawClone("A"));
          gra2->SetBit(kCanDelete);
          gra2->SetMinimum(1e-9);
@@ -1648,15 +2336,7 @@ void xRooNLLVar::xRooHypoSpace::Draw(Option_t *opt)
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6, 30, 00)
             gPad->GetCanvas()->ResetUpdated(); // stops previous canvas being replaced in a jupyter notebook
 #endif
-            gSystem->ProcessEvents();
          }
-      }
-      if (!sOpt.Contains("same") && gPad) {
-         //         auto mg = static_cast<TMultiGraph*>(gPad->GetPrimitive(gra->GetName()));
-         //         mg->GetHistogram()->SetMinimum(1e-9);
-         //         mg->GetHistogram()->GetYaxis()->SetRangeUser(1e-9,1);
-         //         gPad->SetGrid(0, 0);
-         //         gPad->SetLogy(1);
       }
 
       gSystem->ProcessEvents();
