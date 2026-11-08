@@ -405,3 +405,14 @@ We can see all the dependents we have created so far with:
 ```python
 w["simPdf"].vars().Print()
 ```
+
+## Documentation
+
+Comprehensive documentation and topic guides are available in the [`docs/`](docs/) directory:
+
+- [Overview & Quick Reference](docs/README.md)
+- [Advanced Workspace Building](docs/workspace-building.md)
+- [Advanced Fitting and Diagnostics](docs/fitting-diagnostics.md)
+- [Advanced Hypothesis Testing](docs/hypothesis-testing.md)
+- [Variation Decomposition](docs/variationDecomposition.md)
+
