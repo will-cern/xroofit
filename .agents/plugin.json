@@ -1,10 +1,10 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "xroofit",
   "version": "1.0.0",
   "description": "AI assistance for xRooFit, the ROOT RooFit-based statistical modelling and inference framework.",
+  "skills": "./skills",
   "author": {
-    "name": "Will @ Cern"
+    "name": "Will at CERN"
   },
   "homepage": "https://xroofit.readthedocs.io/",
   "repository": "https://github.com/will-cern/xroofit",
@@ -19,6 +19,22 @@
     "likelihood",
     "CLs",
     "hypothesis-testing"
-  ]
+  ],
+  "interface": {
+    "displayName": "xRooFit",
+    "shortDescription": "Build, fit, and test RooFit statistical models with xRooFit.",
+    "longDescription": "Documentation-grounded guidance for building xRooFit workspaces, fitting models, diagnosing fits, and performing statistical inference.",
+    "developerName": "Will at CERN",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Statistical modelling guidance",
+      "Fit diagnostics",
+      "Hypothesis testing"
+    ],
+    "defaultPrompt": [
+      "Help me build an xRooFit workspace for a counting experiment.",
+      "Diagnose this xRooFit fit status and covariance quality.",
+      "Show how to calculate a CLs upper limit with xRooFit."
+    ]
+  }
 }
-
