@@ -49,22 +49,35 @@ The canonical repository is:
 
 https://github.com/will-cern/xroofit
 
-The primary entry point for all documentation is `docs/README.md` in the repository:
+The primary entry point for all documentation is `docs/README.md`.
 
-https://github.com/will-cern/xroofit/blob/master/docs/README.md
+#### Direct HTTP / Web Access (for Claude.ai Chat & Web Assistants)
 
-Consult `docs/README.md` to discover all available topic guides, core concepts, and canonical patterns.
+In chat environments without terminal or local git access (such as Claude.ai), you MUST use your web browsing or URL fetching capability to fetch the raw documentation text directly over HTTP.
 
-Always use the version corresponding to the user's specific commit hash/tag, or the latest version from the master branch if unspecified.
+**Do NOT fetch GitHub `/blob/` URLs** (e.g. `github.com/.../blob/...`), as GitHub serves dynamic React/SPA HTML that automated web fetchers fail to parse.
+
+Always fetch the **raw Markdown** over HTTP from `raw.githubusercontent.com`:
+
+- **Primary Documentation Index**:
+  `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/docs/README.md`
+  *(Default `<ref>` is `master`, or use the specific tag/commit hash if known).*
+
+- **Topic Guides**:
+  When `docs/README.md` references a topic guide (e.g. `workspace-building.md`), fetch it directly via:
+  `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/docs/<filename>`
+
+- **Fallback Raw URL**:
+  `https://github.com/will-cern/xroofit/raw/<ref>/docs/README.md`
 
 ### Workflow
 
-1. Determine the xRooFit version if it is relevant and not already known (you can ask the user which specific version of xRooFit they are using from `xRooFit::GetVersion()` or `ROOT::Experimental::XRooFit::xRooFit::GetVersion()`). Do not interrupt an otherwise answerable question just to ask for the version. If unspecified, assume master.
-2. Access `docs/README.md` in the GitHub repository for that specific commit hash/tag (or master branch if latest/unspecified) to discover the relevant documentation for the question.
-3. Read the relevant documentation before formulating an answer.
-4. Follow links to additional documentation when necessary.
-5. If the documentation does not answer the question, inspect
-   the implementation and tests in the repository.
+1. Determine the xRooFit version if it is relevant and not already known (you can ask the user which specific version of xRooFit they are using from `xRooFit::GetVersion()` or `ROOT::Experimental::XRooFit::xRooFit::GetVersion()`). Do not interrupt an otherwise answerable question just to ask for the version. If unspecified, assume `<ref>` is `master`.
+2. Use your web browsing / fetching tool to retrieve `docs/README.md` directly via HTTP:
+   `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/docs/README.md`
+3. Read the documentation index to discover the relevant documentation and topic guides for the question.
+4. Fetch and read the corresponding topic guide via its raw HTTP URL (e.g. `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/docs/<filename>`).
+5. If the documentation does not answer the question, inspect the implementation and tests in the repository via their raw GitHub URLs (e.g. `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/src/...`).
 6. Base code examples on documented APIs and existing examples.
 7. Do not invent methods, arguments, classes or behaviour.
 8. If the documentation and implementation disagree, explain
