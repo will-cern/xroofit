@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "xroofit",
+  "version": "1.0.0",
+  "description": "AI assistance for xRooFit, the ROOT RooFit-based statistical modelling and inference framework.",
+  "author": {
+    "name": "Will @ Cern"
+  },
+  "homepage": "https://xroofit.readthedocs.io/",
+  "repository": "https://github.com/will-cern/xroofit",
+  "license": "MIT",
+  "keywords": [
+    "xroofit",
+    "ROOT",
+    "RooFit",
+    "statistics",
+    "ATLAS",
+    "HEP",
+    "likelihood",
+    "CLs",
+    "hypothesis-testing"
+  ]
+}
+
