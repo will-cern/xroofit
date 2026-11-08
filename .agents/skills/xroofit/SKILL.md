@@ -63,7 +63,7 @@ Key documentation files in the repository include:
 
 ### Workflow
 
-1. Ask the user which specific version of xRooFit they are using (from `xRooFit::GetVersion()` or `ROOT::Experimental::XRooFit::xRooFit::GetVersion()`), or check if already known.
+1. Determine the xRooFit version if it is relevant and not already known (you can ask the user which specific version of xRooFit they are using from `xRooFit::GetVersion()` or `ROOT::Experimental::XRooFit::xRooFit::GetVersion()`). Do not interrupt an otherwise answerable question just to ask for the version. If unspecified, assume master.
 2. Access the GitHub repository for that specific commit hash/tag (or master branch if latest/unspecified).
 3. Identify the Markdown documentation relevant to the question.
 4. Read the relevant documentation before formulating an answer.
