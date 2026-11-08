@@ -9,6 +9,19 @@ significantly more concise. xRooFit ships pre-installed with ROOT ≥ 6.30 and i
 also distributed as part of the ATLAS
 [StatAnalysis](https://gitlab.cern.ch/atlas/StatAnalysis) release.
 
+## Documentation Index
+
+The documentation for xRooFit is organized across the following guides:
+
+- **[Installation and Setup](installation.md)** — StatAnalysis setup, Docker containers, compiling from source, and external CMake integration
+- **[Interactive Inspection and Workspace Browsing](inspection-and-browsing.md)** — `xRooBrowser`, GUI exploration, node inspection, and visualization options
+- **[Workspace Building](workspace-building.md)** — Building models from scratch, factor types (Const, Norm, Simple, Density, Shape, Varied, Overall, Histo), interpolation codes, MC stat handling, SetXaxis, log-normal constraints, SetBinData
+- **[Advanced Fitting and Diagnostics](fitting-diagnostics.md)** — NLL construction, minimization, MINOS/xMINOS, fit config settings (StrategySequence, HesseStrategy), impact/ranking (`fr.impact()`), conditional uncertainties, post-fit yields, error breakdown, caching/recovery
+- **[Advanced Hypothesis Testing](hypothesis-testing.md)** — Test statistic definitions (tmu, qmu, qmutilde, q0, u0), full verbose limit-setting example, toy-based CLs scans, drawing toy TS distributions (`hp.Draw()`), extracting individual TS values from `nullToys`/`altToys`, regenerating toys with `generateNull`/`generateAlt`, limit troubleshooting, hypoPoint methods/fits tables, limit-setting checklist
+- **[Variation Decomposition](variationDecomposition.md)** — Decomposing systematic variations across nuisance parameters
+- **[Repository README](../README.md)** — Project overview and AI assistant setup instructions
+- **[External Documentation](https://xroofit.readthedocs.io/)** — ReadTheDocs reference
+
 ## When to Use
 
 - Building HistFactory-style statistical models programmatically with Python or
@@ -339,18 +352,10 @@ systErr = (totErr**2 - statErr**2)**0.5
 
 For detailed content beyond this overview, consult the topic documentation:
 
-- **[Advanced Workspace Building](workspace-building.md)** — Factor types (Const, Norm, Simple,
-  Density, Shape, Varied, Overall, Histo), interpolation codes, MC stat
-  handling, SetXaxis, log-normal constraints, SetBinData
-- **[Advanced Fitting and Diagnostics](fitting-diagnostics.md)** — Full fit config settings
-  (StrategySequence, HesseStrategy), impact/ranking (`fr.impact()`), conditional
-  uncertainties (Schur complement), stat/syst/mc-stat breakdown, Shifted GO
-  method, conditional fits (`fr.cfit()`)
-- **[Advanced Hypothesis Testing](hypothesis-testing.md)** — Test statistic definitions (tmu, qmu,
-  qmutilde, q0, u0), full verbose limit-setting example, toy-based CLs scans,
-  drawing toy TS distributions (`hp.Draw()`), extracting individual TS values
-  from `nullToys`/`altToys`, regenerating toys with `generateNull`/`generateAlt`,
-  limit troubleshooting, hypoPoint methods/fits tables, limit-setting checklist
-- **[Variation Decomposition](variationDecomposition.md)** — Decomposing systematic variations
-  across nuisance parameters
+- **[Installation and Setup](installation.md)** — StatAnalysis setup, Docker containers, compiling from source, and external CMake integration
+- **[Interactive Inspection and Workspace Browsing](inspection-and-browsing.md)** — `xRooBrowser`, GUI exploration, node inspection, and visualization options
+- **[Workspace Building](workspace-building.md)** — Building models from scratch, factor types (Const, Norm, Simple, Density, Shape, Varied, Overall, Histo), interpolation codes, MC stat handling, SetXaxis, log-normal constraints, SetBinData
+- **[Advanced Fitting and Diagnostics](fitting-diagnostics.md)** — NLL construction, minimization, MINOS/xMINOS, fit config settings (StrategySequence, HesseStrategy), impact/ranking (`fr.impact()`), conditional uncertainties, post-fit yields, error breakdown, caching/recovery
+- **[Advanced Hypothesis Testing](hypothesis-testing.md)** — Test statistic definitions (tmu, qmu, qmutilde, q0, u0), full verbose limit-setting example, toy-based CLs scans, drawing toy TS distributions (`hp.Draw()`), extracting individual TS values from `nullToys`/`altToys`, regenerating toys with `generateNull`/`generateAlt`, limit troubleshooting, hypoPoint methods/fits tables, limit-setting checklist
+- **[Variation Decomposition](variationDecomposition.md)** — Decomposing systematic variations across nuisance parameters
 

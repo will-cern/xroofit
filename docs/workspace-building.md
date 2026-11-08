@@ -1,4 +1,63 @@
-# Advanced Workspace Building
+# Workspace Building Guide
+
+This guide covers building HistFactory-style statistical models from scratch using xRooFit in Python or C++, including channels, samples, factors, systematic variations, constraints, and datasets.
+
+## Building from Scratch: Complete Walkthrough
+
+Here is a complete example creating a workspace with two channels (`CR` and `SR`), two samples (`sig` and `bkg`), a floating signal normalization factor (`mu`), a systematic variation constrained by a nuisance parameter (`alpha`), and observed data:
+
+```python
+import ROOT
+
+# 1. Create a RooWorkspace and wrap it in an xRooNode
+ws = ROOT.RooWorkspace("w", "w")
+w = ROOT.xRooNode(ws)
+
+# 2. Define channels and observable binning with SetXaxis
+# (xRooNode automatically creates the top-level model "simPdf" and channels)
+w["simPdf/CR"].SetXaxis("myObs", 2, 0, 2)       # 2 bins in range [0, 2]
+w["simPdf/SR"].SetXaxis("anotherObs", 1, 0, 5)  # 1 bin in range [0, 5]
+
+# 3. Set background sample contents
+w["simPdf/CR/bkg"].SetBinContent(1, 4)
+w["simPdf/CR/bkg"].SetBinContent(2, 5)
+w["simPdf/SR/bkg"].SetBinContent(1, 3)
+
+# 4. Add a systematic variation on bkg in SR (sets content=4 when alpha=1)
+w["simPdf/SR/bkg"].SetBinContent(1, 4, "alpha", 1)
+
+# 5. Add signal sample and multiply by a floating norm factor (mu)
+w["simPdf/SR/sig"].SetBinContent(1, 1)
+w["simPdf/SR/sig"].Multiply("mu", "norm")
+
+# 6. Add a Gaussian constraint for the nuisance parameter alpha
+w["simPdf"].pars()["alpha"].Constrain("gaussian(0,1)")
+
+# 7. Add observed data to SR
+w["simPdf/SR"].SetBinData(1, 4)
+
+# 8. Inspect the resulting workspace structure
+w.Browse()
+```
+
+### Understanding the Model Architecture
+
+Behind the scenes, xRooFit constructs standard RooFit/HistFactory classes:
+
+1. **Top-Level Model (`w.Add("simPdf", "model")`)**: Creates a `RooSimultaneous` PDF. It defines a category observable (`channelCat`) whose states correspond to the individual channels (`w["simPdf"].obs().Print()`).
+2. **Channels (`w["simPdf"].Vary("CR")`)**: Each channel is represented by a `RooProdPdf`.
+3. **Observables (`SetXaxis`)**: Sets the coordinate axis for the channel. Calling `SetXaxis` on a non-existent path automatically creates the parent model and channel!
+4. **Samples (`w["simPdf/CR"].Add("bkg", "sample")`)**: Samples are placed inside a `samples` node, which is a `RooRealSumPdf` summing the yields of each sample.
+5. **Observed Data (`SetBinData`)**: Adds observed counts to the channel's dataset (`obsData`).
+
+```python
+# Equivalent ways to set and draw observed data:
+w["simPdf/CR"].SetBinData(1, 2)
+w["simPdf/CR"].datasets()["obsData"].SetBinContent(1, 2)
+w["simPdf/CR"].datasets()["obsData"].Draw("same")
+```
+
+---
 
 ## Declaring Observables with SetXaxis
 
@@ -6,11 +65,16 @@ Instead of using a histogram to declare a channel's observable, use `SetXaxis`
 directly:
 
 ```python
+# Fixed bin widths
 w["pdfs/simPdf/SR"].SetXaxis("obsName", "obs title", nBins, low, high)
-w["pdfs/simPdf/SR/samples"].Add("bkg")
+
+# Variable bin widths (using ROOT.std.vector or list of bin edges)
+w["pdfs/simPdf/SR"].SetXaxis("obsName", "obs title", nBins, binEdgesArray)
 ```
 
 Both approaches create an initial `SimpleDensity` factor for the sample.
+
+---
 
 ## Factor Types
 
@@ -40,6 +104,20 @@ a variation space with interpolation/extrapolation rules.
 | Overall | Varied factor where variations are const factors  | `FlexibleInterpVar` or `PiecewiseInterpolation` |
 | Histo   | Varied factor where variations are simple factors | `PiecewiseInterpolation`                        |
 | Func    | Generic parametric function                       | `RooFormulaVar`                                 |
+
+### Defining Parameterized Variations
+
+Variations can be defined on `"histo"` and `"overall"` factors in two equivalent ways:
+
+```python
+# 1. Via Vary() then SetBinContent:
+w["simPdf/CR/samples/bkg/factorName"].Vary("alpha=1").SetBinContent(1, 2)
+
+# 2. Directly specifying the parameter and value in SetBinContent:
+w["simPdf/CR/samples/bkg/factorName"].SetBinContent(1, 2, "alpha", 1)
+```
+
+This transforms the factor into a function of `alpha` (created on the fly if needed), taking on the specified value when `alpha = 1`. Nominal parameter values correspond to `alpha = 0`.
 
 ### Creating and Multiplying Factors
 
@@ -97,6 +175,18 @@ Promote a factor to a sys by adding a constraint:
 ```python
 w["pdfs/simPdf"].pars()["npName"].Constrain("gaussian(0,1)")
 w["pdfs/simPdf"].pars()["npName"].Constrain("normal")  # alias
+```
+
+### Supported Constraint Types
+
+- `gaussian(x,y)`: `globs` value = `x`, standard deviation = `y`, mean = parameter
+- `normal`: equivalent to `gaussian(0,1)`
+- `poisson(x)`: `globs` value = `x`, mean = `parameter * x`
+
+Inspect created variables and constraint PDFs:
+```python
+w["simPdf"].vars().Print()
+w["simPdf/channelName"].Print()
 ```
 
 ### Log-normal Constraints

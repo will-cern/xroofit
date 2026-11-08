@@ -1,5 +1,70 @@
 # Advanced Fitting and Diagnostics
 
+This guide covers likelihood construction (NLL), minimization, fit configuration, diagnostic tools, post-fit yields, error breakdowns, and goodness-of-fit.
+
+## NLL Construction and Minimization
+
+Likelihoods in xRooFit are represented by `xRooNLLVar` objects constructed directly from a model node:
+
+```python
+# Construct NLL from model and dataset
+nll = w["simPdf"].nll("obsData")
+
+# Perform minimization (returns wrapped RooFitResult)
+fr = nll.minimize()
+
+# Inspect fit results
+fr.Print()
+fr.Draw()  # parameter pulls
+```
+
+### Parameter Controls Before Fitting
+
+```python
+# Asymmetric errors (MINOS):
+w["simPdf"].pars()["mu_sig"].setAttribute("minos", True)   # standard Minuit MINOS
+w["simPdf"].pars()["mu_sig"].setAttribute("xminos", True)  # xRooFit-improved MINOS
+
+# Fix or float parameters:
+w["simPdf"].pars()["alpha_JES"].setConstant(True)   # fix parameter
+w["simPdf"].pars()["alpha_JES"].setConstant(False)  # float parameter
+
+# Inspect post-fit parameters and errors:
+fr.floatParsFinal().find("mu_sig").Print()
+```
+
+### Post-Fit Yields and Error Propagation
+
+Compute integrated yields and propagate full parameter covariance uncertainties:
+
+```python
+# Individual sample yield and uncertainty:
+integral, error = w["simPdf/SR/samples/bkg"].IntegralAndError(fr)
+
+# Group of samples using reduced():
+integral, error = w["simPdf/SR/samples"].reduced("bkg*,top*").IntegralAndError(fr)
+```
+
+### Fit Result Persistence, Caching, and Recovery
+
+When you open a writable ROOT file and make it current, `minimize()` automatically saves fit results (including full configuration metadata):
+
+```python
+f = ROOT.TFile("myFits.root", "RECREATE")
+fr = nll.minimize()  # fr is saved into myFits.root
+```
+
+Subsequent calls to `nll.minimize()` will automatically retrieve the cached fit result from the file instead of repeating the computation! Opening previously saved files also allows recovering previous fit results.
+
+### Loading Fit Results into Models
+
+```python
+# Set all model parameters to their fitted values and load the covariance matrix
+w.SetFitResult(fr)
+```
+
+---
+
 ## Generating Datasets
 
 Datasets can be generated from PDFs — either as toy datasets (random Poisson

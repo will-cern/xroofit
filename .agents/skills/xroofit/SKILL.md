@@ -49,30 +49,25 @@ The canonical repository is:
 
 https://github.com/will-cern/xroofit
 
-The documentation is maintained as Markdown files in the repository.
+The primary entry point for all documentation is `docs/README.md` in the repository:
+
+https://github.com/will-cern/xroofit/blob/master/docs/README.md
+
+Consult `docs/README.md` to discover all available topic guides, core concepts, and canonical patterns.
 
 Always use the version corresponding to the user's specific commit hash/tag, or the latest version from the master branch if unspecified.
-
-Key documentation files in the repository include:
-- `docs/README.md` — Overview, key concepts, canonical patterns, gotchas, and interop
-- `docs/workspace-building.md` — Factor types, variations, constraints, MC stats
-- `docs/fitting-diagnostics.md` — Minimization, fit status, covariance quality, ranking, uncertainty breakdown
-- `docs/hypothesis-testing.md` — Test statistics (tmu, qmu, qmutilde, q0, u0), CLs limits, toys, discovery significance
-- `docs/variationDecomposition.md` — Decomposing systematic variations across nuisance parameters
-- `README.md` — Setup, compilation, and introductory examples
 
 ### Workflow
 
 1. Determine the xRooFit version if it is relevant and not already known (you can ask the user which specific version of xRooFit they are using from `xRooFit::GetVersion()` or `ROOT::Experimental::XRooFit::xRooFit::GetVersion()`). Do not interrupt an otherwise answerable question just to ask for the version. If unspecified, assume master.
-2. Access the GitHub repository for that specific commit hash/tag (or master branch if latest/unspecified).
-3. Identify the Markdown documentation relevant to the question.
-4. Read the relevant documentation before formulating an answer.
-5. Follow links to additional documentation when necessary.
-6. If the documentation does not answer the question, inspect
+2. Access `docs/README.md` in the GitHub repository for that specific commit hash/tag (or master branch if latest/unspecified) to discover the relevant documentation for the question.
+3. Read the relevant documentation before formulating an answer.
+4. Follow links to additional documentation when necessary.
+5. If the documentation does not answer the question, inspect
    the implementation and tests in the repository.
-7. Base code examples on documented APIs and existing examples.
-8. Do not invent methods, arguments, classes or behaviour.
-9. If the documentation and implementation disagree, explain
+6. Base code examples on documented APIs and existing examples.
+7. Do not invent methods, arguments, classes or behaviour.
+8. If the documentation and implementation disagree, explain
    the discrepancy rather than silently choosing one.
 
 ### Documentation access failures
