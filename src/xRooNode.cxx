@@ -9420,6 +9420,14 @@ TH1 *xRooNode::BuildHistogram(RooAbsLValue *v, bool empty, bool errors, int binS
 
    if (errors) {
       delete fr;
+      // check if all bins have no error, if that is case then clear fill style
+      bool hasErr = false;
+      for(int i=1;i<=h->GetNbinsX();i++) {
+         if(h->GetBinError(i)) {hasErr=true; break;}
+      }
+      if(!hasErr) {
+         h->SetFillStyle(0);
+      }
    }
 
    // build a stack unless not requested
