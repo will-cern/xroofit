@@ -1931,9 +1931,15 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
    int targetIdx =
       (altToys.size() - firstToy) * ROOT::Math::gaussian_cdf_c(nSigma) + firstToy; // TODO: Account for weights
    // use difference to either neighbour toys as the uncertainty
-   return std::pair(std::get<1>(altToys[targetIdx]), (std::get<1>(altToys[std::min(int(altToys.size()), targetIdx+1)]) -
-                                                      std::get<1>(altToys[std::max(0, targetIdx-1)])) /
-                                                        2.);
+//   return std::pair(std::get<1>(altToys[targetIdx]), (std::get<1>(altToys[std::min(int(altToys.size()), targetIdx+1)]) -
+//                                                      std::get<1>(altToys[std::max(0, targetIdx-1)])) /
+//                                                        2.);
+   // use tolerance as uncert instead, as this is more reliable in cases where the
+   // test statistic distribution has become very peaked (delta-functioney) ... the above
+   // would assign too small an uncertainty in such cases
+   // probably using even just the maxEDM is an underestimate, as ts values are usually a difference of two NLL so
+   // could consider in future putting in a sqrt(2) factor on the uncertainty.
+   return std::pair(std::get<1>(altToys[targetIdx]), nllVar->fitConfig()->MinimizerOptions().Tolerance()*1e-2 );
 }
 
 xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
