@@ -292,8 +292,7 @@ public:
             : m_parent(parent), m_data(data), m_isNull(isNull) {}
 
          auto& seed() { return std::get<0>(m_data); }
-         auto& ts() { return std::get<1>(m_data); }
-         auto& ts_err() { return std::get<3>(m_data); }
+         auto ts() { return xValueWithError{std::pair(std::get<1>(m_data),std::get<3>(m_data))}; }
          auto& weight() { return std::get<2>(m_data); }
 
          auto regenerate() {
