@@ -1756,7 +1756,7 @@ xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResul
          for (int i = 0; i < toys->numEntries(); i++) {
             auto toy = toys->get(i);
             nullToys.emplace_back(
-               std::make_tuple(int(toy->getRealValue("seed")), toy->getRealValue("ts"), toys->weight()));
+               std::make_tuple(int(toy->getRealValue("seed")), toy->getRealValue("ts"), toys->weight(), toy->getRealValue("ts_err")));
          }
       }
       toys = hypoTestResult->GetAltDetailedOutput();
@@ -1764,7 +1764,7 @@ xRooNLLVar::xRooHypoPoint::xRooHypoPoint(std::shared_ptr<RooStats::HypoTestResul
          for (int i = 0; i < toys->numEntries(); i++) {
             auto toy = toys->get(i);
             altToys.emplace_back(
-               std::make_tuple(int(toy->getRealValue("seed")), toy->getRealValue("ts"), toys->weight()));
+               std::make_tuple(int(toy->getRealValue("seed")), toy->getRealValue("ts"), toys->weight(), toy->getRealValue("ts_err")));
          }
       }
    }
@@ -1939,7 +1939,9 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::ts_toys(double nSigma)
    // would assign too small an uncertainty in such cases
    // probably using even just the maxEDM is an underestimate, as ts values are usually a difference of two NLL so
    // could consider in future putting in a sqrt(2) factor on the uncertainty.
-   return std::pair(std::get<1>(altToys[targetIdx]), nllVar->fitConfig()->MinimizerOptions().Tolerance()*1e-2 );
+   //return std::pair(std::get<1>(altToys[targetIdx]), nllVar->fitConfig()->MinimizerOptions().Tolerance()*1e-2 );
+
+   return std::pair(std::get<1>(altToys[targetIdx]),std::get<3>(altToys[targetIdx]));
 }
 
 xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pll(bool readOnly)
@@ -2322,9 +2324,9 @@ xRooNLLVar::xValueWithError xRooNLLVar::xRooHypoPoint::pX_toys(bool alt, double 
          }
          if (res)
             result += std::get<2>(toy);
-         if (std::get<1>(toy) >= _ts.first - _ts.second)
+         if (std::get<1>(toy)+std::get<3>(toy) >= _ts.first - _ts.second)
             result_err_up += std::get<2>(toy);
-         if (std::get<1>(toy) >= _ts.first + _ts.second)
+         if (std::get<1>(toy)-std::get<3>(toy) >= _ts.first + _ts.second)
             result_err_down += std::get<2>(toy);
       }
    }
@@ -2397,6 +2399,8 @@ xRooNLLVar::xRooHypoPoint xRooNLLVar::xRooHypoPoint::generateAlt(int seed)
    return out;
 }
 
+xRooNode xRooNLLVar::xRooHypoPoint::Toy::data() { return xRooNode(regenerate().data().first); }
+
 size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, double target, double target_nSigma,
                                           bool targetCLs, double relErrThreshold, size_t maxToys)
 {
@@ -2462,6 +2466,12 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
       gROOT->Add(g);
    }
    g->Set(0);
+   auto gmem = gROOT->Get<TGraph>("toyMemory");
+   if (!gmem) {
+      gmem = new TGraph;
+      gmem->SetNameTitle("toyMemory", "Memory At Checkpoint;Checkpoint;RSS Memory [MB]");
+      gROOT->Add(gmem);
+   }
    TStopwatch s2;
    s2.Start();
    TStopwatch s;
@@ -2492,7 +2502,8 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
          auto toy = ((alt) ? generateAlt(seed) : generateNull(seed));
          {
             TDirectory::TContext ctx{nullptr}; // disables any saving of fit results for toys
-            toys.push_back(std::make_tuple(seed, toy.pll().first, 1.));
+            auto toy_pll = toy.pll();
+            toys.push_back(std::make_tuple(seed, toy_pll.first, 1.,toy_pll.second));
          }
          (alt ? altToysAdded : toysAdded)++;
          if (std::isnan(std::get<1>(toys.back())))
@@ -2510,6 +2521,9 @@ size_t xRooNLLVar::xRooHypoPoint::addToys(bool alt, int nToys, int initialSeed, 
             }
             std::cout << "..." << std::flush;
             lasti = altToysAdded + toysAdded;
+            ProcInfo_t info;
+            gSystem->GetProcInfo(&info);
+            gmem->SetPoint(gmem->GetN(), gmem->GetN(), info.fMemResident/1024.0);
             s.Reset();
             if (!gROOT->IsBatch()) {
                Draw();
@@ -3251,6 +3265,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
    nullMeta.addClone(*coords);
    nullDetails.addClone(RooRealVar("seed", "Toy Seed", 0));
    nullDetails.addClone(RooRealVar("ts", "test statistic value", 0));
+   nullDetails.addClone(RooRealVar("ts_err", "test statistic uncert", 0));
    nullDetails.addClone(RooRealVar("weight", "weight", 1));
    auto nullToyDS = new RooDataSet("nullToys", "nullToys", nullDetails, RooFit::WeightVar("weight"));
    nullToyDS->setGlobalObservables(nullMeta);
@@ -3266,6 +3281,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
          weights.push_back(std::get<2>(t));
          nullDetails.setRealValue("seed", std::get<0>(t));
          nullDetails.setRealValue("ts", std::get<1>(t));
+         nullDetails.setRealValue("ts_err", std::get<3>(t));
          nullToyDS->add(nullDetails, std::get<2>(t));
       }
       out.SetNullDistribution(new RooStats::SamplingDistribution("null", "Null dist", values, weights, tsTitle()));
@@ -3298,6 +3314,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
       RooArgList altMeta;
       altDetails.addClone(RooRealVar("seed", "Toy Seed", 0));
       altDetails.addClone(RooRealVar("ts", "test statistic value", 0));
+      altDetails.addClone(RooRealVar("ts_err", "test statistic uncert", 0));
       altDetails.addClone(RooRealVar("weight", "weight", 1));
       auto altToyDS = new RooDataSet("altToys", "altToys", altDetails, RooFit::WeightVar("weight"));
       altToyDS->setGlobalObservables(altMeta);
@@ -3306,6 +3323,7 @@ RooStats::HypoTestResult xRooNLLVar::xRooHypoPoint::result()
          weights.push_back(std::get<2>(t));
          altDetails.setRealValue("seed", std::get<0>(t));
          altDetails.setRealValue("ts", std::get<1>(t));
+         altDetails.setRealValue("ts_err", std::get<3>(t));
          altToyDS->add(altDetails, std::get<2>(t));
       }
       out.SetAltDistribution(new RooStats::SamplingDistribution("alt", "Alt dist", values, weights, tsTitle()));

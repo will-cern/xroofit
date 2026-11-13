@@ -33,6 +33,7 @@
 
 #include <map>
 #include <set>
+#include <ranges>
 
 class RooAbsReal;
 class RooAbsPdf;
@@ -252,15 +253,15 @@ public:
          obs_ts_err = err;
          fPllType = xRooFit::Asymptotics::Unknown;
       }
-      void addNullToy(double value, double weight = 1., int seed = 0)
+      void addNullToy(double value, double weight = 1., int seed = 0, double err = 0.)
       {
          fPllType = xRooFit::Asymptotics::Unknown;
-         nullToys.emplace_back(std::make_tuple(seed, value, weight));
+         nullToys.emplace_back(std::make_tuple(seed, value, weight,err));
       }
-      void addAltToy(double value, double weight = 1., int seed = 0)
+      void addAltToy(double value, double weight = 1., int seed = 0, double err = 0.)
       {
          fPllType = xRooFit::Asymptotics::Unknown;
-         altToys.emplace_back(std::make_tuple(seed, value, weight));
+         altToys.emplace_back(std::make_tuple(seed, value, weight, err));
       }
 
       std::shared_ptr<const RooAbsCollection> coords; // pars of the nll that will be held const alongside POI
@@ -275,9 +276,122 @@ public:
          fAsimov; // same as this point but pllType is twosided and data is expected post alt-fit
 
       // first is seed, second is ts value, third is weight
-      std::vector<std::tuple<int, double, double>> nullToys; // would have to save these vectors for specific: null_cfit
+      typedef std::tuple<int, double, double,double> ToyTuple;
+      std::vector<ToyTuple> nullToys; // would have to save these vectors for specific: null_cfit
                                                              // (genPoint), ufit, poiName, pllType, nullVal
-      std::vector<std::tuple<int, double, double>> altToys;
+      std::vector<ToyTuple> altToys;
+
+      // helper classes/methods for iterating over and interacting with the individual toys of this hypopoint:
+      class Toy {
+         xRooHypoPoint& m_parent;
+         ToyTuple& m_data;
+         bool m_isNull;
+
+      public:
+         Toy(xRooHypoPoint& parent, ToyTuple& data, bool isNull)
+            : m_parent(parent), m_data(data), m_isNull(isNull) {}
+
+         auto& seed() { return std::get<0>(m_data); }
+         auto& ts() { return std::get<1>(m_data); }
+         auto& ts_err() { return std::get<3>(m_data); }
+         auto& weight() { return std::get<2>(m_data); }
+
+         auto regenerate() {
+            return (m_isNull) ? m_parent.generateNull(seed()) : m_parent.generateAlt(seed());
+         }
+         xRooNode data();
+      };
+
+      class ToyRange {
+         xRooHypoPoint &m_parent;
+         bool m_isNull;
+
+      public:
+         class iterator {
+            xRooHypoPoint &m_parent;
+            typename std::vector<ToyTuple>::iterator m_it;
+            bool m_isNull;
+
+         public:
+            using iterator_category = std::random_access_iterator_tag;
+            using difference_type = std::ptrdiff_t;
+            using value_type = Toy;
+            using reference = value_type;
+            using pointer = void;
+
+            iterator(xRooHypoPoint &parent, typename std::vector<ToyTuple>::iterator it, bool isNull)
+               : m_parent(parent), m_it(it), m_isNull(isNull)
+            {
+            }
+
+            reference operator*() const { return {m_parent, *m_it, m_isNull}; }
+
+            reference operator[](difference_type n) const { return {m_parent, m_it[n], m_isNull}; }
+
+            iterator &operator++()
+            {
+               ++m_it;
+               return *this;
+            }
+            iterator &operator--()
+            {
+               --m_it;
+               return *this;
+            }
+
+            iterator &operator+=(difference_type n)
+            {
+               m_it += n;
+               return *this;
+            }
+            iterator &operator-=(difference_type n)
+            {
+               m_it -= n;
+               return *this;
+            }
+
+            friend iterator operator+(iterator it, difference_type n) { return it += n; }
+
+            friend iterator operator-(iterator it, difference_type n) { return it -= n; }
+
+            friend difference_type operator-(const iterator &a, const iterator &b) { return a.m_it - b.m_it; }
+
+            friend bool operator==(const iterator &a, const iterator &b) { return a.m_it == b.m_it; }
+
+            friend bool operator!=(const iterator &a, const iterator &b) { return !(a == b); }
+
+            friend bool operator<(const iterator &a, const iterator &b) { return a.m_it < b.m_it; }
+         };
+
+         ToyRange(xRooHypoPoint& parent, bool isNull)
+            : m_parent(parent), m_isNull(isNull) {}
+
+         iterator begin() { return {m_parent, (m_isNull) ? m_parent.nullToys.begin() : m_parent.altToys.begin(),m_isNull}; }
+         iterator end()   { return {m_parent, (m_isNull) ? m_parent.nullToys.end() : m_parent.altToys.end(),m_isNull}; }
+
+         Toy operator[](std::size_t i) {
+            return {m_parent, ((m_isNull) ? m_parent.nullToys : m_parent.altToys)[i],m_isNull};
+         }
+
+         std::size_t size() const { return ((m_isNull) ? m_parent.nullToys : m_parent.altToys).size(); }
+      };
+
+
+   private:
+      ToyRange entries(bool isNull) {
+         // when c++20 is available, can the ToyRange class above with this transform!
+         /*return vec | std::views::transform(
+                         [this,isNull]() {
+                            return Toy<Data>(*this, isNull);
+                         }
+                     );*/
+            return ToyRange(*this,isNull);
+      }
+
+   public:
+      // can access individual toys with: hp.nullToysItr().begin()[idx].seed() etc etc
+      ToyRange nullToysItr() { return entries(true); }
+      ToyRange altToysItr() { return entries(false); }
 
       std::shared_ptr<xRooNLLVar> nllVar = nullptr; // hypopoints get a copy
       std::shared_ptr<RooStats::HypoTestResult> hypoTestResult = nullptr;
