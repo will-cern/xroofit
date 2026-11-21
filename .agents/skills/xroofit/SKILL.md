@@ -183,3 +183,59 @@ If the integration does not support issue creation, provide the user with:
 1. The fully formatted issue text ready to copy-paste.
 2. A direct link to open a new issue:
    `https://github.com/will-cern/xroofit/issues/new`
+
+### After submitting the issue
+
+Once the issue has been submitted (or the user has posted it manually), tell
+the user:
+
+---
+
+Your issue has been submitted to the xRooFit experts. When a response appears
+on the issue, please come back to this chat and say something like:
+
+> "There is a response to my issue — please resume support."
+
+I will then read the latest responses and help you apply any advice or updated
+documentation to your situation.
+
+---
+
+### Resuming support after an expert response
+
+When the user returns and indicates that a response to their issue is available,
+do the following:
+
+1. **Read the issue thread.** Use the GitHub integration to fetch the issue
+   comments from the upstream repository. Use `get_issue_comments` or the
+   equivalent tool:
+   ```
+   get_issue_comments(owner="will-cern", repo="xroofit", issue_number=<n>)
+   ```
+   If you do not know the issue number, ask the user or search recent issues:
+   ```
+   list_issues(owner="will-cern", repo="xroofit", state="open")
+   ```
+
+2. **Check for updated documentation.** Expert responses may reference new or
+   corrected documentation. If the user is working from a fork, instruct them
+   to sync it with upstream before you re-read the docs:
+
+   > "Before I check the latest documentation, please sync your fork with
+   > upstream. You can do this by clicking **Sync fork** on your fork's GitHub
+   > page, or I can trigger a sync now via the GitHub integration."
+
+   Then re-read `docs/README.md` and any relevant topic guides via the plugin
+   to pick up any documentation changes that may have been pushed since the
+   issue was filed.
+
+3. **Interpret the response.** Summarise what the expert has said, relate it
+   back to the user's original problem, and suggest concrete next steps or code
+   changes based on the response and any updated documentation.
+
+4. **Follow up if the response is insufficient.** If the expert response does
+   not fully resolve the problem, help the user post a follow-up comment on the
+   same issue using the GitHub integration:
+   ```
+   create_issue_comment(owner="will-cern", repo="xroofit", issue_number=<n>, body="<comment>")
+   ```
