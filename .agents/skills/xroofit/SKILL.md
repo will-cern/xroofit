@@ -58,11 +58,13 @@ Then acknowledge with the confirmation and message of the day (MOTD):
 
 - **If `xroofit-support/users` is NOT present in the available repositories list**:
   > ✅ xRooFit Support loaded — technical support is now active.
-  > Happy Fitting! At any point you can ask to submit as a question to a human (will require a first-time support request)
+  > 🚀 Happy Fitting! 🚀
+  > ⚠️ **Human Support:** At any point you can ask to submit a question to a human expert. You do not currently have access to the support repository, but you can [request access here](https://github.com/will-cern/xroofit/issues/new?title=Support%20Request&labels=support-invite-request&body=no%20description%20necessary%2C%20but%20feel%20free%20to%20tell%20us%20what%20experiment%20you%20work%20on).
 
 - **If `xroofit-support/users` IS present in the available repositories list**:
   > ✅ xRooFit Support loaded — technical support is now active.
-  > Happy Fitting! You are approved to submit questions to humans too :-)
+  > 🚀 Happy Fitting! 🚀
+  > ✅ You are approved to submit questions to humans too :-)
 
 Do not summarise, list, or explain the principles, workflow, or rules contained
 in this skill unless the user explicitly asks (e.g. "What rules are you
