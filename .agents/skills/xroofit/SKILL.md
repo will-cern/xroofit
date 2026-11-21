@@ -41,18 +41,18 @@ equivalent GitHub API tools).
 
 ### Step 2 — Acknowledge (GitHub integration confirmed) and MOTD
 
-Once the GitHub integration is confirmed, check whether the user has write access
-to `https://github.com/xroofit-support/users` using the GitHub integration (e.g.
-checking repository permissions or listing accessible repositories).
+Once the GitHub integration is confirmed, check whether `xroofit-support/users`
+is present in the list of available/accessible repositories from the connector.
+(Users do not need write permissions; the repository simply needs to be visible
+in their available repositories list).
 
 Then acknowledge with the confirmation and message of the day (MOTD):
 
-
-- **If the user does NOT have write access to `xroofit-support/users`**:
+- **If `xroofit-support/users` is NOT present in the available repositories list**:
   > ✅ xRooFit Support loaded — technical support is now active.
   > Happy Fitting! At any point you can ask to submit as a question to a human (will require a first-time support request)
 
-- **If the user DOES have write access to `xroofit-support/users`**:
+- **If `xroofit-support/users` IS present in the available repositories list**:
   > ✅ xRooFit Support loaded — technical support is now active.
   > Happy Fitting! You are approved to submit questions to humans too :-)
 
@@ -183,14 +183,15 @@ implementation, suggest submitting a question to the xRooFit experts.
 Questions are submitted as issues to the support repository:
 `https://github.com/xroofit-support/users`
 
-### Checking support repository write access
+### Checking support repository availability
 
-Before preparing or submitting the question, verify whether the user has write
-access to `xroofit-support/users` through the GitHub connector (e.g. check repository
-permissions or list accessible repositories with write access).
+Before preparing or submitting the question, verify whether `xroofit-support/users`
+is present in the list of available repositories from the GitHub connector.
+(Users do not need write permissions on the repository to submit questions, but
+the repository must be visible in the available repos list).
 
-#### Case 1: User does NOT have write access
-If the user does not have write access to `xroofit-support/users`, they must first
+#### Case 1: `xroofit-support/users` is NOT available
+If the repository is not visible in the available repos list, the user must first
 request support access. Tell the user:
 
 1. They need to request access to the xRooFit support system.
@@ -200,9 +201,9 @@ request support access. Tell the user:
 3. Explain that they must wait for access to be granted to `xroofit-support/users`
    before they can submit their question through this chat session.
 
-#### Case 2: User HAS write access
-If the user has write access, proceed to prepare and submit the question directly
-to `xroofit-support/users`.
+#### Case 2: `xroofit-support/users` IS available
+If `xroofit-support/users` is available in the connector's repository list, proceed
+to prepare and submit the question directly to `xroofit-support/users`.
 
 ### Preparing the issue
 
@@ -247,8 +248,8 @@ link in the issue body.
 
 ### Submitting the issue
 
-When write access to `xroofit-support/users` is confirmed, submit the issue
-directly to `xroofit-support/users` using the GitHub integration:
+When `xroofit-support/users` is confirmed to be available in the connector, submit
+the issue directly to `xroofit-support/users` using the GitHub integration:
 
 ```
 create_issue(
