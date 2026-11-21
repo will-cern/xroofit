@@ -42,8 +42,10 @@ for all repository access (documentation, source files, tests).
 **Prefer the user's fork over the upstream repository.** If the authenticated
 GitHub user has a fork of `will-cern/xroofit`, sync it with upstream first
 (using the plugin's sync/merge-upstream capability), then read documentation
-and source files from the fork. Only use `will-cern/xroofit` directly when no
-fork exists for the authenticated user.
+and source files from the fork. If no fork exists for the authenticated user,
+fall back to connecting directly to `will-cern/xroofit` (which is a public
+repository and always read-only accessible via the GitHub integration, even if
+it is not listed in the user's personal repository list).
 
 ## Project requirements
 
