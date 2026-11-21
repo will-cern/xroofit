@@ -42,9 +42,17 @@ equivalent GitHub API tools).
 ### Step 2 — Acknowledge (GitHub integration confirmed) and MOTD
 
 Once the GitHub integration is confirmed, check whether `xroofit-support/users`
-is present in the list of available/accessible repositories from the connector.
-(Users do not need write permissions; the repository simply needs to be visible
-in their available repositories list).
+is present in the list of available/accessible repositories from the connector:
+
+- **Important check details**:
+  - The repository owner is **`xroofit-support`** and the repository name is **`users`**
+    (full name: `xroofit-support/users`). **Do not search only for repository name "xroofit"**,
+    as the repository name itself is `users`.
+  - Check the full list of repositories provided by the connector for an entry matching
+    owner `xroofit-support` and name `users` (or full name `xroofit-support/users`).
+  - Standard read access (`push: false`) is completely sufficient for issue creation.
+    Do **not** require push or write access; if `xroofit-support/users` appears in the
+    repository list with read permissions, it is considered available.
 
 Then acknowledge with the confirmation and message of the day (MOTD):
 
@@ -186,12 +194,15 @@ Questions are submitted as issues to the support repository:
 ### Checking support repository availability
 
 Before preparing or submitting the question, verify whether `xroofit-support/users`
-is present in the list of available repositories from the GitHub connector.
-(Users do not need write permissions on the repository to submit questions, but
-the repository must be visible in the available repos list).
+is present in the list of available repositories from the GitHub connector:
+- Note that the repository full name is **`xroofit-support/users`** (owner: `xroofit-support`,
+  repo: `users`). Do not search only for repo name "xroofit".
+- Inspect the full repository list for owner `xroofit-support` and repo `users`.
+- Standard read access (`push: false`) is completely normal and sufficient for creating issues.
+  Do not check for write/push permissions.
 
 #### Case 1: `xroofit-support/users` is NOT available
-If the repository is not visible in the available repos list, the user must first
+If `xroofit-support/users` is not visible in the available repos list, the user must first
 request support access. Tell the user:
 
 1. They need to request access to the xRooFit support system.
