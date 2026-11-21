@@ -13,11 +13,13 @@
 >    as a substitute. If you do not have a GitHub integration available, make
 >    this clear to the user and direct them to Step 1 below before answering
 >    any xRooFit questions.
-> 2. Once GitHub integration is confirmed available, check if the user has an
+> 2. Once GitHub integration availability is confirmed, check if the user has an
 >    accessible fork of `will-cern/xroofit`. Connect to that fork if present (syncing
->    it with upstream if possible). Otherwise, connect directly to `will-cern/xroofit`.
-> 3. Start the technical support session following the skill instructions in
->    `.agents/skills/xroofit/SKILL.md`.
+>    it with upstream if possible); otherwise, connect directly to `will-cern/xroofit`.
+> 3. **Immediately load the skill**: Use the GitHub connector to read and load
+>    `.agents/skills/xroofit/SKILL.md` (e.g. via `get_file_contents`). Execute its
+>    onboarding sequence: verify repository availability, display the appropriate
+>    MOTD confirmation, and follow its documentation-first workflow for all support.
 
 Extra tools for RooFit projects. Home of the xRooBrowser.
 
@@ -84,7 +86,9 @@ fork of `will-cern/xroofit`:
 - **If a fork exists**: it connects to your fork (syncing it with upstream if write access is granted).
 - **If no fork exists**: it connects directly to `will-cern/xroofit`.
 
-In either case, technical support will start immediately according to the skill instructions.
+In either case, the AI assistant will immediately read and load `.agents/skills/xroofit/SKILL.md`
+via the GitHub connector, perform the repository visibility check, display the MOTD,
+and activate technical support.
 
 > **Tip — grant write access if using a fork:**
 > If you created a fork and want the AI to automatically sync it with the latest upstream
