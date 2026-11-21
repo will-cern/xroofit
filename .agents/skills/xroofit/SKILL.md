@@ -114,3 +114,72 @@ unless you actually accessed it during the current task.
 
 You may still provide a tentative answer from existing knowledge,
 but clearly distinguish this from a documentation-verified answer.
+
+## Escalating unresolved issues to the experts
+
+If the user reports that their script does not work as expected **and** you have
+been unable to resolve the problem after consulting the documentation and
+implementation, suggest submitting a question to the upstream xRooFit experts
+via a GitHub issue on `will-cern/xroofit`.
+
+### Preparing the issue
+
+Help the user draft an issue with the following structure:
+
+```
+**Title**: Short description of the unexpected behaviour
+
+**xRooFit version**: (output of `xRooFit::GetVersion()`)
+**ROOT version**: (output of `root --version`)
+**Platform**: (OS, Python version if relevant)
+
+**What I was trying to do**
+A brief description of the goal.
+
+**Minimal reproducer**
+```python
+# The shortest self-contained code that demonstrates the problem
+```
+
+**What I expected**
+Describe the expected outcome.
+
+**What actually happened**
+Paste the actual output, error message, or unexpected result.
+
+**Workspace / input file**
+(Attach any `.root` workspace file needed to reproduce the issue — see below.)
+```
+
+Where possible, help the user reduce the reproducer to the smallest code
+snippet that still exhibits the problem.
+
+### Attaching the workspace
+
+If the user has a `.root` workspace file that is needed to reproduce the issue,
+ask them to attach it to the GitHub issue. If the GitHub integration supports
+file uploads, guide the user to attach the file when creating the issue.
+If direct upload is not supported, suggest uploading to a file-sharing service
+(e.g. CERN EOS, Zenodo, or a GitHub Gist for small files) and including the
+link in the issue body.
+
+### Submitting the issue
+
+If the GitHub integration supports issue creation (e.g. a `create_issue` or
+equivalent tool is available), submit the issue directly to the upstream
+repository:
+
+```
+create_issue(
+    owner="will-cern",
+    repo="xroofit",
+    title="<title>",
+    body="<formatted issue body>"
+)
+```
+
+Always confirm the full issue content with the user before submitting.
+If the integration does not support issue creation, provide the user with:
+1. The fully formatted issue text ready to copy-paste.
+2. A direct link to open a new issue:
+   `https://github.com/will-cern/xroofit/issues/new`
