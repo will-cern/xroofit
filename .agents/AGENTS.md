@@ -1,5 +1,18 @@
 # Custom Rules for xRooFit Workspace
 
+## GitHub Repository Access
+
+When reading files from the xRooFit GitHub repository, **always use a GitHub
+Integration plugin or MCP tool** (e.g. the
+[GitHub plugin](https://claude.com/marketplace/plugins/github) for Claude.ai)
+for all repository access (documentation, source files, tests).
+
+**Prefer the user's fork over the upstream repository.** If the authenticated
+GitHub user has a fork of `will-cern/xroofit`, sync it with upstream first
+(using the plugin's sync/merge-upstream capability), then read documentation
+and source files from the fork. Only use `will-cern/xroofit` directly when no
+fork exists for the authenticated user.
+
 ## Project requirements
 
 This project requires ROOT and Python, and to compile it requires cmake as well. When first working with this project, check the user has ROOT installed with `root --version` and cmake installed with `cmake --version`. If the user does not, ask them for a recommendation of what setup script they should source in order to get the correct environment. If they have access to cvmfs they can also setup StatAnalysis which provides ROOT and Python with:

@@ -41,46 +41,67 @@ Ask the user what specific version of xRooFit they are using, which they can obt
 - `xRooFit::GetVersion()` in the ROOT prompt (or `import ROOT; print(ROOT.xRooFit.GetVersion())` in Python)
 - `ROOT::Experimental::XRooFit::xRooFit::GetVersion()` if using the version of xRooFit bundled with ROOT
 
-Use this version (commit hash or tag) to look up the documentation for that specific commit hash/tag in the repository (e.g. `https://github.com/will-cern/xroofit/tree/<commit-or-tag>`). If the version is not specified or latest, use the master branch.
+Use this version (commit hash or tag) to look up the documentation for that specific commit hash/tag in the repository. If the version is not specified or latest, use the master branch.
 
 ### Finding the documentation
 
-The canonical repository is:
+The upstream canonical repository is `will-cern/xroofit`. The primary entry
+point for all documentation is `docs/README.md`.
 
-https://github.com/will-cern/xroofit
+#### GitHub Integration Plugin
 
-The primary entry point for all documentation is `docs/README.md`.
+Use a **GitHub Integration plugin or MCP tool** (e.g. the
+[GitHub plugin](https://claude.com/marketplace/plugins/github) installed in
+Claude.ai, or any MCP server that exposes `get_file_contents`, `search_code`,
+`sync_fork`, or equivalent GitHub tools) to read all repository content.
 
-#### Direct HTTP / Web Access (for Claude.ai Chat & Web Assistants)
+**Determining which repository to use:**
 
-In chat environments without terminal or local git access (such as Claude.ai), you MUST use your web browsing or URL fetching capability to fetch the raw documentation text directly over HTTP.
+1. Use the GitHub plugin to inspect which repositories the authenticated user
+   has access to. Look for a repository named `xroofit` (or a fork of
+   `will-cern/xroofit`) owned by the authenticated user or their organisation.
+2. If such a fork exists, use it as `<owner>/xroofit`. If no fork exists, fall
+   back to the upstream `will-cern/xroofit`.
 
-**Do NOT fetch GitHub `/blob/` URLs** (e.g. `github.com/.../blob/...`), as GitHub serves dynamic React/SPA HTML that automated web fetchers fail to parse.
+**Syncing the fork before reading docs:**
 
-Always fetch the **raw Markdown** over HTTP from `raw.githubusercontent.com`:
+If you are using a fork (not the upstream), always sync it with upstream before
+reading any documentation or source files. Use the plugin's sync/merge tool,
+e.g.:
+```
+sync_fork(owner="<owner>", repo="xroofit", branch="master")
+```
+(or the equivalent `merge_upstream` / "Sync fork" call exposed by the plugin).
+Only proceed to read files after the sync succeeds.
 
-- **Primary Documentation Index**:
-  `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/docs/README.md`
-  *(Default `<ref>` is `master`, or use the specific tag/commit hash if known).*
+**Reading content:**
 
-- **Topic Guides**:
-  When `docs/README.md` references a topic guide (e.g. `workspace-building.md`), fetch it directly via:
-  `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/docs/<filename>`
+- **Primary Documentation Index**: `docs/README.md` at the appropriate ref
+- **Topic Guides**: `docs/<filename>` as referenced in `docs/README.md`
+- **Source / Tests**: `src/...` and `test/...` for implementation details
 
-- **Fallback Raw URL**:
-  `https://github.com/will-cern/xroofit/raw/<ref>/docs/README.md`
+Concretely:
+```
+get_file_contents(owner="<owner>", repo="xroofit", path="docs/README.md", ref="<ref>")
+```
+When fetching topic guides or source files, substitute the appropriate `path`.
+Use `search_code` (or equivalent) to locate implementation details when the
+documentation is insufficient.
 
 ### Workflow
 
 1. Determine the xRooFit version if it is relevant and not already known (you can ask the user which specific version of xRooFit they are using from `xRooFit::GetVersion()` or `ROOT::Experimental::XRooFit::xRooFit::GetVersion()`). Do not interrupt an otherwise answerable question just to ask for the version. If unspecified, assume `<ref>` is `master`.
-2. Use your web browsing / fetching tool to retrieve `docs/README.md` directly via HTTP:
-   `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/docs/README.md`
-3. Read the documentation index to discover the relevant documentation and topic guides for the question.
-4. Fetch and read the corresponding topic guide via its raw HTTP URL (e.g. `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/docs/<filename>`).
-5. If the documentation does not answer the question, inspect the implementation and tests in the repository via their raw GitHub URLs (e.g. `https://raw.githubusercontent.com/will-cern/xroofit/<ref>/src/...`).
-6. Base code examples on documented APIs and existing examples.
-7. Do not invent methods, arguments, classes or behaviour.
-8. If the documentation and implementation disagree, explain
+2. Use the GitHub Integration plugin to identify the repository to use:
+   - Check whether the authenticated user has a fork of `will-cern/xroofit`.
+   - If yes: sync the fork with upstream (see above), then use the fork.
+   - If no: use `will-cern/xroofit` directly.
+3. Retrieve `docs/README.md` for the appropriate `<ref>` from the chosen repository.
+4. Read the documentation index to discover the relevant documentation and topic guides for the question.
+5. Fetch and read the corresponding topic guide (e.g. `docs/<filename>`) via the plugin.
+6. If the documentation does not answer the question, inspect the implementation and tests in the repository (e.g. `src/...`) via the plugin.
+7. Base code examples on documented APIs and existing examples.
+8. Do not invent methods, arguments, classes or behaviour.
+9. If the documentation and implementation disagree, explain
    the discrepancy rather than silently choosing one.
 
 ### Documentation access failures
