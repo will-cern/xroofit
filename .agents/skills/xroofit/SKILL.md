@@ -39,12 +39,22 @@ equivalent GitHub API tools).
 
   Do not proceed further until the user confirms the integration is available.
 
-### Step 2 — Acknowledge (GitHub integration confirmed)
+### Step 2 — Acknowledge (GitHub integration confirmed) and MOTD
 
-Once the GitHub integration is confirmed, acknowledge with a brief one-line
-confirmation:
+Once the GitHub integration is confirmed, check whether the user has write access
+to `https://github.com/xroofit-support/users` using the GitHub integration (e.g.
+checking repository permissions or listing accessible repositories).
 
-> ✅ xRooFit skill loaded — technical support is now active.
+Then acknowledge with the confirmation and message of the day (MOTD):
+
+
+- **If the user does NOT have write access to `xroofit-support/users`**:
+  > ✅ xRooFit Support loaded — technical support is now active.
+  > Happy Fitting! At any point you can ask to submit as a question to a human (will require a first-time support request)
+
+- **If the user DOES have write access to `xroofit-support/users`**:
+  > ✅ xRooFit Support loaded — technical support is now active.
+  > Happy Fitting! You are approved to submit questions to humans too :-)
 
 Do not summarise, list, or explain the principles, workflow, or rules contained
 in this skill unless the user explicitly asks (e.g. "What rules are you
@@ -168,8 +178,31 @@ but clearly distinguish this from a documentation-verified answer.
 
 If the user reports that their script does not work as expected **and** you have
 been unable to resolve the problem after consulting the documentation and
-implementation, suggest submitting a question to the upstream xRooFit experts
-via a GitHub issue on `will-cern/xroofit`.
+implementation, suggest submitting a question to the xRooFit experts.
+
+Questions are submitted as issues to the support repository:
+`https://github.com/xroofit-support/users`
+
+### Checking support repository write access
+
+Before preparing or submitting the question, verify whether the user has write
+access to `xroofit-support/users` through the GitHub connector (e.g. check repository
+permissions or list accessible repositories with write access).
+
+#### Case 1: User does NOT have write access
+If the user does not have write access to `xroofit-support/users`, they must first
+request support access. Tell the user:
+
+1. They need to request access to the xRooFit support system.
+2. Provide the prepopulated issue URL:
+   `https://github.com/will-cern/xroofit/issues/new?title=Support%20Request&labels=support-invite-request&body=no%20description%20necessary%2C%20but%20feel%20free%20to%20tell%20us%20what%20experiment%20you%20work%20on`
+   (This opens a new issue on `will-cern/xroofit` with the title "Support Request", the label `support-invite-request`, and the default description "no description necessary, but feel free to tell us what experiment you work on").
+3. Explain that they must wait for access to be granted to `xroofit-support/users`
+   before they can submit their question through this chat session.
+
+#### Case 2: User HAS write access
+If the user has write access, proceed to prepare and submit the question directly
+to `xroofit-support/users`.
 
 ### Preparing the issue
 
@@ -214,24 +247,23 @@ link in the issue body.
 
 ### Submitting the issue
 
-If the GitHub integration supports issue creation (e.g. a `create_issue` or
-equivalent tool is available), submit the issue directly to the upstream
-repository:
+When write access to `xroofit-support/users` is confirmed, submit the issue
+directly to `xroofit-support/users` using the GitHub integration:
 
 ```
 create_issue(
-    owner="will-cern",
-    repo="xroofit",
+    owner="xroofit-support",
+    repo="users",
     title="<title>",
     body="<formatted issue body>"
 )
 ```
 
 Always confirm the full issue content with the user before submitting.
-If the integration does not support issue creation, provide the user with:
+If the integration does not support issue creation tool calls, provide the user with:
 1. The fully formatted issue text ready to copy-paste.
 2. A direct link to open a new issue:
-   `https://github.com/will-cern/xroofit/issues/new`
+   `https://github.com/xroofit-support/users/issues/new`
 
 ### After submitting the issue
 
@@ -240,8 +272,8 @@ the user:
 
 ---
 
-Your issue has been submitted to the xRooFit experts. When a response appears
-on the issue, please come back to this chat and say something like:
+Your question has been submitted to the xRooFit experts at `xroofit-support/users`.
+When a response appears on the issue, please come back to this chat and say something like:
 
 > "There is a response to my issue — please resume support."
 
@@ -256,19 +288,19 @@ When the user returns and indicates that a response to their issue is available,
 do the following:
 
 1. **Read the issue thread.** Use the GitHub integration to fetch the issue
-   comments from the upstream repository. Use `get_issue_comments` or the
-   equivalent tool:
+   comments from the support repository (`xroofit-support/users`). Use `get_issue_comments`
+   or the equivalent tool:
    ```
-   get_issue_comments(owner="will-cern", repo="xroofit", issue_number=<n>)
+   get_issue_comments(owner="xroofit-support", repo="users", issue_number=<n>)
    ```
    If you do not know the issue number, ask the user or search recent issues:
    ```
-   list_issues(owner="will-cern", repo="xroofit", state="open")
+   list_issues(owner="xroofit-support", repo="users", state="open")
    ```
 
 2. **Check for updated documentation.** Expert responses may reference new or
-   corrected documentation. If the user is working from a fork, instruct them
-   to sync it with upstream before you re-read the docs:
+   corrected documentation in `will-cern/xroofit`. If the user is working from a fork,
+   instruct them to sync it with upstream before you re-read the docs:
 
    > "Before I check the latest documentation, please sync your fork with
    > upstream. You can do this by clicking **Sync fork** on your fork's GitHub
@@ -284,7 +316,7 @@ do the following:
 
 4. **Follow up if the response is insufficient.** If the expert response does
    not fully resolve the problem, help the user post a follow-up comment on the
-   same issue using the GitHub integration:
+   same issue in `xroofit-support/users` using the GitHub integration:
    ```
-   create_issue_comment(owner="will-cern", repo="xroofit", issue_number=<n>, body="<comment>")
+   create_issue_comment(owner="xroofit-support", repo="users", issue_number=<n>, body="<comment>")
    ```
