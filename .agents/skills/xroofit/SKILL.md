@@ -44,26 +44,28 @@ equivalent GitHub API tools).
 
 ### Step 2 — Acknowledge (GitHub integration confirmed) and MOTD
 
-Once the GitHub integration is confirmed, check whether you have permission to
-create an issue on the support repository `xroofit-support/users` (owner: `xroofit-support`,
-repo: `users`):
+Once the GitHub integration is confirmed, check whether the support repository
+`xroofit-support/users` (owner: `xroofit-support`, repo: `users`) is visible
+to the connector:
 
-- **How to check**:
-  - Explicitly check permissions to create an issue on repository `owner="xroofit-support"`,
-    `repo="users"` using the connector (e.g. check repository permissions, query issue creation
-    capabilities, or inspect permissions for `xroofit-support/users`).
-  - **Do not rely solely on a general repository listing**, as external or organization repositories
-    often do not appear in general user repository listings even when issue creation permission is present.
-  - The repository owner is **`xroofit-support`** and the repository name is **`users`**.
+- **Assessment criterion**:
+  - The `xroofit-support/users` repository is **private** and is only visible to users
+    who have been made members of the `xroofit-support` organization.
+  - Connectors cannot reliably verify granular issue write permissions on external repositories.
+    Therefore, **issue writing capability on this repository is simply assessed by whether
+    `xroofit-support/users` is visible to the connector**. If it is visible, issue creation is possible.
+  - Check whether `owner="xroofit-support"`, `repo="users"` can be accessed or appears
+    in the accessible repositories list. (Remember: owner is `xroofit-support`, repo is `users`;
+    do not search only for repo name "xroofit").
 
 Then acknowledge with the confirmation and message of the day (MOTD):
 
-- **If you do NOT have permission to create an issue on `xroofit-support/users`**:
+- **If `xroofit-support/users` is NOT visible to the connector**:
   > ✅ xRooFit Support loaded — technical support is now active.
   > 🚀 Happy Fitting! 🚀
   > ⚠️ **Human Support:** At any point you can ask to submit a question to a human expert. You do not currently have access to the support repository, but you can [request access here](https://github.com/will-cern/xroofit/issues/new?title=Support%20Request&labels=support-invite-request&body=no%20description%20necessary%2C%20but%20feel%20free%20to%20tell%20us%20what%20experiment%20you%20work%20on).
 
-- **If you DO have permission to create an issue on `xroofit-support/users`**:
+- **If `xroofit-support/users` IS visible to the connector**:
   > ✅ xRooFit Support loaded — technical support is now active.
   > 🚀 Happy Fitting! 🚀
   > ✅ You are approved to submit questions to humans too :-)
@@ -209,17 +211,18 @@ implementation, suggest submitting a question to the xRooFit experts.
 Questions are submitted as issues to the support repository:
 `https://github.com/xroofit-support/users`
 
-### Checking support repository permission
+### Checking support repository access
 
-Before preparing or submitting the question, verify whether you have permission to
-create an issue on `xroofit-support/users` (owner: `xroofit-support`, repo: `users`)
-through the GitHub connector:
-- Explicitly check permissions to create an issue on repository `xroofit-support/users` directly.
-- **Do not rely solely on a general repository listing**, as external or organization repositories
-  often do not appear in general user repository listings even when issue creation permission is present.
+Before preparing or submitting the question, verify whether the support repository
+`xroofit-support/users` (owner: `xroofit-support`, repo: `users`) is visible/accessible
+to the GitHub connector:
+- Note that `xroofit-support/users` is a **private repository**. It is only visible
+  if the user has been granted access as a member of the `xroofit-support` organization.
+- Connectors cannot reliably verify granular issue write permissions; **issue creation
+  is possible whenever the repository is visible to the connector**.
 
-#### Case 1: Issue creation permission is NOT granted
-If you do not have permission to create an issue on `xroofit-support/users`, the user must first
+#### Case 1: `xroofit-support/users` is NOT visible
+If `xroofit-support/users` is not visible/accessible to the connector, the user must first
 request support access. Tell the user:
 
 1. They need to request access to the xRooFit support system.
@@ -229,9 +232,9 @@ request support access. Tell the user:
 3. Explain that they must wait for access to be granted to `xroofit-support/users`
    before they can submit their question through this chat session.
 
-#### Case 2: Issue creation permission IS granted
-If issue creation permission on `xroofit-support/users` is confirmed, proceed
-to prepare the question for submission to `xroofit-support/users`.
+#### Case 2: `xroofit-support/users` IS visible
+If `xroofit-support/users` is visible to the connector, issue creation is possible.
+Proceed to prepare the question for submission to `xroofit-support/users`.
 
 ### Preparing the issue
 
