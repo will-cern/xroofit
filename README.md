@@ -21,10 +21,9 @@
 >    in the user's personal repository list.
 > 3. **Immediately load the skill**: Use the GitHub connector to read and load
 >    `.agents/skills/xroofit/SKILL.md` (e.g. via `get_file_contents` from the fork
->    or from `will-cern/xroofit`). Execute its onboarding sequence: check permission
->    to create an issue on the support repository (`xroofit-support/users`), display
->    the appropriate MOTD confirmation, and follow its documentation-first workflow
->    for all support.
+>    or from `will-cern/xroofit`). Execute its onboarding sequence: check visibility
+>    of the support repository (`xroofit-support/users`), display the appropriate
+>    MOTD confirmation, and follow its documentation-first workflow for all support.
 
 Extra tools for RooFit projects. Home of the xRooBrowser.
 
@@ -94,8 +93,8 @@ fork of `will-cern/xroofit`:
   even though it is not listed in your personal repository list).
 
 In either case, the AI assistant will immediately read and load `.agents/skills/xroofit/SKILL.md`
-via the GitHub connector, check permission to create an issue on `xroofit-support/users`, display
-the MOTD, and activate technical support.
+via the GitHub connector, check visibility of `xroofit-support/users`, display the MOTD,
+and activate technical support.
 
 > **Tip — grant write access if using a fork:**
 > If you created a fork and want the AI to automatically sync it with the latest upstream
