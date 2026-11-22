@@ -231,7 +231,7 @@ request support access. Tell the user:
 
 #### Case 2: Issue creation permission IS granted
 If issue creation permission on `xroofit-support/users` is confirmed, proceed
-to prepare and submit the question directly to `xroofit-support/users`.
+to prepare the question for submission to `xroofit-support/users`.
 
 ### Preparing the issue
 
@@ -276,9 +276,22 @@ link in the issue body.
 
 ### Submitting the issue
 
-When `xroofit-support/users` is confirmed to be available in the connector, submit
-the issue directly to `xroofit-support/users` using the GitHub integration:
+> **Known limitation in Claude.ai chats:**
+> Due to a known issue in the GitHub MCP server (see
+> [github-mcp-server issue #2823](https://github.com/github/github-mcp-server/issues/2823)),
+> Claude.ai chat sessions are currently unable to submit issues directly to the support
+> repository via the connector tool.
+>
+> For **Claude.ai chat sessions** (or whenever direct issue creation via MCP fails or is unavailable):
+> 1. Do **not** attempt to call `create_issue` through the connector.
+> 2. Instead, provide a clickable URL with the title and formatted issue body prepopulated:
+>    `https://github.com/xroofit-support/users/issues/new?title=<url_encoded_title>&body=<url_encoded_body>`
+> 3. Also display the full text of the issue in the chat in case the user needs to copy-paste it
+>    or browser URL query string length limits are exceeded.
+> 4. Ask the user to click the link, submit the question on GitHub, and reply to this chat
+>    with the issue URL or issue number once done so that tracking can begin.
 
+For other platforms where direct issue creation via the connector tool is supported:
 ```
 create_issue(
     owner="xroofit-support",
@@ -287,16 +300,13 @@ create_issue(
     body="<formatted issue body>"
 )
 ```
-
-Always confirm the full issue content with the user before submitting.
-If the integration does not support issue creation tool calls, provide the user with:
-1. The fully formatted issue text ready to copy-paste.
-2. A direct link to open a new issue:
-   `https://github.com/xroofit-support/users/issues/new`
+Always confirm the full issue content with the user before submitting. If the tool call fails,
+fall back immediately to providing the prepopulated URL link described above.
 
 ### After submitting the issue
 
-Once the issue has been submitted (or the user has posted it manually):
+Once the issue has been submitted (either directly via the tool or confirmed submitted
+by the user via the prepopulated link):
 1. **Record the issue number and URL** in the conversation context.
 2. Tell the user:
 
